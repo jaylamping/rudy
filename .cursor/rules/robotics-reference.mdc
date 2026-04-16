@@ -5,7 +5,9 @@ alwaysApply: true
 
 # Robotics reference (Murphy)
 
-For **conceptual, architecture, safety, kinematics, power, networking, or ROS 2** questions: open and follow **`docs/robotics-best-practices-reference.md`** (canonical bibliography, refreshed April 2026). Prefer citing links from that file over generic model knowledge.
+For **Murphy repo architecture, package layout, deployment topology, and runbooks**: open **`docs/architecture.md`** plus `docs/runbooks/`.
+
+For **conceptual, safety, kinematics, power, networking, or ROS 2** patterns: open and follow **`docs/robotics-best-practices-reference.md`** (canonical bibliography, refreshed April 2026). Prefer citing links from that file over generic model knowledge.
 
 ## Quick reminders (do not skip)
 

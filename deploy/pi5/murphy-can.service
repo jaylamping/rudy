@@ -1,0 +1,12 @@
+[Unit]
+Description=Murphy SocketCAN bringup (Waveshare 2-CH HAT)
+After=network-pre.target
+Before=network-online.target murphy-driver.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/murphy-can-setup.sh 1000000
+
+[Install]
+WantedBy=multi-user.target

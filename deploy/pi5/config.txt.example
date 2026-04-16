@@ -1,0 +1,12 @@
+# Example additions for Raspberry Pi 5 + Waveshare 2-CH CAN HAT (MCP2515, SPI1).
+# On Ubuntu 24.04 for Pi, edit: /boot/firmware/config.txt
+# On Raspberry Pi OS: /boot/firmware/config.txt
+#
+# VERIFY oscillator (8 MHz vs 16 MHz) and GPIO interrupts against your HAT revision
+# (Waveshare wiki: https://www.waveshare.com/wiki/2-CH_CAN_HAT )
+
+# dtparam=spi=on
+# dtoverlay=i2c0
+# dtoverlay=spi1-3cs
+# dtoverlay=mcp2515,spi1-1,oscillator=16000000,interrupt=22
+# dtoverlay=mcp2515,spi1-2,oscillator=16000000,interrupt=13

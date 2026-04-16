@@ -1,0 +1,6 @@
+# Contact / collision parameters for sim (tune against real hardware slip/stiction).
+schema_version: 1
+
+default_restitution: 0.0
+default_static_friction: 0.9
+default_dynamic_friction: 0.8

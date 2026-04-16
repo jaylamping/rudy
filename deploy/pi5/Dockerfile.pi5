@@ -1,0 +1,28 @@
+# Cross-build image: same ROS base as Pi 5 runtime (Noble + Jazzy) with aarch64 toolchain.
+# Build on x86_64 with: docker build -f deploy/pi5/Dockerfile.pi5 -t murphy-pi5-build .
+FROM osrf/ros:jazzy-ros-base-noble
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN dpkg --add-architecture arm64 \
+    && apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    cmake \
+    git \
+    curl \
+    ca-certificates \
+    pkg-config \
+    gcc-aarch64-linux-gnu \
+    g++-aarch64-linux-gnu \
+    libc6-dev-arm64-cross \
+    python3-colcon-common-extensions \
+    python3-rosdep \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV RUSTUP_HOME=/opt/rustup
+ENV CARGO_HOME=/opt/cargo
+ENV PATH="${CARGO_HOME}/bin:${PATH}"
+RUN curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable \
+    && rustup target add aarch64-unknown-linux-gnu
+
+WORKDIR /workspace

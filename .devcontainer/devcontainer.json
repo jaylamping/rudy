@@ -1,0 +1,26 @@
+{
+  "name": "Murphy ROS 2 Jazzy",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": "."
+  },
+  "workspaceFolder": "/workspace",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",
+  "runArgs": [
+    "--network=host"
+  ],
+  "containerEnv": {
+    "ROS_DISTRO": "jazzy",
+    "RMW_IMPLEMENTATION": "rmw_cyclonedds_cpp"
+  },
+  "postCreateCommand": "bash -lc 'sudo rosdep init 2>/dev/null || true; rosdep update; rosdep install --from-paths src --ignore-src -r -y || true'",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode.cpptools",
+        "rust-lang.rust-analyzer",
+        "ms-python.python"
+      ]
+    }
+  }
+}

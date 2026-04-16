@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<launch>
+  <!-- Record core topics for Murphy bring-up / debug. -->
+  <arg name="bag_name" default="murphy_core"/>
+
+  <executable
+    cmd="ros2 bag record -o $(var bag_name) /joint_states /tf /tf_static /diagnostics /rosout"
+    output="screen"/>
+</launch>

@@ -1,0 +1,48 @@
+# RobStride RS03 integrated actuator — Murphy canonical hardware spec.
+# URDF effort/velocity caps and joint limits should stay consistent with this file (see tests/).
+
+schema_version: 1
+actuator_model: RS03
+
+protocol:
+  physical_layer: CAN_2_0B
+  bitrate_bps: 1000000
+  frame_format: extended_29bit
+  data_length: 8
+
+limits:
+  effort_max_nm: 60.0
+  velocity_max_rad_s: 50.0
+  # Global position bounds (per-joint URDF limits may be tighter)
+  position_min_rad: -6.283185307179586
+  position_max_rad: 6.283185307179586
+
+control_modes:
+  mit:
+    description: "MIT-style PD + torque feedforward (mode 0 in vendor docs)"
+    kp_range: [0.0, 500.0]
+    kd_range: [0.0, 5.0]
+    torque_ff_max_nm: 60.0
+  position:
+    description: "Closed-loop position (mode 1)"
+    velocity_max_rad_s: 50.0
+    torque_max_nm: 60.0
+  speed:
+    description: "Velocity loop (mode 2)"
+    torque_max_nm: 60.0
+
+dynamics:
+  # Values mirrored in murphy_description xacro (URDF <dynamics>)
+  joint_damping: 0.3
+  joint_friction: 0.08
+  safety_controller:
+    k_position: 15.0
+    k_velocity: 10.0
+
+thermal:
+  max_winding_temp_c: 120
+  derating_start_c: 100
+
+notes:
+  - "Verify oscillator / CAN ID map against firmware revision before production bring-up."
+  - "See deploy/pi5/config.txt.example for Pi 5 + Waveshare 2-CH CAN HAT device tree hints."

@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<library path="murphy_topic_loopback_hardware">
+  <class name="murphy_control/MurphyTopicLoopbackHardware"
+         type="murphy_control::MurphyTopicLoopbackHardware"
+         base_class_type="hardware_interface::SystemInterface">
+    <description>
+      Minimal loopback SystemInterface for Murphy bring-up (position command mirrors state).
+      Replaced/extended by topic bridge to Rust driver as the stack matures.
+    </description>
+  </class>
+</library>

@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build-test-lint:
+    runs-on: ubuntu-24.04
+    container:
+      image: osrf/ros:jazzy-desktop
+    env:
+      RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tooling
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            curl \
+            python3-pip \
+            python3-venv \
+            gcc-aarch64-linux-gnu \
+            g++-aarch64-linux-gnu \
+            libc6-dev-arm64-cross \
+            can-utils \
+            ros-jazzy-rmw-cyclonedds-cpp \
+            ros-jazzy-diagnostic-aggregator \
+            ros-jazzy-ros2-control \
+            ros-jazzy-ros2-controllers \
+            ros-jazzy-hardware-interface \
+            ros-jazzy-pluginlib \
+            ros-jazzy-launch-testing \
+            ros-jazzy-launch-testing-ament-cmake \
+            ros-jazzy-ament-cmake-gtest \
+            ros-jazzy-joint-state-publisher
+          pip3 install --break-system-packages pytest pyyaml xacro urdfdom-py
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-gnu
+          components: rustfmt, clippy
+
+      - name: Rust fmt + clippy + test (murphy_driver)
+        working-directory: ${{ github.workspace }}/src/murphy_driver
+        run: |
+          cargo fmt --check
+          cargo clippy --all-targets -- -D warnings
+          cargo test
+
+      - name: Rust cross check (aarch64)
+        working-directory: ${{ github.workspace }}/src/murphy_driver
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+        run: |
+          cargo check --target aarch64-unknown-linux-gnu
+
+      - name: rosdep
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          rosdep init || true
+          rosdep update
+          rosdep install --from-paths src --ignore-src -r -y
+
+      - name: colcon build
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
+
+      - name: colcon test
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          source install/setup.bash
+          colcon test --event-handlers console_direct+
+          colcon test-result --verbose
+
+      - name: URDF + actuator spec (pytest)
+        run: |
+          python3 -m pytest -q tests
+
+  docs-links:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify key docs exist
+        run: |
+          test -f docs/architecture.md
+          test -f docs/runbooks/pi5.md

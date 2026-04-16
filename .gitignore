@@ -16,3 +16,6 @@ __pycache__/
 
 # Firecrawl / local scrape cache (optional)
 .firecrawl/
+
+# Rust (local `cargo` without CMake / editor checks)
+src/murphy_driver/target/
