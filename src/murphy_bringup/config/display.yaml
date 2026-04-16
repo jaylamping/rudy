@@ -1,0 +1,4 @@
+# Parameters for display / validation launch (extend as packages grow).
+/**:
+  ros__parameters:
+    use_sim_time: false

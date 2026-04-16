@@ -1,0 +1,87 @@
+---
+description: Open source robotics coding best practices reference. Consult these resources first when answering conceptual questions, architecture decisions, or path-forward questions about robotics projects.
+alwaysApply: true
+---
+
+# Open Source Robotics Reference Library
+
+When the user asks conceptual, architectural, or path-forward questions about robotics software, consult these resources before answering. Prefer advice grounded in these sources over general knowledge. Cite the source when relevant.
+
+## Tier 1: Essential Foundations
+
+### ROS 2 Architecture & Project Patterns
+
+- **Henki ROS 2 Best Practices** (https://github.com/henki-robotics/henki_ros2_best_practices)
+  Key practices: single-responsibility nodes, prefer XML launch files, define parameters in config files not code, use correct log levels with throttling, use proper message interfaces (not deprecated `std_msgs` primitives), services for fast tasks / actions for long tasks, Google C++ style / PEP8 Python, use C++ for high-bandwidth processing, prefer single-threaded executors, manage deps with `rosdep`, document all exposed topics/services/actions/params, test core logic with unit tests separate from ROS communication.
+
+- **ROS 2 Developer Guide** (https://docs.ros.org/en/rolling/The-ROS2-Project/Contributing/Developer-Guide.html)
+  Covers: semver versioning, DCO-signed PRs, REP 2004 package quality levels, tick-tock deprecation, public API declaration, documentation requirements (description, API, examples, build/install, tests, license).
+
+### Joint Limits & URDF
+
+- **URDF Joint XML Spec** (http://wiki.ros.org/urdf/XML/joint)
+  Authoritative reference for `<limit>` (lower, upper, effort, velocity), `<dynamics>` (damping, friction), `<safety_controller>` (soft_lower_limit, soft_upper_limit, k_velocity, k_position), `<mimic>`, and joint types (revolute, continuous, prismatic, fixed, floating, planar).
+
+- **Joint Limits & Dynamics Deep Dive** (https://leyaa.ai/core-engineering/learn/ros/part-2/ros-joint-limits-and-dynamics/deep)
+  Key points: limits cover position + velocity + effort (not just position), controllers do NOT auto-enforce limits (must configure `joint_limits_interface`), soft limits slow near boundaries instead of hard-stopping, simulation dynamics don't perfectly match hardware (always validate on real robot), nonlinear effects (stiction, backlash, compliance) matter in production.
+
+### Robot Programming Methodology
+
+- **Robot Programming Best Practices** (https://intelligentintegrators.org/robot-programming-best-practices/)
+  Three pillars: (1) homing sequence first (position-aware, stepped, checks I/O and device states), (2) modular structure (main program + subprograms with gated conditions), (3) rigorous verification (test every failure scenario -- sensor failure, missed grip, power loss mid-cycle).
+
+## Tier 2: Motion Planning, Safety & Control
+
+### Motion Planning
+
+- **MoveIt** (https://picknik.ai/moveit/, https://moveit.ai/)
+  Open source motion planning for ROS. Components: motion planning, IK, realtime control, 3D perception, collision checking. Use MoveIt 2 for ROS 2 projects.
+  - Tutorials: https://automaticaddison.com/configure-moveit-2-for-a-simulated-robot-arm-ros-2-jazzy/
+  - Safety integration discussion: https://github.com/ros-planning/moveit/issues/1958
+
+### Safety
+
+- **OSHA Robotics Safety** (http://www.osha.gov/enforcement/directives/std-01-12-002)
+- **Robot Safety Deep Dive** (https://sixdegreesofrobotics.substack.com/p/robot-safety-for-not-dummies) -- force thresholds, ISO/TS 15066
+- **Safety in Robotic Systems Survey** (https://onlinelibrary.wiley.com/doi/10.1002/rob.70022?af=R)
+
+## Tier 3: Simulation & Testing
+
+### Simulator Selection Guide
+
+- **Robotics Knowledgebase** (https://roboticsknowledgebase.com/wiki/robotics-project-guide/choose-a-sim/)
+  Robotics: Gazebo (best ROS, free), CoppeliaSim (multi-engine), Unity (photorealistic), AirSim (drones).
+  RL: MuJoCo (highest fidelity, open source), PyBullet (lightweight, free), Isaac Lab (GPU-accelerated, NVIDIA).
+
+- **Best-of Robot Simulators** (https://github.com/knmcguire/best-of-robot-simulators) -- 170+ projects ranked
+
+### CI/CD & Testing
+
+- **CI/CD for Robotics** (https://agrobofood.github.io/agrobofood-case-studies/case_studies/CICD-for-robotics.html)
+- **Cloud Sim CI Pipeline** (https://pmc.ncbi.nlm.nih.gov/articles/PMC11945058/) -- GitHub Actions + AWS RoboMaker
+- **Basis Robotics Framework** (https://github.com/basis-robotics/basis) -- deterministic testing
+- **ACT: Automated CPS Testing** (https://arxiv.org/html/2604.11708v1)
+
+## Tier 4: Advanced
+
+### Model Description
+- **Beyond URDF** (https://arxiv.org/html/2512.23135v1) -- next-gen robot description formats
+- **URDF to XACRO** (https://develop.realman-robotics.com/en/symbiosis/demo/URDFmodelassembly/)
+
+### Frameworks
+- **Drake** (https://drake.mit.edu/) -- multibody dynamics + optimization
+- **MuJoCo** (https://github.com/deepmind/mujoco) -- best for RL/biomechanics
+- **Isaac Lab** (https://github.com/isaac-sim/IsaacLab) -- GPU-accelerated sim-to-real
+
+### Production Patterns
+- **ROS 2 Modular Architecture** (https://www.softeq.com/blog/ros2-modular-architecture-scalable-robotics-business)
+- **Task Orchestration** (https://robotics.stackexchange.com/questions/117654/) -- managing concurrent SLAM + nav + mapping
+
+## How to Use This Reference
+
+When answering robotics questions:
+1. Check if the question maps to a topic covered above
+2. Ground your answer in the specific guidance from these sources
+3. Cite the source by name and URL
+4. If the user needs deeper detail, offer to scrape the source with Firecrawl
+5. The scraped content lives in `~/.firecrawl/robotics-research/` and can be read directly

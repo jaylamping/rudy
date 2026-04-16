@@ -1,0 +1,18 @@
+# ROS 2 / colcon
+build/
+install/
+log/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# IDE
+.idea/
+
+# Local tooling venv (URDF validation without full ROS install)
+.venv/
+
+# Firecrawl / local scrape cache (optional)
+.firecrawl/
