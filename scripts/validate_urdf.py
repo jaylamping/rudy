@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate Murphy xacro/URDF without a full ROS install (uses xacro + urdfdom-py + ElementTree)."""
+"""Validate Rudy xacro/URDF without a full ROS install (uses xacro + urdfdom-py + ElementTree)."""
 from __future__ import annotations
 
 import argparse
@@ -32,7 +32,7 @@ def main() -> int:
         "--xacro",
         type=Path,
         default=Path(__file__).resolve().parents[1]
-        / "src/murphy_description/urdf/murphy.urdf.xacro",
+        / "src/rudy_description/urdf/rudy.urdf.xacro",
     )
     args = parser.parse_args()
 

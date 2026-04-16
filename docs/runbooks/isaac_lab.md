@@ -1,4 +1,4 @@
-# Runbook: Isaac Lab / Isaac Sim (Murphy desktop)
+# Runbook: Isaac Lab / Isaac Sim (Rudy desktop)
 
 ## Preconditions
 
@@ -8,17 +8,17 @@
 
 ## Repo layout
 
-- **Configs**: `src/murphy_simulation/configs/` (`domain_rand.yaml`, `contact.yaml`, `actuator_model.yaml`)
-- **Scaffold env**: `src/murphy_simulation/murphy_simulation/envs/murphy_env.py`
-- **Training entrypoint**: `murphy_train` console script (scaffold)
+- **Configs**: `src/rudy_simulation/configs/` (`domain_rand.yaml`, `contact.yaml`, `actuator_model.yaml`)
+- **Scaffold env**: `src/rudy_simulation/rudy_simulation/envs/rudy_env.py`
+- **Training entrypoint**: `rudy_train` console script (scaffold)
 
 ## Policy
 
-- **URDF** in `murphy_description` remains the kinematic source of truth imported into sim.
+- **URDF** in `rudy_description` remains the kinematic source of truth imported into sim.
 - **Actuator spec** in `config/actuators/robstride_rs03.yaml` must inform sim actuator dynamics (see parity tests in `tests/`).
 
 ## Next wiring steps (intentionally not automated here)
 
-1. Import Murphy USD/URDF into Isaac Lab task config.
+1. Import Rudy USD/URDF into Isaac Lab task config.
 2. Match observation/action spaces to **on-robot** sensors only (no privileged teacher features in deployment policy).
 3. Add deterministic regression tests that run in CI without a GPU (YAML + unit tests), and optional nightly GPU training jobs.

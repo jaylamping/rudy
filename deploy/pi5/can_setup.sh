@@ -9,8 +9,8 @@ for iface in can0 can1; do
     ip link set "$iface" down || true
     ip link set "$iface" up type can bitrate "$BR"
     ip link set "$iface" txqueuelen 65536
-    echo "murphy-can: $iface up @ ${BR} bps"
+    echo "rudy-can: $iface up @ ${BR} bps"
   else
-    echo "murphy-can: $iface not found (check HAT / overlays / boot config)" >&2
+    echo "rudy-can: $iface not found (check HAT / overlays / boot config)" >&2
   fi
 done

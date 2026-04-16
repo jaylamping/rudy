@@ -1,17 +1,17 @@
-# Murphy
+# Rudy
 
-ROS 2 **Jazzy** workspace for the Murphy upper-body humanoid (RobStride RS03 actuators, CAN bus, Isaac Lab sim-to-real).
+ROS 2 **Jazzy** workspace for the Rudy upper-body humanoid (RobStride RS03 actuators, CAN bus, Isaac Lab sim-to-real).
 
 ## Layout
 
-- `src/murphy_description` — URDF / xacro robot model (kinematic source of truth)
-- `src/murphy_bringup` — XML launch files and runtime parameters
-- `src/murphy_msgs` — Custom message / service / action definitions (placeholder for now)
-- `src/murphy_driver` — **Rust** CAN driver + protocol (`murphy_driver_node`)
-- `src/murphy_control` — `ros2_control` hardware plugin(s) + controller YAML (starts with a loopback `SystemInterface`)
-- `src/murphy_telemetry` — diagnostics + rosbag launch helpers
-- `src/murphy_simulation` — Isaac Lab scaffold + sim YAML configs
-- `src/murphy_tests` — `launch_testing` + parity tests
+- `src/rudy_description` — URDF / xacro robot model (kinematic source of truth)
+- `src/rudy_bringup` — XML launch files and runtime parameters
+- `src/rudy_msgs` — Custom message / service / action definitions (placeholder for now)
+- `src/rudy_driver` — **Rust** CAN driver + protocol (`rudy_driver_node`)
+- `src/rudy_control` — `ros2_control` hardware plugin(s) + controller YAML (starts with a loopback `SystemInterface`)
+- `src/rudy_telemetry` — diagnostics + rosbag launch helpers
+- `src/rudy_simulation` — Isaac Lab scaffold + sim YAML configs
+- `src/rudy_tests` — `launch_testing` + parity tests
 - `config/` — Workspace-wide configuration (actuator specs, etc.)
 - `deploy/pi5/` — Raspberry Pi 5 bring-up + deploy scripts
 - `.devcontainer/` — Desktop dev container (ROS Jazzy + Rust + cross tools)
@@ -25,7 +25,7 @@ ROS 2 **Jazzy** workspace for the Murphy upper-body humanoid (RobStride RS03 act
 ## Build
 
 ```bash
-cd /path/to/murphy
+cd /path/to/rudy
 source /opt/ros/jazzy/setup.bash
 rosdep install --from-paths src --ignore-src -r -y
 colcon build --symlink-install
@@ -40,7 +40,7 @@ python3 -m pip install -U pytest pyyaml xacro urdfdom-py
 python3 -m pytest -q tests
 
 # Rust unit tests (driver)
-(cd src/murphy_driver && cargo test)
+(cd src/rudy_driver && cargo test)
 
 # ROS package tests (after colcon build)
 colcon test
@@ -50,7 +50,7 @@ colcon test-result --verbose
 ## Visualize the model
 
 ```bash
-ros2 launch murphy_bringup display_model.launch.xml
+ros2 launch rudy_bringup display_model.launch.xml
 ```
 
 ## Validate URDF (without full ROS)
@@ -59,8 +59,8 @@ ros2 launch murphy_bringup display_model.launch.xml
 brew install urdfdom graphviz   # macOS example
 python3 -m venv .venv && .venv/bin/pip install xacro urdfdom-py
 
-PATH="$PWD/.venv/bin:$PATH" xacro src/murphy_description/urdf/murphy.urdf.xacro > /tmp/murphy.urdf
-check_urdf /tmp/murphy.urdf
+PATH="$PWD/.venv/bin:$PATH" xacro src/rudy_description/urdf/rudy.urdf.xacro > /tmp/rudy.urdf
+check_urdf /tmp/rudy.urdf
 PATH="$PWD/.venv/bin:$PATH" python3 scripts/validate_urdf.py
 ```
 

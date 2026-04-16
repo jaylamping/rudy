@@ -1,4 +1,4 @@
-# Runbook: Raspberry Pi 5 (Murphy onboard)
+# Runbook: Raspberry Pi 5 (Rudy onboard)
 
 ## Preconditions
 
@@ -28,7 +28,7 @@ sudo ./deploy/pi5/can_setup.sh 1000000
 
 ```bash
 source /opt/ros/jazzy/setup.bash
-source ~/murphy/install/setup.bash  # after deploy
+source ~/rudy/install/setup.bash  # after deploy
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 ```
 
@@ -36,7 +36,7 @@ export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
 ```bash
 colcon build --symlink-install
-./deploy/pi5/deploy.sh ubuntu@murphy-pi.local
+./deploy/pi5/deploy.sh ubuntu@rudy-pi.local
 ```
 
 ## CAN debugging checklist

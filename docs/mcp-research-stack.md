@@ -1,6 +1,6 @@
 # MCP stack for easy research (Cursor)
 
-This is the **minimal two-server setup** recommended for Murphy: one for **web / docs / products**, one for **papers and citations**. Both run via `npx` so you do not maintain local clones.
+This is the **minimal two-server setup** recommended for Rudy: one for **web / docs / products**, one for **papers and citations**. Both run via `npx` so you do not maintain local clones.
 
 ## 1. Tavily (web search, extract, map, crawl)
 

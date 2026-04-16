@@ -1,4 +1,4 @@
-# RobStride RS03 integrated actuator — Murphy canonical hardware spec.
+# RobStride RS03 integrated actuator — Rudy canonical hardware spec.
 # URDF effort/velocity caps and joint limits should stay consistent with this file (see tests/).
 
 schema_version: 1
@@ -32,7 +32,7 @@ control_modes:
     torque_max_nm: 60.0
 
 dynamics:
-  # Values mirrored in murphy_description xacro (URDF <dynamics>)
+  # Values mirrored in rudy_description xacro (URDF <dynamics>)
   joint_damping: 0.3
   joint_friction: 0.08
   safety_controller:

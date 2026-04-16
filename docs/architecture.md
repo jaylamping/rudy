@@ -1,10 +1,10 @@
-# Murphy architecture
+# Rudy architecture
 
-This document is the **living** system architecture for the Murphy monorepo. Update it whenever packages, data flows, or deployment topology change.
+This document is the **living** system architecture for the Rudy monorepo. Update it whenever packages, data flows, or deployment topology change.
 
 ## Topology
 
-Murphy uses a **two-machine** layout:
+Rudy uses a **two-machine** layout:
 
 - **Desktop (x86_64 + NVIDIA GPU)**: development, `colcon` builds, Isaac Lab training, RViz, heavy logging.
 - **Raspberry Pi 5 (aarch64 + CAN HAT)**: onboard runtime — CAN driver, `ros2_control`, telemetry, policy inference.
@@ -19,9 +19,9 @@ graph LR
   end
 
   subgraph pi5 [Pi5_aarch64]
-    Driver[murphy_driver_Rust]
-    Control[murphy_control]
-    Telem[murphy_telemetry]
+    Driver[rudy_driver_Rust]
+    Control[rudy_control]
+    Telem[rudy_telemetry]
     Driver --> CAN[SocketCAN]
     Control --> Driver
     Telem --> Driver
@@ -36,34 +36,34 @@ graph LR
 
 | Package | Role |
 |---------|------|
-| `murphy_description` | URDF / xacro — kinematic source of truth |
-| `murphy_bringup` | XML launch + YAML params |
-| `murphy_msgs` | Custom messages (placeholder) |
-| `murphy_driver` | Rust CAN stack + `murphy_driver_node` (SocketCAN; Linux-only I/O) |
-| `murphy_control` | `ros2_control` hardware plugin(s) + controller YAML |
-| `murphy_telemetry` | Diagnostics + rosbag launch helpers |
-| `murphy_simulation` | Isaac Lab scaffold + sim config YAML |
-| `murphy_tests` | `launch_testing` + parity tests |
+| `rudy_description` | URDF / xacro — kinematic source of truth |
+| `rudy_bringup` | XML launch + YAML params |
+| `rudy_msgs` | Custom messages (placeholder) |
+| `rudy_driver` | Rust CAN stack + `rudy_driver_node` (SocketCAN; Linux-only I/O) |
+| `rudy_control` | `ros2_control` hardware plugin(s) + controller YAML |
+| `rudy_telemetry` | Diagnostics + rosbag launch helpers |
+| `rudy_simulation` | Isaac Lab scaffold + sim config YAML |
+| `rudy_tests` | `launch_testing` + parity tests |
 
 ## Data flow (target)
 
 ```mermaid
 graph TD
-  CM[controller_manager] --> HWI[murphy_control_plugin]
-  HWI -->|ROS_topics| RustNode[murphy_driver_node]
+  CM[controller_manager] --> HWI[rudy_control_plugin]
+  HWI -->|ROS_topics| RustNode[rudy_driver_node]
   RustNode --> CAN[can0_can1]
   RustNode --> Diag[/diagnostics]
   RustNode --> JS[/joint_states]
 ```
 
-Today: `murphy_control` ships a **loopback** `SystemInterface` for CI/bring-up. The topic bridge to the Rust driver is the next integration step.
+Today: `rudy_control` ships a **loopback** `SystemInterface` for CI/bring-up. The topic bridge to the Rust driver is the next integration step.
 
 ## Configuration hierarchy
 
 - **Actuator truth**: [`config/actuators/robstride_rs03.yaml`](../config/actuators/robstride_rs03.yaml)
 - **URDF limits/dynamics**: must stay consistent with the actuator spec (enforced by `tests/`)
-- **Sim randomization**: `src/murphy_simulation/configs/*.yaml`
-- **ROS parameters**: per-package `config/` + `murphy_bringup`
+- **Sim randomization**: `src/rudy_simulation/configs/*.yaml`
+- **ROS parameters**: per-package `config/` + `rudy_bringup`
 
 ## See also
 

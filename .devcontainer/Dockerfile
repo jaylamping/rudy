@@ -1,4 +1,4 @@
-# Murphy development container: ROS 2 Jazzy (Noble) + Rust + cross tools + CAN utils.
+# Rudy development container: ROS 2 Jazzy (Noble) + Rust + cross tools + CAN utils.
 # x86_64 host. Isaac Sim / Isaac Lab are installed on the host GPU stack, not inside this image.
 FROM osrf/ros:jazzy-desktop-full-noble
 

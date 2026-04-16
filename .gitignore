@@ -18,4 +18,4 @@ __pycache__/
 .firecrawl/
 
 # Rust (local `cargo` without CMake / editor checks)
-src/murphy_driver/target/
+src/rudy_driver/target/

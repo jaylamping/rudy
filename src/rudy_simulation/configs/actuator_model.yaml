@@ -1,0 +1,9 @@
+# Sim actuator dynamics — should track config/actuators/robstride_rs03.yaml (gold standard).
+schema_version: 1
+
+# Path is relative to the repository root (same layout in CI and on developer machines).
+reference_spec: "config/actuators/robstride_rs03.yaml"
+
+# Placeholder dynamics beyond URDF damping/friction (add backlash, torque ripple, thermal).
+latency_ms: {min: 1.0, max: 4.0}
+torque_noise_nm_std: 0.05

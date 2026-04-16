@@ -1,4 +1,4 @@
-# Copyright 2026 Murphy contributors
+# Copyright 2026 Rudy contributors
 # SPDX-License-Identifier: Apache-2.0
 
 """Parity checks between URDF and actuator spec (gold standard tests)."""
@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-XACRO = REPO_ROOT / "src" / "murphy_description" / "urdf" / "murphy.urdf.xacro"
+XACRO = REPO_ROOT / "src" / "rudy_description" / "urdf" / "rudy.urdf.xacro"
 
 
 @pytest.fixture(scope="module")

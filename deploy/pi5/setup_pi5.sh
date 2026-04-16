@@ -3,7 +3,7 @@
 # Run on the Pi as a user with sudo. Review and edit CAN overlays in /boot/firmware/config.txt first.
 set -euo pipefail
 
-echo "== Murphy Pi 5 setup =="
+echo "== Rudy Pi 5 setup =="
 echo "Ensure Ubuntu sources include noble-updates and noble-backports (ROS Jazzy on arm64)."
 sudo apt-get update
 sudo apt-get install -y chrony can-utils iproute2 curl gnupg lsb-release software-properties-common
@@ -19,9 +19,9 @@ echo "export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp" >> ~/.bashrc || true
 echo "source /opt/ros/jazzy/setup.bash" >> ~/.bashrc || true
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-sudo install -m 0755 "${SCRIPT_DIR}/can_setup.sh" /usr/local/bin/murphy-can-setup.sh
-sudo install -m 0644 "${SCRIPT_DIR}/murphy-can.service" /etc/systemd/system/murphy-can.service
+sudo install -m 0755 "${SCRIPT_DIR}/can_setup.sh" /usr/local/bin/rudy-can-setup.sh
+sudo install -m 0644 "${SCRIPT_DIR}/rudy-can.service" /etc/systemd/system/rudy-can.service
 sudo systemctl daemon-reload
-sudo systemctl enable murphy-can.service
+sudo systemctl enable rudy-can.service
 
-echo "Done. Reboot after editing /boot/firmware/config.txt for CAN overlays, then: sudo systemctl start murphy-can"
+echo "Done. Reboot after editing /boot/firmware/config.txt for CAN overlays, then: sudo systemctl start rudy-can"

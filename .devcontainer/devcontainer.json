@@ -1,5 +1,5 @@
 {
-  "name": "Murphy ROS 2 Jazzy",
+  "name": "Rudy ROS 2 Jazzy",
   "build": {
     "dockerfile": "Dockerfile",
     "context": "."

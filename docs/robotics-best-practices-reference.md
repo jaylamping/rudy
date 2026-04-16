@@ -1,4 +1,4 @@
-# Robotics research and engineering reference (Murphy)
+# Robotics research and engineering reference (Rudy)
 
 **Canonical bibliography for the repo.** Cursor agents: read this file (and `docs/research/`) for conceptual answers; cite URLs below.
 
@@ -33,7 +33,7 @@ Use these as entry points to related work (titles as indexed on Semantic Scholar
 ### 1.3 Software: rigid-body kinematics / dynamics stacks
 
 - **[Pinocchio](https://github.com/stack-of-tasks/pinocchio)** — Fast RBD algorithms, derivatives; URDF / MJCF / SRDF; [docs](https://gepettoweb.laas.fr/doc/stack-of-tasks/pinocchio/devel/doxygen-html/), [HAL paper PDF](https://laas.hal.science/hal-01866228v1/document).
-- **[Drake](https://drake.mit.edu/)** — Multibody dynamics, trajectory optimization, contact-rich modeling (complements MuJoCo/Isaac in Murphy’s planned stack).
+- **[Drake](https://drake.mit.edu/)** — Multibody dynamics, trajectory optimization, contact-rich modeling (complements MuJoCo/Isaac in Rudy’s planned stack).
 - **[Orocos KDL](https://www.orocos.org/kdl.html)** — Classic chain kinematics; still referenced across ROS ecosystems ([ROS index](https://index.ros.org/p/orocos_kdl/)).
 
 ### 1.4 Task / motion planning (optimization angle)
@@ -67,7 +67,7 @@ Use these as entry points to related work (titles as indexed on Semantic Scholar
 
 - **[Joint limits and dynamics (Leyaa deep dive)](https://leyaa.ai/core-engineering/learn/ros/part-2/ros-joint-limits-and-dynamics/deep)** — position + velocity + effort; soft limits; sim vs real.
 
-**Murphy practice:** keep limits in URDF as source of truth, mirror or override in YAML where `ros2_control` / MoveIt require it, and document the mapping in package READMEs.
+**Rudy practice:** keep limits in URDF as source of truth, mirror or override in YAML where `ros2_control` / MoveIt require it, and document the mapping in package READMEs.
 
 ---
 
@@ -87,13 +87,13 @@ Use these as entry points to related work (titles as indexed on Semantic Scholar
 
 - **[Eaton: Basics of power system design](https://www.eaton.com/us/en-us/support/business-resources/consultants-engineers/consultant---engineer-resources-for-medium-voltage-power---eaton/power-distribution-design-guide.html)** — Protection, coordination, grounding discipline (analogy: branch protection and coordination for robot DC trees).
 
-**Murphy practice:** separate **logic/compute power** from **high‑current actuator rails**, define **inrush / precharge** where bulk capacitance exists, document **fuse or electronic breaker** per branch, and keep **CAN / data** galvanic and routing plan alongside power (see §4).
+**Rudy practice:** separate **logic/compute power** from **high‑current actuator rails**, define **inrush / precharge** where bulk capacitance exists, document **fuse or electronic breaker** per branch, and keep **CAN / data** galvanic and routing plan alongside power (see §4).
 
 ---
 
 ## 4. Data distribution, fieldbuses, and “robot backbone”
 
-### 4.1 CAN (Murphy’s near-term actuator bus)
+### 4.1 CAN (Rudy’s near-term actuator bus)
 
 - Still the default for many integrated actuators; pair with **clear ID allocation**, **bus loading analysis**, and **fault containment** (stubs, terminators, segmented harnesses).
 
@@ -114,7 +114,7 @@ Use these as entry points to related work (titles as indexed on Semantic Scholar
 - **[Rockwell FOUNDATION Fieldbus design (PDF)](https://literature.rockwellautomation.com/idc/groups/literature/documents/rm/rsfbus-rm001_-en-p.pdf)** — Classic trunk/spur and power distribution discipline (analogous to robot harness design reviews).
 - **[Fieldbus selection (GlobalSpec)](https://www.globalspec.com/learnmore/industrial_computers_embedded_systems/industrial_computing/fieldbus_products)** — Protocol comparison tables.
 
-**Murphy practice:** document **data rate, worst-case latency, cable count, and failure modes** (open circuit, short, stuck dominant) alongside **power tree** in `docs/` or package README when hardware stabilizes.
+**Rudy practice:** document **data rate, worst-case latency, cable count, and failure modes** (open circuit, short, stuck dominant) alongside **power tree** in `docs/` or package README when hardware stabilizes.
 
 ---
 
@@ -129,7 +129,7 @@ Use these as entry points to related work (titles as indexed on Semantic Scholar
 - **Industrial survey PDF (ResearchGate landing):** [Current and emerging techniques in robotic software design: ROS 2, DDS, architectures](https://www.researchgate.net/publication/401165556_Current_and_Emerging_Techniques_in_Robotic_Software_Design_for_Industrial_Deployment_ROS_2_DDS_and_Software_Architectures) — sense–plan–act, pub/sub, microservice angles.
 - **Real-time:** [A survey of real-time support and analysis in ROS 2 (arXiv PDF)](https://arxiv.org/pdf/2601.10722) — scheduling, executors, timing (read alongside your RTOS / PREEMPT_RT choices if any).
 
-### 5.1 Henki-style project hygiene (still the default for Murphy)
+### 5.1 Henki-style project hygiene (still the default for Rudy)
 
 - **[Henki ROS 2 Best Practices (GitHub)](https://github.com/henki-robotics/henki_ros2_best_practices)** — Single-responsibility nodes, XML launch, YAML params, logging discipline, messages vs services vs actions, testing split, `rosdep`.
 - **[Henki blog](https://henkirobotics.com/ros-2-best-practices/)** — Narrative and agent examples.
@@ -163,13 +163,13 @@ Use these as entry points to related work (titles as indexed on Semantic Scholar
 
 ---
 
-## 9. Murphy stack alignment (intent)
+## 9. Rudy stack alignment (intent)
 
 | Layer | Direction |
 |-------|-----------|
-| Description | URDF / xacro in `murphy_description` |
-| Bringup | XML launch + YAML params in `murphy_bringup` |
-| Interfaces | `murphy_msgs` |
+| Description | URDF / xacro in `rudy_description` |
+| Bringup | XML launch + YAML params in `rudy_bringup` |
+| Interfaces | `rudy_msgs` |
 | Planning / control | MoveIt 2 + `ros2_control` (phased); keep URDF ↔ YAML limit parity documented |
 | Sim-to-real | MuJoCo + Isaac Lab (per project plan) |
 | Performance nodes | `ros2_rust` where appropriate |

@@ -1,4 +1,4 @@
-# Raspberry Pi 5 deployment (Murphy)
+# Raspberry Pi 5 deployment (Rudy)
 
 Scripts in this directory target **Ubuntu 24.04 (aarch64)** on a Raspberry Pi 5 with the **Waveshare 2-CH CAN HAT** (MCP2515).
 
@@ -9,7 +9,7 @@ Scripts in this directory target **Ubuntu 24.04 (aarch64)** on a Raspberry Pi 5 
 | `Dockerfile.pi5` | Cross-compilation image (Rust + aarch64 toolchain) |
 | `setup_pi5.sh` | One-time Pi setup: ROS 2 Jazzy base, CycloneDDS, CAN systemd unit |
 | `can_setup.sh` | Bring up `can0` / `can1` at 1 Mbps |
-| `murphy-can.service` | systemd unit (installed to `/etc/systemd/system/`) |
+| `rudy-can.service` | systemd unit (installed to `/etc/systemd/system/`) |
 | `deploy.sh` | `rsync` of `install/` + `config/` to the Pi |
 | `config.txt.example` | Example `/boot/firmware/config.txt` lines for SPI + MCP2515 overlays |
 

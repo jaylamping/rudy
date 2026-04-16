@@ -1,4 +1,4 @@
-# Copyright 2026 Murphy contributors
+# Copyright 2026 Rudy contributors
 # SPDX-License-Identifier: Apache-2.0
 
 """Validate config/actuators/robstride_rs03.yaml structure and numeric sanity."""
@@ -47,7 +47,7 @@ def test_control_modes_ranges() -> None:
 
 
 def test_dynamics_match_urdf_defaults() -> None:
-    """Gold standard: URDF murphy.urdf.xacro uses same damping/friction as spec."""
+    """Gold standard: URDF rudy.urdf.xacro uses same damping/friction as spec."""
     dyn = _load()["dynamics"]
     assert dyn["joint_damping"] == pytest.approx(0.3)
     assert dyn["joint_friction"] == pytest.approx(0.08)
@@ -58,7 +58,7 @@ def test_dynamics_match_urdf_defaults() -> None:
 def test_effort_velocity_match_urdf_caps() -> None:
     """Gold standard: URDF effort_cap / velocity_cap align with RS03 spec."""
     lim = _load()["limits"]
-    xacro = REPO_ROOT / "src" / "murphy_description" / "urdf" / "murphy.urdf.xacro"
+    xacro = REPO_ROOT / "src" / "rudy_description" / "urdf" / "rudy.urdf.xacro"
     text = xacro.read_text(encoding="utf-8")
     assert lim["effort_max_nm"] == pytest.approx(60.0)
     assert lim["velocity_max_rad_s"] == pytest.approx(50.0)
