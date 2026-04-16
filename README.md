@@ -1,5 +1,9 @@
 # Rudy
 
+<p align="center">
+  <img src="docs/images/rudy_the_robot.png" alt="Rudy the robot: grey cylindrical body, blue screen face with simple line eyes and mouth, accordion arms, glowing light bulb on its head" width="320">
+</p>
+
 ROS 2 **Jazzy** workspace for the Rudy upper-body humanoid (RobStride RS03 actuators, CAN bus, Isaac Lab sim-to-real).
 
 ## Layout
