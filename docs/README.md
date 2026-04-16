@@ -2,7 +2,7 @@
 
 | Document | Purpose |
 |----------|---------|
-| [robotics-best-practices-reference.md](robotics-best-practices-reference.md) | Curated index of open-source robotics coding best practices: ROS 2 architecture, URDF / joint limits, motion planning, safety, simulation, CI/CD, and frameworks. **Start here** for conceptual work. |
+| [robotics-best-practices-reference.md](robotics-best-practices-reference.md) | **Canonical** robotics reference: kinematics & WBC (2024–2026), joint limits & `ros2_control`, power & BMS, data backbone (CAN / EtherCAT / TSN), ROS 2 design patterns, simulation, CI, safety, plus Murphy alignment. **Start here** for conceptual work. |
 | [mcp-research-stack.md](mcp-research-stack.md) | Recommended **Cursor MCP** setup for low-friction research: Tavily (web) + Semantic Scholar (papers). |
 | [research/README.md](research/README.md) | Manifest of raw Firecrawl exports (offline snapshots of key pages and search results). |
 

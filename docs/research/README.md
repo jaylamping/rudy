@@ -2,6 +2,8 @@
 
 This folder preserves material gathered for Murphy’s architecture and best-practices baseline so it is not lost if URLs move or paywalls appear.
 
+**Curated index:** the up-to-date, organized bibliography lives in [`../robotics-best-practices-reference.md`](../robotics-best-practices-reference.md) (April 2026 refresh). Use this folder for raw captures; use that file for navigation and Murphy-specific notes.
+
 ## Contents
 
 Subfolder **`firecrawl-exports-2026-04-15/`** contains:
