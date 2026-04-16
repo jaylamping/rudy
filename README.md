@@ -8,6 +8,7 @@ ROS 2 workspace for the Murphy humanoid (RobStride RS03 actuators, sim-to-real s
 - `src/murphy_bringup` — XML launch files and runtime parameters
 - `src/murphy_msgs` — Custom message / service / action definitions (placeholder for now)
 - `config/` — Workspace-level shared configuration (non-ROS)
+- [`docs/`](docs/README.md) — Robotics best-practices reference + offline research exports (Firecrawl snapshots)
 
 ## Prerequisites
 
