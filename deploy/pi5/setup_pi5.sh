@@ -19,9 +19,9 @@ echo "export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp" >> ~/.bashrc || true
 echo "source /opt/ros/jazzy/setup.bash" >> ~/.bashrc || true
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-sudo install -m 0755 "${SCRIPT_DIR}/can_setup.sh" /usr/local/bin/rudy-can-setup.sh
-sudo install -m 0644 "${SCRIPT_DIR}/rudy-can.service" /etc/systemd/system/rudy-can.service
+sudo install -m 0755 "${SCRIPT_DIR}/can_setup.sh" /usr/local/bin/robot-can-setup.sh
+sudo install -m 0644 "${SCRIPT_DIR}/robot-can.service" /etc/systemd/system/robot-can.service
 sudo systemctl daemon-reload
-sudo systemctl enable rudy-can.service
+sudo systemctl enable robot-can.service
 
-echo "Done. Reboot after editing /boot/firmware/config.txt for CAN overlays, then: sudo systemctl start rudy-can"
+echo "Done. Reboot after editing /boot/firmware/config.txt for CAN overlays, then: sudo systemctl start robot-can"

@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-XACRO = REPO_ROOT / "src" / "rudy_description" / "urdf" / "rudy.urdf.xacro"
+XACRO = REPO_ROOT / "src" / "description" / "urdf" / "robot.urdf.xacro"
 
 
 @pytest.fixture(scope="module")

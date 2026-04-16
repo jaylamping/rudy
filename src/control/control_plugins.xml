@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<library path="topic_loopback_hardware">
+  <class name="control/TopicLoopbackHardware"
+         type="control::TopicLoopbackHardware"
+         base_class_type="hardware_interface::SystemInterface">
+    <description>
+      Minimal loopback SystemInterface for Rudy bring-up (position command mirrors state).
+      Replaced/extended by topic bridge to Rust driver as the stack matures.
+    </description>
+  </class>
+</library>

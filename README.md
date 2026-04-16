@@ -8,14 +8,14 @@ ROS 2 **Jazzy** workspace for the Rudy upper-body humanoid (RobStride RS03 actua
 
 ## Layout
 
-- `src/rudy_description` — URDF / xacro robot model (kinematic source of truth)
-- `src/rudy_bringup` — XML launch files and runtime parameters
-- `src/rudy_msgs` — Custom message / service / action definitions (placeholder for now)
-- `src/rudy_driver` — **Rust** CAN driver + protocol (`rudy_driver_node`)
-- `src/rudy_control` — `ros2_control` hardware plugin(s) + controller YAML (starts with a loopback `SystemInterface`)
-- `src/rudy_telemetry` — diagnostics + rosbag launch helpers
-- `src/rudy_simulation` — Isaac Lab scaffold + sim YAML configs
-- `src/rudy_tests` — `launch_testing` + parity tests
+- `src/description` — URDF / xacro robot model (kinematic source of truth)
+- `src/bringup` — XML launch files and runtime parameters
+- `src/msgs` — Custom message / service / action definitions (placeholder for now)
+- `src/driver` — **Rust** CAN driver + protocol (`driver_node`)
+- `src/control` — `ros2_control` hardware plugin(s) + controller YAML (starts with a loopback `SystemInterface`)
+- `src/telemetry` — diagnostics + rosbag launch helpers
+- `src/simulation` — Isaac Lab scaffold + sim YAML configs
+- `src/tests` — `launch_testing` + parity tests
 - `config/` — Workspace-wide configuration (actuator specs, etc.)
 - `deploy/pi5/` — Raspberry Pi 5 bring-up + deploy scripts
 - `.devcontainer/` — Desktop dev container (ROS Jazzy + Rust + cross tools)
@@ -29,7 +29,7 @@ ROS 2 **Jazzy** workspace for the Rudy upper-body humanoid (RobStride RS03 actua
 ## Build
 
 ```bash
-cd /path/to/rudy
+cd /path/to/robot
 source /opt/ros/jazzy/setup.bash
 rosdep install --from-paths src --ignore-src -r -y
 colcon build --symlink-install
@@ -44,7 +44,7 @@ python3 -m pip install -U pytest pyyaml xacro urdfdom-py
 python3 -m pytest -q tests
 
 # Rust unit tests (driver)
-(cd src/rudy_driver && cargo test)
+(cd src/driver && cargo test)
 
 # ROS package tests (after colcon build)
 colcon test
@@ -54,7 +54,7 @@ colcon test-result --verbose
 ## Visualize the model
 
 ```bash
-ros2 launch rudy_bringup display_model.launch.xml
+ros2 launch bringup display_model.launch.xml
 ```
 
 ## Validate URDF (without full ROS)
@@ -63,8 +63,8 @@ ros2 launch rudy_bringup display_model.launch.xml
 brew install urdfdom graphviz   # macOS example
 python3 -m venv .venv && .venv/bin/pip install xacro urdfdom-py
 
-PATH="$PWD/.venv/bin:$PATH" xacro src/rudy_description/urdf/rudy.urdf.xacro > /tmp/rudy.urdf
-check_urdf /tmp/rudy.urdf
+PATH="$PWD/.venv/bin:$PATH" xacro src/description/urdf/robot.urdf.xacro > /tmp/robot.urdf
+check_urdf /tmp/robot.urdf
 PATH="$PWD/.venv/bin:$PATH" python3 scripts/validate_urdf.py
 ```
 

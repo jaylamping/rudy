@@ -1,0 +1,15 @@
+# diagnostic_aggregator configuration (Rudy).
+# See: https://github.com/ros/diagnostics/tree/ros2/diagnostic_aggregator
+analyzers:
+  ros__parameters:
+    analyzers:
+      robot:
+        type: diagnostic_aggregator/AnalyzerGroup
+        path: robot
+        analyzers:
+          system:
+            type: diagnostic_aggregator/GenericAnalyzer
+            path: system
+            startswith: ["robot", "driver", "controller", "joint"]
+            timeout: 5.0
+            num_items: 1

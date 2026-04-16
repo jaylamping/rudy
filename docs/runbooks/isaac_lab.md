@@ -8,13 +8,13 @@
 
 ## Repo layout
 
-- **Configs**: `src/rudy_simulation/configs/` (`domain_rand.yaml`, `contact.yaml`, `actuator_model.yaml`)
-- **Scaffold env**: `src/rudy_simulation/rudy_simulation/envs/rudy_env.py`
-- **Training entrypoint**: `rudy_train` console script (scaffold)
+- **Configs**: `src/simulation/configs/` (`domain_rand.yaml`, `contact.yaml`, `actuator_model.yaml`)
+- **Scaffold env**: `src/simulation/simulation/envs/sim_env.py`
+- **Training entrypoint**: `sim_train` console script (scaffold)
 
 ## Policy
 
-- **URDF** in `rudy_description` remains the kinematic source of truth imported into sim.
+- **URDF** in `description` remains the kinematic source of truth imported into sim.
 - **Actuator spec** in `config/actuators/robstride_rs03.yaml` must inform sim actuator dynamics (see parity tests in `tests/`).
 
 ## Next wiring steps (intentionally not automated here)

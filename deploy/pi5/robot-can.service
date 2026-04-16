@@ -1,0 +1,12 @@
+[Unit]
+Description=Rudy SocketCAN bringup (Waveshare 2-CH HAT)
+After=network-pre.target
+Before=network-online.target driver.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/robot-can-setup.sh 1000000
+
+[Install]
+WantedBy=multi-user.target

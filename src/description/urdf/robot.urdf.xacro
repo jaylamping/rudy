@@ -1,0 +1,203 @@
+<?xml version="1.0"?>
+<!--
+  Rudy humanoid — kinematic skeleton for Phase 1.
+  Joint limits mirror mr_robot config/robot.yaml (RS03 caps: 60 Nm, 50 rad/s).
+  Frame convention: x forward, y left, z up. Left arm attaches on +y side of torso.
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="robot">
+  <!-- RS03 nominal caps (from robot.yaml actuators.rs03) -->
+  <xacro:property name="effort_cap" value="60.0"/>
+  <xacro:property name="velocity_cap" value="50.0"/>
+  <xacro:property name="joint_damping" value="0.3"/>
+  <xacro:property name="joint_friction" value="0.08"/>
+  <xacro:property name="k_pos" value="15.0"/>
+  <xacro:property name="k_vel" value="10.0"/>
+
+  <xacro:macro name="box_inertial" params="m x y z">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="${m}"/>
+      <inertia
+        ixx="${m * (y*y + z*z) / 12.0}"
+        ixy="0.0"
+        ixz="0.0"
+        iyy="${m * (x*x + z*z) / 12.0}"
+        iyz="0.0"
+        izz="${m * (x*x + y*y) / 12.0}"/>
+    </inertial>
+  </xacro:macro>
+
+  <xacro:macro name="box_link" params="name sx sy sz rgba mass">
+    <link name="${name}">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <box size="${sx} ${sy} ${sz}"/>
+        </geometry>
+        <material name="${name}_mat">
+          <color rgba="${rgba}"/>
+        </material>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <box size="${sx} ${sy} ${sz}"/>
+        </geometry>
+      </collision>
+      <xacro:box_inertial m="${mass}" x="${sx}" y="${sy}" z="${sz}"/>
+    </link>
+  </xacro:macro>
+
+  <!-- Macro: revolute joint with hard limits, dynamics, soft safety band (~0.12 rad inside hard stops) -->
+  <xacro:macro name="robot_revolute" params="name parent child axis lower upper soft_lower soft_upper origin_xyz origin_rpy">
+    <joint name="${name}" type="revolute">
+      <origin xyz="${origin_xyz}" rpy="${origin_rpy}"/>
+      <parent link="${parent}"/>
+      <child link="${child}"/>
+      <axis xyz="${axis}"/>
+      <limit lower="${lower}" upper="${upper}" effort="${effort_cap}" velocity="${velocity_cap}"/>
+      <dynamics damping="${joint_damping}" friction="${joint_friction}"/>
+      <safety_controller
+        k_position="${k_pos}"
+        k_velocity="${k_vel}"
+        soft_lower_limit="${soft_lower}"
+        soft_upper_limit="${soft_upper}"/>
+    </joint>
+  </xacro:macro>
+
+  <!-- Root -->
+  <xacro:box_link name="base_link" sx="0.35" sy="0.35" sz="0.04" rgba="0.2 0.2 0.25 1" mass="2.0"/>
+
+  <!-- Torso lower half (fixed to base); total torso height ~0.46 m from robot.yaml -->
+  <xacro:box_link name="torso_lower_link" sx="0.20" sy="0.16" sz="0.23" rgba="0.35 0.35 0.4 1" mass="8.0"/>
+
+  <joint name="base_to_torso_lower" type="fixed">
+    <origin xyz="0 0 0.13" rpy="0 0 0"/>
+    <parent link="base_link"/>
+    <child link="torso_lower_link"/>
+  </joint>
+
+  <!-- Torso upper (yaw waist); limits from robot.yaml waist.rotation -->
+  <xacro:box_link name="torso_upper_link" sx="0.20" sy="0.16" sz="0.23" rgba="0.4 0.4 0.45 1" mass="8.0"/>
+
+  <xacro:robot_revolute
+    name="waist_rotation_joint"
+    parent="torso_lower_link"
+    child="torso_upper_link"
+    axis="0 0 1"
+    lower="-1.57"
+    upper="1.57"
+    soft_lower="-1.45"
+    soft_upper="1.45"
+    origin_xyz="0 0 0.23"
+    origin_rpy="0 0 0"/>
+
+  <!-- Left arm links (visual/collision only; joint origins define kinematics) -->
+  <xacro:box_link name="l_shoulder_pitch_link" sx="0.08" sy="0.08" sz="0.14" rgba="0.2 0.55 0.3 1" mass="0.6"/>
+  <xacro:box_link name="l_shoulder_roll_link" sx="0.10" sy="0.10" sz="0.12" rgba="0.2 0.55 0.3 1" mass="0.5"/>
+  <xacro:box_link name="l_upper_arm_link" sx="0.09" sy="0.09" sz="0.22" rgba="0.2 0.55 0.3 1" mass="0.7"/>
+  <xacro:box_link name="l_forearm_link" sx="0.08" sy="0.08" sz="0.20" rgba="0.15 0.45 0.25 1" mass="0.5"/>
+
+  <!-- arm_left from robot.yaml -->
+  <xacro:robot_revolute
+    name="l_shoulder_pitch_joint"
+    parent="torso_upper_link"
+    child="l_shoulder_pitch_link"
+    axis="0 1 0"
+    lower="-1.57"
+    upper="3.14"
+    soft_lower="-1.45"
+    soft_upper="3.02"
+    origin_xyz="0 0.12 0.10"
+    origin_rpy="0 0 0"/>
+
+  <xacro:robot_revolute
+    name="l_shoulder_roll_joint"
+    parent="l_shoulder_pitch_link"
+    child="l_shoulder_roll_link"
+    axis="1 0 0"
+    lower="0.0"
+    upper="3.14"
+    soft_lower="0.12"
+    soft_upper="3.02"
+    origin_xyz="0 0 0.10"
+    origin_rpy="0 0 0"/>
+
+  <xacro:robot_revolute
+    name="l_upper_arm_yaw_joint"
+    parent="l_shoulder_roll_link"
+    child="l_upper_arm_link"
+    axis="0 0 1"
+    lower="-1.57"
+    upper="1.57"
+    soft_lower="-1.45"
+    soft_upper="1.45"
+    origin_xyz="0 0 0.08"
+    origin_rpy="0 0 0"/>
+
+  <xacro:robot_revolute
+    name="l_elbow_pitch_joint"
+    parent="l_upper_arm_link"
+    child="l_forearm_link"
+    axis="0 1 0"
+    lower="0.0"
+    upper="2.36"
+    soft_lower="0.12"
+    soft_upper="2.24"
+    origin_xyz="0 0 -0.18"
+    origin_rpy="0 0 0"/>
+
+  <!-- Right arm -->
+  <xacro:box_link name="r_shoulder_pitch_link" sx="0.08" sy="0.08" sz="0.14" rgba="0.25 0.35 0.65 1" mass="0.6"/>
+  <xacro:box_link name="r_shoulder_roll_link" sx="0.10" sy="0.10" sz="0.12" rgba="0.25 0.35 0.65 1" mass="0.5"/>
+  <xacro:box_link name="r_upper_arm_link" sx="0.09" sy="0.09" sz="0.22" rgba="0.25 0.35 0.65 1" mass="0.7"/>
+  <xacro:box_link name="r_forearm_link" sx="0.08" sy="0.08" sz="0.20" rgba="0.2 0.3 0.55 1" mass="0.5"/>
+
+  <xacro:robot_revolute
+    name="r_shoulder_pitch_joint"
+    parent="torso_upper_link"
+    child="r_shoulder_pitch_link"
+    axis="0 1 0"
+    lower="-1.57"
+    upper="3.14"
+    soft_lower="-1.45"
+    soft_upper="3.02"
+    origin_xyz="0 -0.12 0.10"
+    origin_rpy="0 0 0"/>
+
+  <xacro:robot_revolute
+    name="r_shoulder_roll_joint"
+    parent="r_shoulder_pitch_link"
+    child="r_shoulder_roll_link"
+    axis="1 0 0"
+    lower="-3.14"
+    upper="0.0"
+    soft_lower="-3.02"
+    soft_upper="-0.12"
+    origin_xyz="0 0 0.10"
+    origin_rpy="0 0 0"/>
+
+  <xacro:robot_revolute
+    name="r_upper_arm_yaw_joint"
+    parent="r_shoulder_roll_link"
+    child="r_upper_arm_link"
+    axis="0 0 1"
+    lower="-1.57"
+    upper="1.57"
+    soft_lower="-1.45"
+    soft_upper="1.45"
+    origin_xyz="0 0 0.08"
+    origin_rpy="0 0 0"/>
+
+  <xacro:robot_revolute
+    name="r_elbow_pitch_joint"
+    parent="r_upper_arm_link"
+    child="r_forearm_link"
+    axis="0 1 0"
+    lower="-2.36"
+    upper="0.0"
+    soft_lower="-2.24"
+    soft_upper="-0.12"
+    origin_xyz="0 0 -0.18"
+    origin_rpy="0 0 0"/>
+</robot>

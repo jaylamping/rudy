@@ -1,9 +1,0 @@
-# Placeholder controller parameters for Rudy (ros2_control).
-# Extend with joint_trajectory_controller / forward_command_controller as hardware stabilizes.
-
-controller_manager:
-  ros__parameters:
-    update_rate: 250  # Hz — tune for Pi5 + CAN budget
-
-rudy_joint_state_broadcaster:
-  ros__parameters: {}

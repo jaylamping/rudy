@@ -47,7 +47,7 @@ def test_control_modes_ranges() -> None:
 
 
 def test_dynamics_match_urdf_defaults() -> None:
-    """Gold standard: URDF rudy.urdf.xacro uses same damping/friction as spec."""
+    """Gold standard: URDF robot.urdf.xacro uses same damping/friction as spec."""
     dyn = _load()["dynamics"]
     assert dyn["joint_damping"] == pytest.approx(0.3)
     assert dyn["joint_friction"] == pytest.approx(0.08)
@@ -58,7 +58,7 @@ def test_dynamics_match_urdf_defaults() -> None:
 def test_effort_velocity_match_urdf_caps() -> None:
     """Gold standard: URDF effort_cap / velocity_cap align with RS03 spec."""
     lim = _load()["limits"]
-    xacro = REPO_ROOT / "src" / "rudy_description" / "urdf" / "rudy.urdf.xacro"
+    xacro = REPO_ROOT / "src" / "description" / "urdf" / "robot.urdf.xacro"
     text = xacro.read_text(encoding="utf-8")
     assert lim["effort_max_nm"] == pytest.approx(60.0)
     assert lim["velocity_max_rad_s"] == pytest.approx(50.0)

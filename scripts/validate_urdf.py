@@ -32,7 +32,7 @@ def main() -> int:
         "--xacro",
         type=Path,
         default=Path(__file__).resolve().parents[1]
-        / "src/rudy_description/urdf/rudy.urdf.xacro",
+        / "src/description/urdf/robot.urdf.xacro",
     )
     args = parser.parse_args()
 

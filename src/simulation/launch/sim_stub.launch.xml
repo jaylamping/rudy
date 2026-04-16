@@ -1,0 +1,4 @@
+<?xml version="1.0"?>
+<launch>
+  <executable cmd="/bin/echo simulation_stub_see_docs_runbooks_isaac_lab_md" output="screen"/>
+</launch>

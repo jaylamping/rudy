@@ -28,7 +28,7 @@ sudo ./deploy/pi5/can_setup.sh 1000000
 
 ```bash
 source /opt/ros/jazzy/setup.bash
-source ~/rudy/install/setup.bash  # after deploy
+source ~/robot/install/setup.bash  # after deploy
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 ```
 
@@ -36,7 +36,7 @@ export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
 ```bash
 colcon build --symlink-install
-./deploy/pi5/deploy.sh ubuntu@rudy-pi.local
+./deploy/pi5/deploy.sh ubuntu@robot-pi.local
 ```
 
 ## CAN debugging checklist

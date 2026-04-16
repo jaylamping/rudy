@@ -167,9 +167,9 @@ Use these as entry points to related work (titles as indexed on Semantic Scholar
 
 | Layer | Direction |
 |-------|-----------|
-| Description | URDF / xacro in `rudy_description` |
-| Bringup | XML launch + YAML params in `rudy_bringup` |
-| Interfaces | `rudy_msgs` |
+| Description | URDF / xacro in `description` |
+| Bringup | XML launch + YAML params in `bringup` |
+| Interfaces | `msgs` |
 | Planning / control | MoveIt 2 + `ros2_control` (phased); keep URDF ↔ YAML limit parity documented |
 | Sim-to-real | MuJoCo + Isaac Lab (per project plan) |
 | Performance nodes | `ros2_rust` where appropriate |

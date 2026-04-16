@@ -9,7 +9,7 @@ Scripts in this directory target **Ubuntu 24.04 (aarch64)** on a Raspberry Pi 5 
 | `Dockerfile.pi5` | Cross-compilation image (Rust + aarch64 toolchain) |
 | `setup_pi5.sh` | One-time Pi setup: ROS 2 Jazzy base, CycloneDDS, CAN systemd unit |
 | `can_setup.sh` | Bring up `can0` / `can1` at 1 Mbps |
-| `rudy-can.service` | systemd unit (installed to `/etc/systemd/system/`) |
+| `robot-can.service` | systemd unit (installed to `/etc/systemd/system/`) |
 | `deploy.sh` | `rsync` of `install/` + `config/` to the Pi |
 | `config.txt.example` | Example `/boot/firmware/config.txt` lines for SPI + MCP2515 overlays |
 

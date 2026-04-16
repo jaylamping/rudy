@@ -1,5 +1,5 @@
 # Cross-build image: same ROS base as Pi 5 runtime (Noble + Jazzy) with aarch64 toolchain.
-# Build on x86_64 with: docker build -f deploy/pi5/Dockerfile.pi5 -t rudy-pi5-build .
+# Build on x86_64 with: docker build -f deploy/pi5/Dockerfile.pi5 -t robot-pi5-build .
 FROM osrf/ros:jazzy-ros-base-noble
 
 ENV DEBIAN_FRONTEND=noninteractive

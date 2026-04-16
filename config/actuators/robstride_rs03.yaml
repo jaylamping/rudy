@@ -32,7 +32,7 @@ control_modes:
     torque_max_nm: 60.0
 
 dynamics:
-  # Values mirrored in rudy_description xacro (URDF <dynamics>)
+  # Values mirrored in description xacro (URDF <dynamics>)
   joint_damping: 0.3
   joint_friction: 0.08
   safety_controller:

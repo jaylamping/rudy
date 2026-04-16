@@ -11,8 +11,8 @@ if [[ ! -d "${WS}/install" ]]; then
   exit 1
 fi
 
-rsync -avz --delete "${WS}/install/" "${TARGET}:rudy/install/"
-rsync -avz "${WS}/config/" "${TARGET}:rudy/config/" || true
+rsync -avz --delete "${WS}/install/" "${TARGET}:robot/install/"
+rsync -avz "${WS}/config/" "${TARGET}:robot/config/" || true
 
-echo "Synced install/ to ${TARGET}:rudy/install/"
-echo "On the Pi: source ~/rudy/install/setup.bash"
+echo "Synced install/ to ${TARGET}:robot/install/"
+echo "On the Pi: source ~/robot/install/setup.bash"

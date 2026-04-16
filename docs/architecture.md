@@ -19,9 +19,9 @@ graph LR
   end
 
   subgraph pi5 [Pi5_aarch64]
-    Driver[rudy_driver_Rust]
-    Control[rudy_control]
-    Telem[rudy_telemetry]
+    Driver[driver_Rust]
+    Control[control]
+    Telem[telemetry]
     Driver --> CAN[SocketCAN]
     Control --> Driver
     Telem --> Driver
@@ -36,34 +36,34 @@ graph LR
 
 | Package | Role |
 |---------|------|
-| `rudy_description` | URDF / xacro — kinematic source of truth |
-| `rudy_bringup` | XML launch + YAML params |
-| `rudy_msgs` | Custom messages (placeholder) |
-| `rudy_driver` | Rust CAN stack + `rudy_driver_node` (SocketCAN; Linux-only I/O) |
-| `rudy_control` | `ros2_control` hardware plugin(s) + controller YAML |
-| `rudy_telemetry` | Diagnostics + rosbag launch helpers |
-| `rudy_simulation` | Isaac Lab scaffold + sim config YAML |
-| `rudy_tests` | `launch_testing` + parity tests |
+| `description` | URDF / xacro — kinematic source of truth |
+| `bringup` | XML launch + YAML params |
+| `msgs` | Custom messages (placeholder) |
+| `driver` | Rust CAN stack + `driver_node` (SocketCAN; Linux-only I/O) |
+| `control` | `ros2_control` hardware plugin(s) + controller YAML |
+| `telemetry` | Diagnostics + rosbag launch helpers |
+| `simulation` | Isaac Lab scaffold + sim config YAML |
+| `tests` | `launch_testing` + parity tests |
 
 ## Data flow (target)
 
 ```mermaid
 graph TD
-  CM[controller_manager] --> HWI[rudy_control_plugin]
-  HWI -->|ROS_topics| RustNode[rudy_driver_node]
+  CM[controller_manager] --> HWI[control_plugin]
+  HWI -->|ROS_topics| RustNode[driver_node]
   RustNode --> CAN[can0_can1]
   RustNode --> Diag[/diagnostics]
   RustNode --> JS[/joint_states]
 ```
 
-Today: `rudy_control` ships a **loopback** `SystemInterface` for CI/bring-up. The topic bridge to the Rust driver is the next integration step.
+Today: `control` ships a **loopback** `SystemInterface` for CI/bring-up. The topic bridge to the Rust driver is the next integration step.
 
 ## Configuration hierarchy
 
 - **Actuator truth**: [`config/actuators/robstride_rs03.yaml`](../config/actuators/robstride_rs03.yaml)
 - **URDF limits/dynamics**: must stay consistent with the actuator spec (enforced by `tests/`)
-- **Sim randomization**: `src/rudy_simulation/configs/*.yaml`
-- **ROS parameters**: per-package `config/` + `rudy_bringup`
+- **Sim randomization**: `src/simulation/configs/*.yaml`
+- **ROS parameters**: per-package `config/` + `bringup`
 
 ## See also
 
