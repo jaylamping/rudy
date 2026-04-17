@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# DEPRECATED 2026-04-17. See ADR-0003.
+# Canonical implementation: src/driver (Rust), CLI: `cargo run --bin bench_tool`.
+# These scripts are frozen pending deletion once bench_tool passes on
+# shoulder_actuator_a. Do NOT add new features here.
+
 """Bench utility: set mechanical zero + save params for a single RobStride RS03.
 
 Scope: commissioning / one-motor-on-the-bench only. This is NOT the driver.

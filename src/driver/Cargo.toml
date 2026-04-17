@@ -2,7 +2,7 @@
 name = "driver"
 version = "0.1.0"
 edition = "2021"
-description = "Rudy Robstride CAN driver (SocketCAN + protocol). ROS 2 packaging via ament_cmake."
+description = "Rudy RobStride CAN driver (SocketCAN + protocol). ROS 2 packaging via ament_cmake."
 license = "Apache-2.0"
 
 [lib]
@@ -13,13 +13,23 @@ path = "src/lib.rs"
 name = "driver_node"
 path = "src/main.rs"
 
+[[bin]]
+name = "bench_tool"
+path = "src/bin/bench_tool.rs"
+
 [dependencies]
+thiserror = "1.0"
 log = "0.4"
 env_logger = "0.11"
-thiserror = "1.0"
+clap = { version = "4.5", features = ["derive"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+scopeguard = "1.2"
+ctrlc = "3.4"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 embedded-can = "0.4"
-socketcan = { version = "3.5", default-features = false, features = ["blocking"] }
+socketcan = "3.5"
+libc = "0.2"
 
 [dev-dependencies]

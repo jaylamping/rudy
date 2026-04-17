@@ -1,17 +1,26 @@
-//! Blocking SocketCAN wrapper for Rudy driver (Linux only).
+//! Blocking SocketCAN wrapper (Linux only).
 //!
-//! Non-Linux targets compile a stub so `cargo check` works on macOS dev machines.
+//! This is **shared transport**: any future device family (RS01, RS02, RS04, sensors on CAN)
+//! should use [`CanBus`] for raw frames—not fork a second socket wrapper.
+//!
+//! Non-Linux targets compile a stub so `cargo check` works on developer machines.
 
 use std::io;
 use std::time::Duration;
 
+/// Linux SocketCAN extended-frame bit OR'd into `can_id` (`linux/can.h` `CAN_EFF_FLAG`).
+///
+/// Defined here (transport layer) so SocketCAN I/O does not depend on any device protocol module.
+pub const CAN_EFF_FLAG: u32 = 0x8000_0000;
+
 #[cfg(target_os = "linux")]
 mod imp {
+    use std::os::unix::io::AsRawFd;
+
     use super::io;
     use super::Duration;
-    use embedded_can::ExtendedId;
-    use socketcan::blocking::CanSocket;
-    use socketcan::{CanFrame, Frame, Socket};
+    use embedded_can::{ExtendedId, Frame as EmbeddedFrame, Id};
+    use socketcan::{CanFrame, CanSocket, Socket};
 
     /// Thin wrapper around a blocking CAN socket.
     #[derive(Debug)]
@@ -22,14 +31,39 @@ mod imp {
     impl CanBus {
         pub fn open(ifname: &str) -> io::Result<Self> {
             let sock = CanSocket::open(ifname)?;
-            Ok(Self { sock })
+            let bus = Self { sock };
+            if let Err(e) = bus.set_recv_own_msgs(false) {
+                log::warn!(
+                    "setsockopt(CAN_RAW_RECV_OWN_MSGS, 0) failed: {e}; continuing (may see own TX)"
+                );
+            }
+            Ok(bus)
         }
 
         pub fn set_read_timeout(&self, d: Duration) -> io::Result<()> {
             self.sock.set_read_timeout(d)
         }
 
-        /// Send an extended data frame with 8-byte payload.
+        /// When `false`, the kernel does not loop back our own TX frames (Linux `CAN_RAW_RECV_OWN_MSGS`).
+        pub fn set_recv_own_msgs(&self, on: bool) -> io::Result<()> {
+            let fd = self.sock.as_raw_fd();
+            let v: libc::c_int = i32::from(on);
+            let rc = unsafe {
+                libc::setsockopt(
+                    fd,
+                    libc::SOL_CAN_RAW,
+                    libc::CAN_RAW_RECV_OWN_MSGS,
+                    &v as *const _ as *const libc::c_void,
+                    std::mem::size_of_val(&v) as libc::socklen_t,
+                )
+            };
+            if rc != 0 {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(())
+        }
+
+        /// Send an extended data frame with 8-byte payload (`id` is 29-bit, EFF flag optional).
         pub fn send_ext(&self, id: u32, data: &[u8; 8]) -> io::Result<()> {
             let eid = ExtendedId::new(id & 0x1FFF_FFFF).ok_or_else(|| {
                 io::Error::new(io::ErrorKind::InvalidInput, "invalid extended CAN id")
@@ -39,6 +73,33 @@ mod imp {
             })?;
             self.sock.write_frame(&frame)?;
             Ok(())
+        }
+
+        /// Blocking read of one frame. Returns full 32-bit `can_id` with `CAN_EFF_FLAG` set,
+        /// up to 8 data bytes, and DLC.
+        pub fn recv(&self) -> io::Result<(u32, [u8; 8], usize)> {
+            let frame = self.sock.read_frame()?;
+            if matches!(frame, CanFrame::Error(_)) {
+                return Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    "received CAN error frame",
+                ));
+            }
+            let raw_29 = match EmbeddedFrame::id(&frame) {
+                Id::Extended(eid) => eid.as_raw(),
+                Id::Standard(_) => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "expected extended CAN frame",
+                    ));
+                }
+            };
+            let can_id = raw_29 | super::CAN_EFF_FLAG;
+            let mut data = [0u8; 8];
+            let bytes = EmbeddedFrame::data(&frame);
+            let dlc = bytes.len().min(8);
+            data[..dlc].copy_from_slice(&bytes[..dlc]);
+            Ok((can_id, data, dlc))
         }
     }
 }
@@ -63,7 +124,18 @@ mod imp {
             Ok(())
         }
 
+        pub fn set_recv_own_msgs(&self, _on: bool) -> io::Result<()> {
+            Ok(())
+        }
+
         pub fn send_ext(&self, _id: u32, _data: &[u8; 8]) -> io::Result<()> {
+            Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "SocketCAN is only available on Linux targets",
+            ))
+        }
+
+        pub fn recv(&self) -> io::Result<(u32, [u8; 8], usize)> {
             Err(io::Error::new(
                 io::ErrorKind::Unsupported,
                 "SocketCAN is only available on Linux targets",

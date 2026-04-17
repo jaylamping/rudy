@@ -1,3 +1,8 @@
+# DEPRECATED 2026-04-17. See ADR-0003.
+# Canonical implementation: src/driver (Rust), CLI: `cargo run --bin bench_tool`.
+# These scripts are frozen pending deletion once bench_tool passes on
+# shoulder_actuator_a. Do NOT add new features here.
+
 """Shared CAN framing + parameter I/O for RobStride RS03 bench tools.
 
 This module is the single source of truth for the RS03 CAN protocol encode/

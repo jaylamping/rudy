@@ -5,7 +5,7 @@
 
 use std::env;
 
-use driver::{MitCommand, RobstrideCodec};
+use driver::rs03::{MitCommand, RobstrideCodec};
 
 fn print_usage() {
     eprintln!(
@@ -40,6 +40,7 @@ fn main() {
                     i += 1;
                 }
             }
+            let host_id = 0xFDu8;
             let codec = RobstrideCodec;
             let cmd = MitCommand {
                 position_rad: 0.0,
@@ -48,7 +49,9 @@ fn main() {
                 kd: 0.0,
                 torque_ff_nm: 0.0,
             };
-            let (id, data) = codec.encode_mit(motor_id, cmd).expect("encode");
+            let (id, data) = codec
+                .encode_mit(host_id, motor_id, cmd)
+                .expect("encode");
             println!("id=0x{:08X} data={:02X?}", id, data);
         }
         _ => {

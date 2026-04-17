@@ -1,9 +1,13 @@
 //! Minimal actuator lifecycle state machine (safe sequencing).
+//!
+//! This type is **intentionally generic**: it does not know about RS03 vs RS02 or CAN vs EtherCAT.
+//! Map [`ActuatorEvent`]s from protocol-specific sessions or ROS2 command handlers at a higher layer.
 
 /// High-level actuator lifecycle states.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ActuatorState {
     /// Powered but not configured.
+    #[default]
     Idle,
     /// Parameters loaded, not enabled.
     Configured,
