@@ -75,8 +75,27 @@ def arb_id(comm_type: int, host_id: int, motor_id: int) -> int:
 def open_bus(iface: str) -> socket.socket:
     s = socket.socket(socket.AF_CAN, socket.SOCK_RAW, socket.CAN_RAW)
     s.bind((iface,))
+    # Linux delivers a copy of our own TX frames back to our RAW socket by
+    # default.  Disable that so we don't see our read requests as "replies".
+    # Linux/can.h: SOL_CAN_RAW=101, CAN_RAW_RECV_OWN_MSGS=4.
+    try:
+        SOL_CAN_RAW = 101
+        CAN_RAW_RECV_OWN_MSGS = 4
+        s.setsockopt(SOL_CAN_RAW, CAN_RAW_RECV_OWN_MSGS, 0)
+    except OSError:
+        # Kernel is old / option unsupported; fall back to content-based
+        # filtering in recv_frame.  Not fatal.
+        pass
     s.settimeout(SOCKET_TIMEOUT_S)
     return s
+
+
+VERBOSE = False
+
+
+def _fmt_frame(can_id: int, data: bytes) -> str:
+    raw_id = can_id & 0x1FFFFFFF
+    return f"{raw_id:08X} [{len(data)}] " + " ".join(f"{b:02X}" for b in data)
 
 
 def send_frame(sock: socket.socket, comm_type: int, host_id: int,
@@ -87,6 +106,8 @@ def send_frame(sock: socket.socket, comm_type: int, host_id: int,
     can_id = arb_id(comm_type, host_id, motor_id) | CAN_EFF_FLAG
     frame = struct.pack("=IB3x8s", can_id, 8, data)
     sock.send(frame)
+    if VERBOSE:
+        print(f"    TX {_fmt_frame(can_id, data)}")
 
 
 def recv_frame(sock: socket.socket):
@@ -94,6 +115,8 @@ def recv_frame(sock: socket.socket):
     can_id, dlc = struct.unpack("=IB3x", frame[:8])
     data = frame[8:8 + dlc]
     comm_type = (can_id >> 24) & 0x1F
+    if VERBOSE:
+        print(f"    RX {_fmt_frame(can_id, data)} (type={comm_type})")
     return comm_type, can_id, data
 
 
@@ -181,7 +204,12 @@ def main():
                     help="Issue type-6 Set Mechanical Zero.")
     ap.add_argument("--save", action="store_true",
                     help="Issue type-22 Save Parameters after any writes.")
+    ap.add_argument("--verbose", "-v", action="store_true",
+                    help="Print every TX/RX CAN frame in hex.")
     args = ap.parse_args()
+
+    global VERBOSE
+    VERBOSE = args.verbose
 
     sock = open_bus(args.iface)
     print(f"bound {args.iface}, talking to motor 0x{args.motor_id:02X} "
