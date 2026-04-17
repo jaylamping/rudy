@@ -38,6 +38,18 @@ out, not rip its own wiring off.
 - Only **one motor on the bus** at a time while commissioning. This avoids CAN
 ID collisions when a storefront ships motors with the same default ID.
 
+> **⚠️ Do NOT click "Factory Reset" (恢复出厂设置) in Motor Studio.** It lives
+> uncomfortably close to "Write Para" and "Export Parameters" in the UI.
+> Clicking it wipes:
+> - `MechOffset` → back to factory (your zero is gone)
+> - `limit_spd` → back to 10 rad/s (factory)
+> - `limit_cur` → back to 43 A (factory hardware ceiling!)
+> - `CAN_TIMEOUT` → back to 0 (watchdog disabled!)
+>
+> `CAN_ID`, `CAN_MASTER`, `baud`, `damper`, and `zero_sta` survive, but the
+> safety-critical quartet does not. If you click this by accident, redo
+> Steps 5 (zero), 6 (limits), 7 (persistence verify) before using the motor.
+
 ---
 
 ## Step 0 — Record-keeping

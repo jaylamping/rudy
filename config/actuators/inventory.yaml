@@ -130,14 +130,89 @@ motors:
       board_temp_c_x10: 246            # 0x301f — 24.6 °C
       mcu_temp_c_x10: 221              # 0x3005 — 22.1 °C
 
-    mech_offset_rad: 0.86018            # current stored value; pre-zero-cal
+    mech_offset_rad: 1.162374           # 0x2005 after accidental factory-reset + re-zero
+    mech_offset_source: |
+      Second zero, set via Motor Studio v0.0.13 on 2026-04-17 after an
+      accidental factory-reset click wiped the first zero (1.254796) along
+      with the safety limits.  Re-zero aligned shaft within ~5e-05 rad of
+      true mechanical zero (0x3016 = -8.5e-05).  User confirmed position
+      is acceptable for bench work; will re-zero once installed in the
+      shoulder housing.
+
+      Prior zero (1.254796) is archived in
+      config/actuators/factory-dumps/shoulder_actuator_a_0x08_fw0.3.1.41_post-commission.xlsx
+      for reference; do not restore it -- the new zero is better aligned.
     limits_written:
-      limit_torque_nm: null
-      limit_spd_rad_s: null
-      limit_cur_a: null
-      can_timeout_counts: null
-    limits_saved_to_flash: false
-    commissioned_at: null
+      # Written 2026-04-17 via Motor Studio v0.0.13 Write Para on this motor.
+      # Values match tools/robstride/commission.md Step 6 commissioning defaults.
+      # Flash persistence CONFIRMED: post-commission export taken after a
+      # PSU power cycle shows all three values unchanged.
+      # See config/actuators/factory-dumps/shoulder_actuator_a_0x08_fw0.3.1.41_post-commission.xlsx
+      limit_torque_nm: null              # not written; RS03's 0x200B is actually
+                                         # CAN_TIMEOUT, not limit_torque.  The
+                                         # manual's limit_torque (0x700B/0x7000-
+                                         # range) does not appear in this unit's
+                                         # parameter table -- only the 0x200B
+                                         # CAN timeout is present.  Revisit
+                                         # torque-cap strategy in Step 9.
+      limit_spd_rad_s: 3.0               # 0x2018 limit_spd, was 10.0 (factory)
+      limit_cur_a: 10.0                  # 0x2019 limit_cur, was 30.0 (factory)
+      can_timeout_counts: 20000          # 0x200B CAN_TIMEOUT, was 0 (disabled)
+                                         # 20000 counts @ 20 kHz = 1.0 s
+    limits_written_at: "2026-04-17"
+    limits_saved_to_flash: true          # verified 2026-04-17 across PSU cycle
+                                         # twice: once before the accidental
+                                         # factory-reset, and once after the
+                                         # post-reset re-write.
+                                         # See: ...fw0.3.1.41_step7-verified.xlsx
+    commissioned_at: null                # pending Step 9 (bench jog + limit
+                                         # enforcement test); do not flip
+                                         # verified:true until jog test passes
+
+    post_commission_observations:
+      # Step-7 verification dump after PSU cycle w/ all limits + zero in flash.
+      # (config/actuators/factory-dumps/shoulder_actuator_a_0x08_fw0.3.1.41_step7-verified.xlsx)
+      mech_pos_rad: -0.00017             # 0x3016 -- shaft within ~0.01 deg of
+                                         # true mechanical zero after PSU cycle
+      mech_vel_rad_s: -0.129551          # 0x3017 -- still settling, normal
+      vbus_v: 24.605
+      fault_sta: 0
+      warn_sta: 32                        # 0x3023 bit 5 -- PERSISTENT and
+                                          # intentionally DEFERRED.  See
+                                          # warn_sta_deferred_reason below.
+      warn_sta_theories_ruled_out:
+        - position_near_2pi_wrap         # falsified: bit stays set at mechPos~=0
+        - stale_zero_calibration         # falsified: bit cleared briefly after
+                                         #   factory-reset+rezero, then came back
+                                         #   on next PSU cycle with same zero
+      warn_sta_current_hypothesis: |
+        Best remaining guess: "cogging calibration not run" advisory.  The
+        0.3.1.41 firmware introduced a cogging-calibration procedure
+        (iq_test=1 -> reboot -> calibrate -> max_alve nonzero -> alveolous_open=1)
+        and this motor has never had it run (max_alve still 0, iq_test still 0,
+        alveolous_open still 0 in extract.xls @ 2026-04-17 03:27).  A
+        "please-run-cogging-calibration" advisory bit that stays lit until
+        max_alve becomes nonzero would be consistent with every observation.
+        Not verified -- verification requires running the calibration.
+      warn_sta_deferred_reason: |
+        Deferred 2026-04-17 by user decision.  Rationale:
+          - faultSta = 0 (no active faults)
+          - all safety-critical params in flash and verified
+          - bit is clearly advisory, not interlocking (motor jogged fine in
+            Motor Studio with this warning set)
+          - Pi-side CAN bring-up and driver bench-jog testing are higher-
+            leverage work than chasing a single undocumented warning bit
+            through a Chinese GUI.
+        Revisit when: (a) we run cogging calibration for unrelated reasons
+        (jitter/tracking-error reduction), or (b) warnSta grows new bits,
+        which would indicate a real regression.
+      notes: |
+        Accidental factory-reset on 2026-04-17 wiped MechOffset and the three
+        safety limits (limit_spd, limit_cur, CAN_TIMEOUT) back to factory
+        defaults.  CAN_ID, CAN_MASTER, baud, damper, zero_sta were preserved.
+        Zero + limits re-written same day and verified across a fresh PSU
+        cycle (extract3.xls timestamp 03:21 on 2026-04-17).  All four
+        safety-critical values persisted correctly.  Step 7 DONE.
     notes: |
       Firmware flashed 2026-04-17 from 0.3.1.21 → 0.3.1.41 using Motor Studio
       v1.0.3. The 0.0.13 Motor Assistant that ships on the vendor USB stick

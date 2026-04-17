@@ -151,6 +151,58 @@ single-precision).
 | CAN-terminator flag (`can_status`)           | ≥ `APP_V0311_V1001_20250507` |
 | Zero-point dead zone                         | ≥ 0.3.1.6        |
 | `limit_torque` / `limit_spd` / `limit_cur`   | all documented revisions |
+| MIT-mode parameter read/write + save         | ≥ 0.3.1.41       |
+| Cogging-torque calibration                   | ≥ 0.3.1.41       |
+| Backup parameter-storage region              | ≥ 0.3.1.41       |
+
+### Cogging-torque calibration (≥ 0.3.1.41)
+
+A one-shot per-motor calibration introduced in 0.3.1.41 that measures
+per-angle cogging torque so the firmware can compensate for it in
+MIT / operation mode. Runs unloaded; the motor spins the shaft itself.
+
+Parameters involved (all present in this unit's 0.3.1.41 dump):
+
+| index   | name             | type  | role                                              |
+|---------|------------------|-------|---------------------------------------------------|
+| 0x2028  | `alveolous_open` | uint8 | Runtime toggle: 1 = apply cogging compensation    |
+| 0x2029  | `iq_test`        | uint8 | Arm flag: set to 1 then reboot before calibrating |
+| 0x304a  | `max_alve`       | float | Read-only: nonzero after a successful calibration |
+| 0x304b  | `max_alve2`      | float | Read-only, secondary metric (undocumented)        |
+
+Procedure (from `docs/vendor/firmware/rs03-0.3.1.41/README.md`):
+
+1. Unload the shaft mechanically (must be free to rotate).
+2. Write `iq_test = 1`, save, power-cycle.
+3. Trigger "Cogging Calibration" from Motor Studio. Motor spins
+   autonomously; do not touch.
+4. On completion, verify `max_alve` is nonzero. If zero, calibration
+   failed -- repeat.
+5. Write `alveolous_open = 1` to enable compensation in runtime.
+6. Power-cycle and verify both values persist.
+
+The driver crate MUST NOT trigger calibration at runtime. It is a
+commissioning-time-only procedure gated behind the commissioning
+runbook. The driver MAY read `max_alve` at bring-up and refuse to
+enable the motor if `alveolous_open=1` but `max_alve=0` (indicating
+a corrupt or partial calibration).
+
+### `warnSta` (0x3023) advisory bit catalogue
+
+The vendor manual does not publish the `warnSta` bitfield. Observed
+behavior on firmware 0.3.1.41, AppCodeName `z_motor`:
+
+| bit | value | observed behavior                                                        |
+|-----|-------|--------------------------------------------------------------------------|
+| 5   | 32    | Set persistently. Survives PSU cycle. Cleared briefly by factory-reset   |
+|     |       | + re-zero, but returned on next PSU cycle. Working hypothesis: "cogging  |
+|     |       | calibration not run" advisory -- consistent with `max_alve=0` on every   |
+|     |       | observed dump. Unverified. Motor jogs normally with this bit set.        |
+
+We tolerate bit 5 for now. The driver MAY log it at bring-up but MUST
+NOT refuse to enable on it alone. Any *other* bits in `warnSta` (i.e.
+`warnSta != 0` AND `warnSta != 32`) ARE a real warning and SHOULD
+block enable until investigated.
 
 ## Consequences
 
