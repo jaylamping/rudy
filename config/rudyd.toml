@@ -1,0 +1,68 @@
+# rudyd operator-console daemon configuration.
+#
+# See ADR-0004 (docs/decisions/0004-operator-console.md) for the architecture.
+# See docs/runbooks/operator-console.md for start/stop + token rotation.
+
+[http]
+# Address to bind the HTTPS + SPA listener.
+# On the Pi this should be the Tailscale-local address, e.g. "100.x.y.z:8443".
+# "0.0.0.0:8443" is fine on dev machines but DO NOT use it on the Pi — the
+# daemon must only be reachable via Tailscale.
+bind = "127.0.0.1:8443"
+
+[http.tls]
+# When enabled, rudyd serves HTTPS. On the Pi, point cert_path / key_path at
+# the files produced by `tailscale cert <hostname>`; see
+# deploy/pi5/tailscale-cert.md.
+# During local development you can set enabled = false (plain HTTP). The SPA
+# will then be served at http://<bind>/ and WebTransport will NOT work (the
+# browser requires HTTP/3+TLS for WebTransport — so dev-streaming against a
+# non-TLS rudyd requires `npm run dev` with the Vite proxy pointed at a
+# real rudyd elsewhere).
+enabled = false
+# cert_path = "/var/lib/rudyd/tailscale/fullchain.pem"
+# key_path  = "/var/lib/rudyd/tailscale/privkey.pem"
+
+[webtransport]
+# HTTP/3 / QUIC listener for the telemetry + log firehose.
+# Must reuse the same cert as [http.tls] when TLS is enabled.
+bind = "127.0.0.1:4433"
+# Disable entirely when running against Vite dev server, which has no HTTP/3.
+enabled = false
+
+[auth]
+# Absolute path to a file containing the shared bearer token (one line, no
+# trailing whitespace). Rotate by writing a new file and sending SIGHUP to rudyd.
+# On the Pi this should be chmod 600 and owned by the `rudy` user.
+#
+# For local development with no token, set `dev_allow_no_token = true` below.
+# DO NOT enable that on the Pi.
+token_file = "./config/rudyd.token"
+dev_allow_no_token = true
+
+[paths]
+# All relative paths are resolved against the working directory rudyd was
+# launched from.
+actuator_spec = "./config/actuators/robstride_rs03.yaml"
+inventory = "./config/actuators/inventory.yaml"
+audit_log = "./.rudyd/audit.jsonl"
+
+[can]
+# Left empty in Phase 1. On the Pi, a future block will list:
+#   [[can.buses]]
+#   iface = "can1"   # Linux netlink iface (see deploy/pi5/README.md for
+#                    #   can0/can1 vs silkscreen labels)
+#   bitrate = 1_000_000
+# For now rudyd emits mocked telemetry so the UI can be developed end-to-end.
+mock = true
+
+[telemetry]
+# Type-17 poll period for observables (0x70xx shadow). At 100 ms per motor
+# with 2 motors we're well inside the 1 Mbps CAN budget.
+poll_interval_ms = 100
+
+[safety]
+# `rudyd` refuses to enable a motor whose inventory entry lacks
+# `verified: true`. The Rust driver enforces the same gate; this is belt +
+# suspenders. Override only for benchtop commissioning of a fresh motor.
+require_verified = true

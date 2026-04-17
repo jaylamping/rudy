@@ -8,8 +8,8 @@
 
 ## Repo layout
 
-- **Configs**: `src/simulation/configs/` (`domain_rand.yaml`, `contact.yaml`, `actuator_model.yaml`)
-- **Scaffold env**: `src/simulation/simulation/envs/sim_env.py`
+- **Configs**: `ros/src/simulation/configs/` (`domain_rand.yaml`, `contact.yaml`, `actuator_model.yaml`)
+- **Scaffold env**: `ros/src/simulation/simulation/envs/sim_env.py`
 - **Training entrypoint**: `sim_train` console script (scaffold)
 
 ## Policy

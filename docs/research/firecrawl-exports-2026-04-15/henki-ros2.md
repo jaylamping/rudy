@@ -1,4 +1,4 @@
-![Revisit consent button](https://cdn-cookieyes.com/assets/images/revisit.svg)
+Revisit consent button
 
 We value your privacy
 
@@ -6,7 +6,7 @@ We use cookies to enhance your browsing experience, serve personalized ads or co
 
 CustomizeAccept All
 
-Customize Consent Preferences![Close](https://cdn-cookieyes.com/assets/images/close.svg)
+Customize Consent PreferencesClose
 
 We use cookies to help you navigate efficiently and perform certain functions. You will find detailed information about all cookies under each consent category below.
 
@@ -28,7 +28,6 @@ session
 
 WordPress sets this cookie when a user interacts with emojis on a WordPress site. It helps determine if the user's browser can display emojis properly.
 
-
 - Cookie
 
 cookieyes-consent
@@ -41,10 +40,9 @@ cookieyes-consent
 
 CookieYes sets this cookie to remember users' consent preferences so that their preferences are respected on subsequent visits to this site. It does not collect or store any personal information about the site visitors.
 
-
 - Cookie
 
-\_cfuvid
+cfuvid
 
 - Duration
 
@@ -54,10 +52,9 @@ session
 
 Calendly sets this cookie to track users across sessions to optimize user experience by maintaining session consistency and providing personalized services
 
-
 - Cookie
 
-\_\_cfruid
+cfruid
 
 - Duration
 
@@ -66,7 +63,6 @@ session
 - Description
 
 Cloudflare sets this cookie to identify trusted web traffic.
-
 
 - Cookie
 
@@ -80,14 +76,13 @@ m
 
 Stripe sets this cookie for fraud prevention purposes. It identifies the device used to access the website, allowing the website to be formatted accordingly.
 
-
 Functional
 
 Functional cookies help perform certain functionalities like sharing the content of the website on social media platforms, collecting feedback, and other third-party features.
 
 - Cookie
 
-referrer\_user\_id
+referreruserid
 
 - Duration
 
@@ -97,14 +92,13 @@ referrer\_user\_id
 
 Calendly sets this cookie for the booking functionality of the website.
 
-
 Analytics
 
 Analytical cookies are used to understand how visitors interact with the website. These cookies help provide information on metrics such as the number of visitors, bounce rate, traffic source, etc.
 
 - Cookie
 
-\_ga\_\*
+ga
 
 - Duration
 
@@ -114,10 +108,9 @@ Analytical cookies are used to understand how visitors interact with the website
 
 Google Analytics sets this cookie to store and count page views.
 
-
 - Cookie
 
-\_ga
+ga
 
 - Duration
 
@@ -127,10 +120,9 @@ Google Analytics sets this cookie to store and count page views.
 
 Google Analytics sets this cookie to calculate visitor, session and campaign data and track site usage for the site's analytics report. The cookie stores information anonymously and assigns a randomly generated number to recognise unique visitors.
 
-
 - Cookie
 
-ajs\_user\_id
+ajsuserid
 
 - Duration
 
@@ -140,10 +132,9 @@ Never Expires
 
 This cookie is set by Segment to help track visitor usage, events, target marketing, and also measure application performance and stability.
 
-
 - Cookie
 
-ajs\_group\_id
+ajsgroupid
 
 - Duration
 
@@ -153,10 +144,9 @@ Never Expires
 
 This cookie is set by Segment to track visitor usage and events within the website.
 
-
 - Cookie
 
-\_pendo\_visitorId.4cfbcefc-fcf9-4b66-5dc6-9b0d81bb07a9
+pendovisitorId.4cfbcefc-fcf9-4b66-5dc6-9b0d81bb07a9
 
 - Duration
 
@@ -166,10 +156,9 @@ Never Expires
 
 Pendo sets this cookie to identify and record the visitor’s Account ID that will be used in Pendo, like Guide delivery and analytics.
 
-
 - Cookie
 
-ajs\_anonymous\_id
+ajsanonymousid
 
 - Duration
 
@@ -179,10 +168,9 @@ Never Expires
 
 This cookie is set by Segment to count the number of people who visit a certain site by tracking if they have visited before.
 
-
 - Cookie
 
-\_pendo\_guides\_blocked.4cfbcefc-fcf9-4b66-5dc6-9b0d81bb07a9
+pendoguidesblocked.4cfbcefc-fcf9-4b66-5dc6-9b0d81bb07a9
 
 - Duration
 
@@ -192,14 +180,13 @@ Never Expires
 
 Pendo sets this cookie to identify and record the visitor’s Account ID that will be used in Pendo, like Guide delivery and analytics.
 
-
 Performance
 
 Performance cookies are used to understand and analyze the key performance indexes of the website which helps in delivering a better user experience for the visitors.
 
 - Cookie
 
-\_calendly\_session
+calendlysession
 
 - Duration
 
@@ -208,7 +195,6 @@ Performance cookies are used to understand and analyze the key performance index
 - Description
 
 Calendly, a Meeting Schedulers, sets this cookie to allow the meeting scheduler to function within the website and to add events into the visitor’s calendar.
-
 
 Advertisement
 
@@ -222,7 +208,7 @@ Other uncategorised cookies are those that are being analysed and have not been 
 
 - Cookie
 
-cf\_clearance
+cfclearance
 
 - Duration
 
@@ -232,18 +218,17 @@ cf\_clearance
 
 Description is currently not available.
 
-
 Save My Preferences  Accept All
 
-Powered by [![Cookieyes logo](https://cdn-cookieyes.com/assets/images/poweredbtcky.svg)](https://www.cookieyes.com/product/cookie-consent)
+Powered by [Cookieyes logo](https://www.cookieyes.com/product/cookie-consent)
 
 [Skip to content](https://henkirobotics.com/ros-2-best-practices/#content)
 
-![Henki ROS 2 Best Practices repository logo](https://henkirobotics.com/wp-content/uploads/2026/02/henki_ros2_best_practices_logo-1024x487.png.webp)
+Henki ROS 2 Best Practices repository logo
 
 # ROS 2 Best Practices
 
-![](https://henkirobotics.com/wp-content/uploads/2024/12/WhatsApp-Image-2024-12-06-at-18.05.46-1-scaled-e1733501490595.jpeg)By [Janne Karttunen](https://henkirobotics.com/author/admin/ "View all posts by Janne Karttunen")\|  February 16, 2026
+By [Janne Karttunen](https://henkirobotics.com/author/admin/)  February 16, 2026
 
 Good architecture and clean coding practices are fundamental for robotics projects to scale and evolve quickly in response to rapidly changing requirements. A messy codebase and short-term shortcuts may deliver fast results at the beginning, but as the project progresses, implementing new changes becomes increasingly time-consuming and carries a higher risk of breaking existing functionality.
 
@@ -308,23 +293,23 @@ In our best practices repository, we included an example demonstrating how AI-ge
 
 We used Claude Code (claude-opus-4-6) to complete the following task, both before and after applying our best practices:
 
-_Create me a new ROS 2 package with a Python node that subscribes to /odom topic and publishes to a single topic the robot speed in km/h and mph._
+*Create me a new ROS 2 package with a Python node that subscribes to /odom topic and publishes to a single topic the robot speed in km/h and mph.*
 
 ### Before Applying the Best Practices
 
 By default, before integrating any of our best practices in Claude’s workflow, the generated node and ROS 2 project structure are fairly standard.
 
-![Project structure before applying ROS 2 best practices](<Base64-Image-Removed>)_Project structure generated by Claude without ROS 2 best practices_
+Project structure before applying ROS 2 best practices*Project structure generated by Claude without ROS 2 best practices*
 
 The project includes a basic `speed_monitor_node.py`, with the necessary ROS 2 package files, such as `package.xml` and `setup.py`.
 
-![Example ROS 2 node code before applying ROS 2 best practices](<Base64-Image-Removed>)_ROS 2 node generated by Claude without ROS 2 best practices_
+Example ROS 2 node code before applying ROS 2 best practices*ROS 2 node generated by Claude without ROS 2 best practices*
 
 The generated Node is also pretty straightforward: It creates a subscription to the `/odom` topic, and publishes the robot speed to the `/speed` topic using `Float64MultiArray` as the message type. The core application logic, the speed calculation, happens directly inside the odometry callback.
 
 ### After Applying the Best Practices
 
-After cloning the **henki\_ros2\_best\_practices** repository, we added the following text to the `CLAUDE.md` file to provide instructions for our coding agent:
+After cloning the **henkiros2bestpractices** repository, we added the following text to the `CLAUDE.md` file to provide instructions for our coding agent:
 
 ```
 Always read and follow the best practices defined in:
@@ -333,7 +318,7 @@ Always read and follow the best practices defined in:
 
 When asking Claude to generate the package again with the exact same prompt, the improvements in the generated code were immediately noticeable.
 
-![Project structure after applying ROS 2 best practices](<Base64-Image-Removed>)_Claude generated project structure with ROS 2 best practices applied_
+Project structure after applying ROS 2 best practices*Claude generated project structure with ROS 2 best practices applied*
 
 The package structure is now significantly different from what we saw previously. Instead of a single `speed_monitor` package, there are two packages: `speed_reporter` and `speed_reporter_msgs`. Claude generated a new custom message interface, `RobotSpeed.msg`, which describes the robot speed data much more clearly than the deprecated `Float64MultiArray` format.
 
@@ -344,7 +329,7 @@ In addition, the `speed_reporter` package now includes:
 - Core application logic separated into `speed_converter.py`, decoupled from the ROS 2 node communication layer.
 - Unit tests that target only the core application logic.
 
-![Example ROS 2 node code after applying ROS 2 best practices](<Base64-Image-Removed>)_Claude generated node with ROS 2 best practices applied_![Example application code after applying ROS 2 best practices](<Base64-Image-Removed>)_When best practices were applied, Claude split the core application logic into its own class_
+Example ROS 2 node code after applying ROS 2 best practices*Claude generated node with ROS 2 best practices applied*Example application code after applying ROS 2 best practices*When best practices were applied, Claude split the core application logic into its own class*
 
 Looking at the code, the differences compared to the previously generated version are clear:
 
@@ -366,7 +351,7 @@ As software developers, our role is shifting from manually writing code to defin
 
 ### Related posts:
 
-1. [Student Story From Robotics Course: When Your Robot’s Enemy is a Plank](https://henkirobotics.com/student-story-from-robotics-course/ "Student Story From Robotics Course: When Your Robot’s Enemy is a Plank")
-2. [Why do robotics companies choose not to contribute to open source?](https://henkirobotics.com/why-do-robotics-companies-choose-not-to-contribute-to-open-source/ "Why do robotics companies choose not to contribute to open source?")
-3. [Create ROS 2 Packages with Turtle Nest](https://henkirobotics.com/create-ros-2-packages-with-turtle-nest/ "Create ROS 2 Packages with Turtle Nest")
-4. [Robotics and ROS 2 Essentials – Course Announcement](https://henkirobotics.com/robotics-and-ros-2-essentials-course-announcement/ "Robotics and ROS 2 Essentials – Course Announcement")
+1. [Student Story From Robotics Course: When Your Robot’s Enemy is a Plank](https://henkirobotics.com/student-story-from-robotics-course/)
+2. [Why do robotics companies choose not to contribute to open source?](https://henkirobotics.com/why-do-robotics-companies-choose-not-to-contribute-to-open-source/)
+3. [Create ROS 2 Packages with Turtle Nest](https://henkirobotics.com/create-ros-2-packages-with-turtle-nest/)
+4. [Robotics and ROS 2 Essentials – Course Announcement](https://henkirobotics.com/robotics-and-ros-2-essentials-course-announcement/)

@@ -289,7 +289,7 @@ any reverted to factory, the save did not stick — DO NOT proceed.
 
 ## Step 9 — Jog test (still on the bench)
 
-**Canonical path (Pi, Rust):** `src/driver` `bench_tool` per ADR-0003 and
+**Canonical path (Pi, Rust):** `ros/src/driver` `bench_tool` per ADR-0003 and
 `docs/decisions/0002-rs03-protocol-spec.md` — velocity mode first, software-capped
 on top of firmware limits. Run from the driver crate (release binary optional:
 `cargo build --release --bin bench_tool` then `sudo ./target/release/bench_tool`).
@@ -300,7 +300,7 @@ caps and flow; use only if `bench_tool` is not yet built on the Pi.
 1. **Dry-run** (prints the plan, touches the bus only for type-17 reads):
 
    ```bash
-   cd ~/rudy/src/driver
+   cd ~/rudy/ros/src/driver
    sudo cargo run --bin bench_tool -- smoke --iface can1 --motor-id 0x08 --host-id 0xFD -v
 
    sudo cargo run --bin bench_tool -- jog --iface can1 --motor-id 0x08 --host-id 0xFD \
@@ -322,7 +322,7 @@ caps and flow; use only if `bench_tool` is not yet built on the Pi.
 2. **Smoke test — enable with `spd_ref = 0` (expect no motion):**
 
    ```bash
-   cd ~/rudy/src/driver
+   cd ~/rudy/ros/src/driver
    sudo cargo run --bin bench_tool -- smoke --iface can1 --motor-id 0x08 --host-id 0xFD --go -v
    ```
 
@@ -339,7 +339,7 @@ caps and flow; use only if `bench_tool` is not yet built on the Pi.
 3. **First jog — velocity ramp (expect slow smooth motion):**
 
    ```bash
-   cd ~/rudy/src/driver
+   cd ~/rudy/ros/src/driver
    sudo cargo run --bin bench_tool -- jog --iface can1 --motor-id 0x08 --host-id 0xFD \
        --target-vel 0.2 --duration 2.0 --go -v
    ```
@@ -358,7 +358,7 @@ caps and flow; use only if `bench_tool` is not yet built on the Pi.
 4. **Limit enforcement — prove `limit_spd` clamps in firmware:**
 
    ```bash
-   cd ~/rudy/src/driver
+   cd ~/rudy/ros/src/driver
    sudo cargo run --bin bench_tool -- jog --iface can1 --motor-id 0x08 --host-id 0xFD \
        --go --test-overlimit -v
    ```

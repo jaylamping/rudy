@@ -1,0 +1,11 @@
+node_modules
+dist
+dist-ssr
+.vite
+
+# TanStack Router generates this on vite dev/build. Do not edit by hand.
+src/routeTree.gen.ts
+
+# Env files
+.env
+.env.*.local

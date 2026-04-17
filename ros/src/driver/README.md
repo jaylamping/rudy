@@ -12,7 +12,7 @@ Rust CAN stack for Robstride RS03 actuators over **SocketCAN** (Linux).
 ## Build (Rust only)
 
 ```bash
-cd src/driver
+cd ros/src/driver
 cargo test
 ```
 

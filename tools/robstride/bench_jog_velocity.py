@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # DEPRECATED 2026-04-17. See ADR-0003.
-# Canonical implementation: src/driver (Rust), CLI: cargo run --bin bench_tool.
+# Canonical implementation: ros/src/driver (Rust), CLI: cargo run --bin bench_tool.
 # These scripts are frozen pending deletion once bench_tool passes on
 # shoulder_actuator_a. Do NOT add new features here.
 

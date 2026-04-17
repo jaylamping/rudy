@@ -1,0 +1,62 @@
+[package]
+name = "rudyd"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Rudy operator-console daemon: CAN bus owner, REST + WebTransport surface"
+
+[[bin]]
+name = "rudyd"
+path = "src/main.rs"
+
+[dependencies]
+# Core async + error plumbing
+tokio = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+futures-util = "0.3"
+
+# Config
+toml = "0.8"
+serde_yaml = "0.9"
+
+# HTTP / REST
+axum = { version = "0.7", features = ["macros", "json"] }
+axum-server = { version = "0.7", features = ["tls-rustls"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["trace", "cors", "fs"] }
+http = "1"
+hyper = "1"
+
+# Static-asset embed (SPA from link/dist)
+rust-embed = { version = "8", features = ["include-exclude"] }
+mime_guess = "2"
+
+# WebTransport / HTTP3
+# wtransport pins its own rustls/quinn versions; we follow it.
+wtransport = "0.6"
+
+# Shared type codegen to link/src/api/generated/
+ts-rs = { version = "10", features = ["serde-json-impl", "chrono-impl"] }
+
+# CBOR for WebTransport datagrams
+ciborium = "0.2"
+
+# Identifiers / misc
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+
+# ROS-workspace driver crate (RS03 protocol, SocketCAN on Linux).
+# Kept as a relative path; see ADR-0004 §D8 for why it stays in ros/src/.
+driver = { path = "../../ros/src/driver" }
+
+[build-dependencies]
+walkdir = "2"
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }

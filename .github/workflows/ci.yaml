@@ -15,7 +15,8 @@ defaults:
     shell: bash
 
 jobs:
-  build-test-lint:
+  ros:
+    name: ROS workspace (colcon + driver cargo)
     runs-on: ubuntu-24.04
     container:
       image: osrf/ros:jazzy-desktop
@@ -54,20 +55,21 @@ jobs:
           components: rustfmt, clippy
 
       - name: Rust fmt + clippy + test (driver)
-        working-directory: ${{ github.workspace }}/src/driver
+        working-directory: ${{ github.workspace }}/ros/src/driver
         run: |
           cargo fmt --check
           cargo clippy --all-targets -- -D warnings
           cargo test
 
-      - name: Rust cross check (aarch64)
-        working-directory: ${{ github.workspace }}/src/driver
+      - name: Rust cross check (aarch64, driver)
+        working-directory: ${{ github.workspace }}/ros/src/driver
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
         run: |
           cargo check --target aarch64-unknown-linux-gnu
 
       - name: rosdep
+        working-directory: ${{ github.workspace }}/ros
         run: |
           source /opt/ros/jazzy/setup.bash
           rosdep init || true
@@ -75,11 +77,13 @@ jobs:
           rosdep install --from-paths src --ignore-src -r -y
 
       - name: colcon build
+        working-directory: ${{ github.workspace }}/ros
         run: |
           source /opt/ros/jazzy/setup.bash
           colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
 
       - name: colcon test
+        working-directory: ${{ github.workspace }}/ros
         run: |
           source /opt/ros/jazzy/setup.bash
           source install/setup.bash
@@ -90,6 +94,56 @@ jobs:
         run: |
           python3 -m pytest -q tests
 
+  rudyd:
+    name: rudyd daemon (crates workspace)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Install system deps (libudev etc.)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends pkg-config libssl-dev
+
+      - name: Prepare empty link/dist for embed
+        run: |
+          mkdir -p link/dist
+          printf '<!doctype html><title>link stub</title>' > link/dist/index.html
+
+      - name: rudyd fmt + clippy + test
+        working-directory: ${{ github.workspace }}/crates
+        env:
+          RUDYD_NO_EMBED: "0"
+        run: |
+          cargo fmt --check
+          cargo clippy --all-targets -- -D warnings
+          cargo test
+
+  link:
+    name: link frontend
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: link
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install
+        run: npm ci || npm install
+      - name: Lint
+        run: npm run lint --if-present
+      - name: Type-check
+        run: npm run typecheck --if-present
+      - name: Build
+        run: npm run build
+
   docs-links:
     runs-on: ubuntu-24.04
     steps:
@@ -98,3 +152,4 @@ jobs:
         run: |
           test -f docs/architecture.md
           test -f docs/runbooks/pi5.md
+          test -f docs/decisions/0004-operator-console.md

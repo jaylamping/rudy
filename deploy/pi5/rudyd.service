@@ -1,0 +1,62 @@
+[Unit]
+Description=Rudy operator-console daemon (rudyd)
+Documentation=file:///etc/rudy/docs/runbooks/operator-console.md
+After=network-online.target tailscaled.service
+Wants=network-online.target tailscaled.service
+
+[Service]
+Type=simple
+User=rudy
+Group=rudy
+
+# Working directory is the Rudy install root. Paths in rudyd.toml are
+# resolved relative to it.
+WorkingDirectory=/opt/rudy
+
+# rudyd does not need root: the socketcan socket is openable by any process
+# with `setcap cap_net_raw,cap_net_admin=eip` and membership in a group that
+# owns `can0`/`can1`. The `rudy` user is created with those caps by the
+# install script in deploy/pi5/install.sh.
+ExecStart=/opt/rudy/bin/rudyd /etc/rudy/rudyd.toml
+
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=10
+
+# Reload auth token on SIGHUP (Phase 2 - until then SIGHUP triggers a
+# graceful restart so the token file is re-read).
+KillSignal=SIGTERM
+FinalKillSignal=SIGKILL
+
+# Hardening.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=false              # needs /dev/can* if kernel CAN is exposed
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+
+# rudyd needs write access to the audit log + any runtime state.
+StateDirectory=rudy
+# On the Pi this resolves to /var/lib/rudy/. rudyd.toml should set
+# `audit_log = "/var/lib/rudy/audit.jsonl"` to use it.
+
+# Tailscale cert files live here (see tailscale-cert.md).
+ReadWritePaths=/var/lib/rudy /var/lib/rudyd/tailscale
+
+# Bind only AF_INET/AF_INET6 (plus AF_UNIX for diagnostics). AF_CAN is added
+# at install time by the kernel CAN netlink path; uncomment if needed:
+# RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK AF_CAN
+
+# Journald tags.
+SyslogIdentifier=rudyd
+
+[Install]
+WantedBy=multi-user.target

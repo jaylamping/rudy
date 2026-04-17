@@ -102,7 +102,7 @@ IntermediateImplementing Joint Limits in ROS
 
 **Concept:** Show how to define and enforce joint limits using ROS tools and configuration files.
 
-In ROS, joint limits are specified in URDF or YAML files using parameters like lower and upper position limits, max velocity, and max effort. Controllers read these limits to prevent commands that exceed safe ranges. For example, the 'joint\_limits\_interface' package helps enforce these limits during control.
+In ROS, joint limits are specified in URDF or YAML files using parameters like lower and upper position limits, max velocity, and max effort. Controllers read these limits to prevent commands that exceed safe ranges. For example, the 'jointlimitsinterface' package helps enforce these limits during control.
 
 Result
 
@@ -270,14 +270,14 @@ Common Pitfalls
 
 #1Ignoring velocity and effort limits, only setting position limits.
 
-Wrong approach:joint\_limits:
+Wrong approach:jointlimits:
 position:
 lower: -1.57
 upper: 1.57
 velocity: {}
 effort: {}
 
-Correct approach:joint\_limits:
+Correct approach:jointlimits:
 position:
 lower: -1.57
 upper: 1.57
@@ -290,9 +290,9 @@ Root cause:Misunderstanding that joint limits cover multiple aspects, not just p
 
 #2Assuming all ROS controllers enforce joint limits automatically.
 
-Wrong approach:Using a generic controller without configuring joint\_limits\_interface or limit enforcement.
+Wrong approach:Using a generic controller without configuring jointlimitsinterface or limit enforcement.
 
-Correct approach:Explicitly include joint\_limits\_interface in controller configuration and load joint limits from URDF or YAML.
+Correct approach:Explicitly include jointlimitsinterface in controller configuration and load joint limits from URDF or YAML.
 
 Root cause:Overestimating default safety features in ROS controllers.
 
