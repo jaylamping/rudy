@@ -1,12 +1,16 @@
-# Example additions for Raspberry Pi 5 + Waveshare 2-CH CAN HAT (MCP2515, SPI1).
-# On Ubuntu 24.04 for Pi, edit: /boot/firmware/config.txt
-# On Raspberry Pi OS: /boot/firmware/config.txt
+# Example additions for Raspberry Pi 5 + Waveshare 2-CH CAN HAT (MCP2515, SPI0).
+# On Ubuntu 24.04 for Pi: /boot/firmware/config.txt
 #
-# VERIFY oscillator (8 MHz vs 16 MHz) and GPIO interrupts against your HAT revision
-# (Waveshare wiki: https://www.waveshare.com/wiki/2-CH_CAN_HAT )
+# Target HAT: Waveshare 2-CH CAN HAT (Amazon B087RJ6XGG)
+#   - 2x MCP2515 + SN65HVD230, 16 MHz oscillator, SPI0 (CE0 + CE1)
+#   - INT_0 = GPIO 23, INT_1 = GPIO 25 (default solder pads)
+#   - Wiki: https://www.waveshare.com/wiki/2-CH_CAN_HAT
+#
+# If you have the 2-CH CAN HAT+ (B0C6LJQ...) instead, it is MCP2515 on SPI1
+# with INT_0=GPIO22 / INT_1=GPIO13 — overlays differ, see:
+#   https://www.waveshare.com/wiki/2-CH_CAN_HAT+
 
+# Uncomment below to enable CAN on the base 2-CH CAN HAT:
 # dtparam=spi=on
-# dtoverlay=i2c0
-# dtoverlay=spi1-3cs
-# dtoverlay=mcp2515,spi1-1,oscillator=16000000,interrupt=22
-# dtoverlay=mcp2515,spi1-2,oscillator=16000000,interrupt=13
+# dtoverlay=mcp2515-can0,oscillator=16000000,interrupt=23
+# dtoverlay=mcp2515-can1,oscillator=16000000,interrupt=25

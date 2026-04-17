@@ -1,0 +1,146 @@
+﻿# file: H:\extract.xls
+# size: 13872 bytes
+
+=== sheet: Sheet1 ===
+FunctionCode	Name	ParameterType	Attribute	MaxValue	MinValue	CurrentValue
+0X0000	Name	String	read/write			                
+0X0001	BarCode	String	read/write			                
+0X1000	BootCodeVersion	String	read-only			V
+0X1001	BootBuildDate	String	read-only			Jul 11 2024
+0X1002	BootBuildTime	String	read-only			10:37:47
+0X1003	AppCodeVersion	String	read-only			0.3.1.21
+0X1004	AppGitVersion	String	read-only			V
+0X1005	AppBuildDate	String	read-only			Oct 22 2025
+0X1006	AppBuildTime	String	read-only			14:01:49
+0X1007	AppCodeName	String	read-only			z_motor
+0X2000	echoPara1	uint16	Setup	113	5	5
+0X2001	echoPara2	uint16	Setup	113	5	5
+0X2002	echoPara3	uint16	Setup	113	5	5
+0X2003	echoPara4	uint16	Setup	113	5	5
+0X2004	echoFreHz	uint32	read/write	10000	1	1000
+0X2005	MechOffset	float	read/write	50	-50	1.410495
+0X2006	chasu_offset	float	read/write	50	-50	4.02344
+0X2007	status1	float	Set	10	-10	0
+0X2008	I_FW_MAX 	float	read/write	33	0	0
+0X2009	CAN_ID	uint8	read/write	127	0	8
+0X200a	CAN_MASTER	uint8	read/write	300	0	253
+0X200b	CAN_TIMEOUT	uint32	read/write	100000	-100000	0
+0X200c	status2	int16	Set	1500	-200	0
+0X200d	status3	uint32	Set	1000000	1000	0
+0X200e	status4	float	Set	64	1	0
+0X200f	status5	float	Set	20	-20	0
+0X2010	status6	uint8	Set	127	0	0
+0X2011	cur_filt_gain	float	read/write	1	-1	0.1
+0X2012	cur_kp	float	read/write	200	-200	0.17
+0X2013	cur_ki	float	read/write	200	-200	0.012
+0X2014	spd_kp	float	read/write	200	-200	6
+0X2015	spd_ki	float	read/write	200	-200	0.02
+0X2016	loc_kp	float	read/write	200	-200	60
+0X2017	spd_filt_gain	float	read/write	1	-1	0.1
+0X2018	limit_spd	float	read/write	200	0	10
+0X2019	limit_cur	float	read/write	150	0	30
+0X201a	limit_a	float	read/write	150	-1	0.04
+0X201b	fault1	uint32	Set	30000	0	0
+0X201c	fault2	uint32	Set	30000	0	0
+0X201d	fault3	uint32	Set	30000	0	0
+0X201e	fault4	uint32	Set	30000	0	0
+0X201f	fault5	uint32	Set	30000	0	0
+0X2020	fault6	uint32	Set	30000	0	0
+0X2021	fault7	uint32	Set	30000	0	0
+0X2022	baud	uint8	read/write	10	-10	1
+0X2023	zero_sta	uint8	read/write	100	0	0
+0X2024	position_offset	float	read/write	7	-7	0
+0X2025	protocol_1	uint8	read/write	20	0	0
+0X2026	damper	uint8	read/write	20	0	0
+0X2027	add_offset	float	read/write	7	-7	0
+0X3000	timeUse0	uint16	read-only			4
+0X3001	timeUse1	uint16	read-only			0
+0X3002	timeUse2	uint16	read-only			22
+0X3003	timeUse3	uint16	read-only			0
+0X3004	encoderRaw	uint16	read-only			900
+0X3005	mcuTemp	int16	read-only			234
+0X3006	motorTemp	int16	read-only			230
+0X3007	encoder2raw	uint16	read-only			14186
+0X3008	adc1Offset	int32	read-only			2057
+0X3009	adc2Offset	int32	read-only			2042
+0X300a	adc1Raw	uint16	read-only			2057
+0X300b	adc2Raw	uint16	read-only			2043
+0X300c	VBUS	float	read-only			24.57
+0X300d	cmdId	float	read-only			0
+0X300e	cmdIq	float	read-only			0
+0X300f	cmdlocref	float	read-only			-0.1185
+0X3010	cmdspdref	float	read-only			0
+0X3011	cmdTorque	float	read-only			0
+0X3012	cmdPos	float	read-only			-0.1185
+0X3013	cmdVel	float	read-only			0
+0X3014	rotation	int32	read-only			0
+0X3015	modPos	float	read-only			0.343995
+0X3016	mechPos	float	read-only			-0.1185
+0X3017	mechVel	float	read-only			0.033562
+0X3018	elecPos	float	read-only			5.577873
+0X3019	ia	float	read-only			0
+0X301a	ib	float	read-only			0
+0X301b	ic	float	read-only			0
+0X301c	timeout	int32	read-only			0
+0X301d	phaseOrder	uint8	read-only			0
+0X301e	iqf	float	read-only			0
+0X301f	boardTemp	int16	read-only			259
+0X3020	iq	float	read-only			0
+0X3021	id	float	read-only			0
+0X3022	faultSta	uint32	read-only			0
+0X3023	warnSta	uint32	read-only			0
+0X3024	drv_fault	uint16	read-only			0
+0X3025	drv_temp	uint16	read-only			0
+0X3026	Uq	float	read-only			0
+0X3027	as_angle	float	read-only			0.345146
+0X3028	cs_angle	float	read-only			2.720131
+0X3029	chasu_angle	float	read-only			3.9082
+0X302a	v_bus	float	read-only			24.57
+0X302b	ElecOffset	float	read-only			-2.352031
+0X302c	torque_fdb	float	read-only			0
+0X302d	rated_i	float	read-only			9
+0X302e	MechPos_init	float	read-only			0
+0X302f	instep	float	read-only			0
+0X3030	status	uint8	read-only			0
+0X3031	cmdlocref	float	read-only			-0.1185
+0X3032	vel_max	float	read-only			10
+0X3033	fault1	uint32	read-only			0
+0X3034	fault2	uint32	read-only			0
+0X3035	fault3	uint32	read-only			0
+0X3036	fault4	uint32	read-only			0
+0X3037	fault5	uint32	read-only			0
+0X3038	fault6	uint32	read-only			0
+0X3039	fault7	uint32	read-only			0
+0X303a	fault8	uint32	read-only			49
+0X303b	mcOverTemp	int16	read-only			1450
+0X303c	Kt_Nm/Amp	float	read-only			1.53
+0X303d	Tqcali_Type	uint8	read-only			1
+0X303e	theta_mech_1	float	read-only			-0.1185
+0X303f	adcOffset_1	int32	read-only			2057
+0X3040	adcOffset_2	int32	read-only			2042
+0X3041	can_status	uint8	read-only			1
+0X3042	position	float	read-only			0.343995
+0X3043	chasu_angle_init	float	read-only			-0.11524
+0X3044	chasu_angle_out	float	read-only			-1.037161
+0X3045	motormechinit	float	read-only			-1.0665
+0X3046	mech_angle_init2	float	read-only			-0.1185
+0X3047	mech_angle_rotat	int16	read-only			0
+0X3048	coder_reg	uint16	read-only			24
+
+=== commissioning-relevant parameters ===
+0x1003  AppCodeVersion                            AppCodeVersion | String | read-only | 0.3.1.21
+0x1007  AppCodeName                               AppCodeName | String | read-only | z_motor
+0x2005  MechOffset                                MechOffset | float | read/write | 50 | -50 | 1.410495
+0x2007  Status1 (factory torque limit)            status1 | float | Set | 10 | -10 | 0
+0x2009  CAN_ID                                    CAN_ID | uint8 | read/write | 127 | 0 | 8
+0x200a  CAN_MASTER                                CAN_MASTER | uint8 | read/write | 300 | 0 | 253
+0x200b  CAN_TIMEOUT                               CAN_TIMEOUT | uint32 | read/write | 100000 | -100000 | 0
+0x2018  limit_spd                                 limit_spd | float | read/write | 200 | 0 | 10
+0x2019  limit_cur                                 limit_cur | float | read/write | 150 | 0 | 30
+0x2023  zero_sta                                  zero_sta | uint8 | read/write | 100 | 0 | 0
+0x2024  position_offset                           position_offset | float | read/write | 7 | -7 | 0
+0x2026  damper                                    damper | uint8 | read/write | 20 | 0 | 0
+0x2027  add_offset                                add_offset | float | read/write | 7 | -7 | 0
+0x3016  mechPos                                   mechPos | float | read-only | -0.1185
+0x3022  faultSta                                  faultSta | uint32 | read-only | 0
+0x3041  can_status                                can_status | uint8 | read-only | 1

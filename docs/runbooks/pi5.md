@@ -10,7 +10,7 @@
 ## CAN HAT (Waveshare 2-CH, MCP2515)
 
 1. Confirm SPI + MCP2515 overlays match your board revision (oscillator + IRQ GPIOs).
-2. Use the example lines in [`deploy/pi5/config.txt.example`](../../deploy/pi5/config.txt.example).
+2. Use the example lines in `[deploy/pi5/config.txt.example](../../deploy/pi5/config.txt.example)`.
 3. After reboot, verify interfaces:
 
 ```bash
@@ -18,7 +18,7 @@ ip link show can0
 ip link show can1
 ```
 
-4. Install and enable the systemd unit (via `deploy/pi5/setup_pi5.sh`) or run:
+1. Install and enable the systemd unit (via `deploy/pi5/setup_pi5.sh`) or run:
 
 ```bash
 sudo ./deploy/pi5/can_setup.sh 1000000
@@ -36,7 +36,7 @@ export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
 ```bash
 colcon build --symlink-install
-./deploy/pi5/deploy.sh ubuntu@robot-pi.local
+./deploy/pi5/deploy.sh jaylamping@rudy-pi.local
 ```
 
 ## CAN debugging checklist
@@ -44,3 +44,4 @@ colcon build --symlink-install
 - Termination enabled only at bus ends.
 - `candump can0` shows traffic when actuators are powered and addressed correctly.
 - `ip -details -statistics link show can0` for error counters / bus-off recovery.
+
