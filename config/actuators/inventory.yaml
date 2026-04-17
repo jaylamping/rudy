@@ -153,26 +153,43 @@ motors:
     limits_written:
       # Written 2026-04-17 via Motor Studio v0.0.13 Write Para on this motor.
       # Values match tools/robstride/commission.md Step 6 commissioning defaults.
-      # Flash persistence CONFIRMED: post-commission export taken after a
-      # PSU power cycle shows all three values unchanged.
-      # See config/actuators/factory-dumps/shoulder_actuator_a_0x08_fw0.3.1.41_post-commission.xlsx
-      limit_torque_nm: null              # not written; RS03's 0x200B is actually
-                                         # CAN_TIMEOUT, not limit_torque.  The
-                                         # manual's limit_torque (0x700B/0x7000-
-                                         # range) does not appear in this unit's
-                                         # parameter table -- only the 0x200B
-                                         # CAN timeout is present.  Revisit
-                                         # torque-cap strategy in Step 9.
-      limit_spd_rad_s: 3.0               # 0x2018 limit_spd, was 10.0 (factory)
-      limit_cur_a: 10.0                  # 0x2019 limit_cur, was 30.0 (factory)
-      can_timeout_counts: 20000          # 0x200B CAN_TIMEOUT, was 0 (disabled)
+      # Flash persistence CONFIRMED:
+      #  - via Motor Studio param export after one PSU cycle
+      #    (..._step7-verified.xlsx, 2026-04-17 03:21)
+      #  - via Pi-side type-17 read from the 0x70xx namespace after
+      #    a second PSU cycle (2026-04-17 ~04:00).  Same values read
+      #    back by an independent path.
+      limit_torque_nm: null              # NOT YET tightened.  0x700B reads
+                                         # 60.0 Nm (factory ceiling).  RS03
+                                         # manual says 60 Nm is the hardware
+                                         # peak; rated is 20 Nm.  Plan for
+                                         # commissioning: write 15 Nm via
+                                         # type-18 to 0x700B, save, verify.
+      limit_spd_rad_s: 3.0               # 0x2018 limit_spd (stored), readback
+                                         # confirmed via 0x7017 runtime shadow
+      limit_cur_a: 10.0                  # 0x2019 limit_cur (stored), readback
+                                         # confirmed via 0x7018 runtime shadow
+      can_timeout_counts: 20000          # 0x200B CAN_TIMEOUT (stored), readback
+                                         # confirmed via 0x7028 runtime shadow
                                          # 20000 counts @ 20 kHz = 1.0 s
     limits_written_at: "2026-04-17"
-    limits_saved_to_flash: true          # verified 2026-04-17 across PSU cycle
-                                         # twice: once before the accidental
-                                         # factory-reset, and once after the
-                                         # post-reset re-write.
-                                         # See: ...fw0.3.1.41_step7-verified.xlsx
+    limits_saved_to_flash: true          # Verified 2026-04-17 across PSU cycle:
+                                         #  - once before accidental factory-reset
+                                         #  - once after post-reset re-write
+                                         #    (Motor Studio param export:
+                                         #    ..._step7-verified.xlsx)
+                                         #  - once more from Pi-side type-17 read
+                                         #    of 0x70xx shadow indices (Step 8)
+    pi_comms_verified: true              # 2026-04-17 -- Pi can read all 0x70xx
+                                         # observables via type-17 on can1
+                                         # (silkscreen CAN0).  Reply status bit
+                                         # decoded correctly, values match flash.
+    # Step 9 (tools/robstride/bench_enable_disable.py +
+    #         bench_jog_velocity.py) — flip each to true only after the
+    #         matching script PASS on the Pi; then set verified:true.
+    enable_disable_verified: false       # bench_enable_disable.py --go
+    jog_verified: false                  # bench_jog_velocity.py --go
+    limit_spd_enforcement_verified: false # bench_jog_velocity.py --go --test-overlimit
     commissioned_at: null                # pending Step 9 (bench jog + limit
                                          # enforcement test); do not flip
                                          # verified:true until jog test passes

@@ -289,18 +289,78 @@ any reverted to factory, the save did not stick — DO NOT proceed.
 
 ## Step 9 — Jog test (still on the bench)
 
+Primary path (Pi, matches `docs/decisions/0002-rs03-protocol-spec.md` — velocity
+mode first, software-capped on top of firmware limits):
+
+1. **Dry-run** (prints the plan, touches the bus only for type-17 reads):
+
+   ```bash
+   cd ~/rudy
+   sudo python3 ./tools/robstride/bench_enable_disable.py \
+       --iface can1 --motor-id 0x08 --host-id 0xFD -v
+
+   sudo python3 ./tools/robstride/bench_jog_velocity.py \
+       --iface can1 --motor-id 0x08 --host-id 0xFD \
+       --target-vel 0.2 --duration 2.0 -v
+   ```
+
+2. **Smoke test — enable with `spd_ref = 0` (expect no motion):**
+
+   ```bash
+   sudo python3 ./tools/robstride/bench_enable_disable.py \
+       --iface can1 --motor-id 0x08 --host-id 0xFD --go -v
+   ```
+
+   PASS criteria: script exits 0, peak `|mechVel|` stays below 0.1 rad/s while
+   enabled, `finally:` path leaves `run_mode = 0`.
+
+3. **First jog — velocity ramp (expect slow smooth motion):**
+
+   ```bash
+   sudo python3 ./tools/robstride/bench_jog_velocity.py \
+       --iface can1 --motor-id 0x08 --host-id 0xFD \
+       --target-vel 0.2 --duration 2.0 --go -v
+   ```
+
+   PASS criteria: exit 0, shaft moves in the commanded direction, no watchdog
+   trip (`|mechVel|` must stay below 1 rad/s with the stock script caps).
+
+4. **Limit enforcement — prove `limit_spd` clamps in firmware:**
+
+   ```bash
+   sudo python3 ./tools/robstride/bench_jog_velocity.py \
+       --iface can1 --motor-id 0x08 --host-id 0xFD --go --test-overlimit -v
+   ```
+
+   PASS criteria: exit 0, peak `|mechVel|` lands in ~[2.5, 3.2] rad/s while
+   `spd_ref` is commanded to 20 rad/s (script fails if speed exceeds 3.5 rad/s).
+
+5. Record completion in `inventory.yaml` (see Step 10).
+
+<details>
+<summary>Fallback: Motor Assistant GUI jog (Windows + CAN dongle)</summary>
+
 1. In Motor Assistant → Control Demo → select Operation Mode.
-2. Click **JOG+** / **JOG-**. The motor should turn slowly (~1 rad/s) and
-  stop when released.
-3. Try to command something that would violate the firmware limits (e.g. set
-  `limit_spd = 2.0` but command 10 rad/s). The motor should refuse to exceed
-   2 rad/s. If it does exceed the limit, the save did not stick or the
-   firmware does not enforce that parameter — STOP, do not deploy the motor.
+2. Click **JOG+** / **JOG-**. The motor should turn slowly (~1 rad/s) and stop
+   when released.
+3. Try to command something that would violate the firmware limits (e.g. lower
+   `limit_spd` in parameters, then command a faster jog). The motor should
+   refuse to exceed the configured limit. If it does exceed the limit, the save
+   did not stick or the firmware does not enforce that parameter — STOP, do not
+   deploy the motor.
+
+</details>
 
 ## Step 10 — Mark verified
 
-Only after **every** step above passed, set
-`inventory.yaml:verified: true` and `commissioned_at: <ISO 8601 timestamp>`.
+Only after **every** step above passed — including Pi Step 9 substeps — set:
+
+- `inventory.yaml:enable_disable_verified: true` (after §9.2 smoke test)
+- `inventory.yaml:jog_verified: true` (after §9.3 velocity jog)
+- `inventory.yaml:limit_spd_enforcement_verified: true` (after §9.4 overlimit)
+
+Then set `inventory.yaml:verified: true` and
+`commissioned_at: <ISO 8601 timestamp>`.
 
 Commit the inventory change with a message like
 `commission: verify shoulder_actuator_a (FW 0.3.1.10, ID 0x08)`.

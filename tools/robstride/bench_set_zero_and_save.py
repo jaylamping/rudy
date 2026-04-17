@@ -33,208 +33,35 @@ Refs: docs/decisions/0002-rs03-protocol-spec.md
 from __future__ import annotations
 
 import argparse
-import socket
-import struct
 import sys
 import time
 
-# --- constants from ADR-0002 -------------------------------------------------
+from rs03_can import (
+    PARAM_ADD_OFFSET,
+    PARAM_CAN_TIMEOUT,
+    PARAM_DAMPER,
+    PARAM_IQF,
+    PARAM_LIMIT_CUR,
+    PARAM_LIMIT_SPD,
+    PARAM_LIMIT_TORQUE,
+    PARAM_MECH_POS,
+    PARAM_MECH_VEL,
+    PARAM_RUN_MODE,
+    PARAM_VBUS,
+    PARAM_ZERO_STA,
+    cmd_save_params,
+    cmd_set_zero,
+    cmd_stop,
+    open_bus,
+    read_float,
+    read_u32,
+    read_u8,
+    set_verbose,
+)
 
-COMM_TYPE_READ_PARAM = 0x11
-COMM_TYPE_WRITE_PARAM = 0x12
-COMM_TYPE_SET_ZERO = 0x06
-COMM_TYPE_SAVE_PARAMS = 0x16
-COMM_TYPE_STOP = 0x04
-
-# IMPORTANT: type-17 (single parameter read) can ONLY read indices in the
-# 0x70xx namespace (see vendor manual §4.1.14 "Read and write a single
-# parameter list").  The 0x20xx stored-config and 0x30xx runtime-observables
-# namespaces visible in Motor Studio are NOT addressable via type-17 -- the
-# motor will reply with bit 16 of the arb ID set ("read failed") and zero
-# value bytes.  Motor Studio accesses 0x20xx / 0x30xx via type-0x13 bulk
-# export, which is a different protocol path we do not need for commissioning.
-#
-# Consequence: we read mechPos / mechVel / VBUS via the 0x70xx shadow indices
-# below, and we *cannot* read MechOffset / faultSta / CAN_ID from the Pi over
-# type-17.  That's fine for this bench utility's purpose: we only need enough
-# observability to decide whether the shaft is still and healthy before
-# sending Set-Zero + Save-Params admin frames.
-PARAM_MECH_POS = 0x7019        # mechPos  (float, rad, same physical field as 0x3016)
-PARAM_MECH_VEL = 0x701B        # mechVel  (float, rad/s, same as 0x3017)
-PARAM_IQF = 0x701A             # iqf      (float, A)
-PARAM_VBUS = 0x701C            # VBUS     (float, V)
-PARAM_LIMIT_SPD = 0x7017       # limit_spd (float, rad/s)
-PARAM_LIMIT_CUR = 0x7018       # limit_cur (float, A)
-PARAM_LIMIT_TORQUE = 0x700B    # limit_torque (float, Nm)
-PARAM_RUN_MODE = 0x7005        # run_mode (uint8)
-PARAM_CAN_TIMEOUT = 0x7028     # canTimeout (uint32, counts)
-PARAM_ZERO_STA = 0x7029        # zero_sta (uint8)
-PARAM_DAMPER = 0x702A          # damper (uint8)
-PARAM_ADD_OFFSET = 0x702B      # add_offset (float, rad)
-
-# Reply status flag encoded in bit 16 of the 29-bit reply arb ID:
-READ_STATUS_OK = 0x00
-READ_STATUS_FAIL = 0x01
-
-CAN_EFF_FLAG = 0x80000000  # Linux SocketCAN extended-frame flag
-SOCKET_TIMEOUT_S = 0.5
 SAVE_SETTLE_S = 0.2
 POWER_SANITY_MAX_VEL_RAD_S = 0.05
 
-
-# --- CAN framing -------------------------------------------------------------
-
-def arb_id(comm_type: int, host_id: int, motor_id: int) -> int:
-    """Build the 29-bit arbitration ID per ADR-0002."""
-    if not 0 <= comm_type <= 0x1F:
-        raise ValueError(f"comm_type {comm_type} out of 5-bit range")
-    if not 0 <= host_id <= 0xFF:
-        raise ValueError(f"host_id {host_id} out of 8-bit range")
-    if not 0 <= motor_id <= 0xFF:
-        raise ValueError(f"motor_id {motor_id} out of 8-bit range")
-    return (comm_type << 24) | (host_id << 8) | motor_id
-
-
-def open_bus(iface: str) -> socket.socket:
-    s = socket.socket(socket.AF_CAN, socket.SOCK_RAW, socket.CAN_RAW)
-    s.bind((iface,))
-    # Linux delivers a copy of our own TX frames back to our RAW socket by
-    # default.  Disable that so we don't see our read requests as "replies".
-    # Linux/can.h: SOL_CAN_RAW=101, CAN_RAW_RECV_OWN_MSGS=4.
-    SOL_CAN_RAW = 101
-    CAN_RAW_RECV_OWN_MSGS = 4
-    try:
-        s.setsockopt(SOL_CAN_RAW, CAN_RAW_RECV_OWN_MSGS, 0)
-    except OSError as exc:
-        print(f"WARNING: setsockopt(CAN_RAW_RECV_OWN_MSGS, 0) failed: {exc}")
-        print("         Falling back to content-based TX filtering.")
-    s.settimeout(SOCKET_TIMEOUT_S)
-    return s
-
-
-VERBOSE = False
-
-
-def _fmt_frame(can_id: int, data: bytes) -> str:
-    raw_id = can_id & 0x1FFFFFFF
-    return f"{raw_id:08X} [{len(data)}] " + " ".join(f"{b:02X}" for b in data)
-
-
-def send_frame(sock: socket.socket, comm_type: int, host_id: int,
-               motor_id: int, data: bytes) -> None:
-    if len(data) > 8:
-        raise ValueError("CAN data frame max 8 bytes")
-    data = data.ljust(8, b"\x00")
-    can_id = arb_id(comm_type, host_id, motor_id) | CAN_EFF_FLAG
-    frame = struct.pack("=IB3x8s", can_id, 8, data)
-    sock.send(frame)
-    if VERBOSE:
-        print(f"    TX {_fmt_frame(can_id, data)}")
-
-
-def recv_frame(sock: socket.socket):
-    frame = sock.recv(16)
-    can_id, dlc = struct.unpack("=IB3x", frame[:8])
-    data = frame[8:8 + dlc]
-    comm_type = (can_id >> 24) & 0x1F
-    if VERBOSE:
-        print(f"    RX {_fmt_frame(can_id, data)} (type={comm_type})")
-    return comm_type, can_id, data
-
-
-# --- Param read/write --------------------------------------------------------
-
-def read_param_raw(sock: socket.socket, host_id: int, motor_id: int,
-                   index: int, timeout_s: float = 0.5) -> bytes | None:
-    """Send a type-17 read, wait for the matching reply, return the 4 value
-    bytes (little-endian).  None on timeout, motor rejection, or mismatch.
-
-    Reply arb ID layout (vendor manual §4.1.6, observed on FW 0.3.1.41):
-
-        [type=0x11][status(8)][motor_id(8)][host_id(8)]
-          bits28-24   bits23-16   bits15-8     bits7-0
-
-    where status = 0 for "read OK" and status = 1 for "read failed".  A read
-    fails when the requested index is not in the type-17 parameter list
-    (§4.1.14), i.e. not in the 0x70xx namespace.  On failure the motor still
-    sends a reply frame, just with zero-filled value bytes and status=1.
-
-    Our TX has the opposite source/dest orientation: bits 23..16 contain the
-    *status* field on the reply path (manual §4.1.6 reply row), which we do
-    NOT set on transmit.  On transmit, bits 15..8 = host, bits 7..0 = motor.
-    On reply, bits 15..8 = motor (source), bits 7..0 = host (dest).
-    """
-    req = struct.pack("<HHI", index, 0, 0)  # idx, pad, zero
-    tx_id = arb_id(COMM_TYPE_READ_PARAM, host_id, motor_id)
-    send_frame(sock, COMM_TYPE_READ_PARAM, host_id, motor_id, req)
-
-    deadline = time.monotonic() + timeout_s
-    while time.monotonic() < deadline:
-        try:
-            comm_type, can_id, data = recv_frame(sock)
-        except (socket.timeout, TimeoutError):
-            return None
-        raw_id = can_id & 0x1FFFFFFF
-        if raw_id == tx_id:
-            continue  # self-loopback guard
-        if comm_type != COMM_TYPE_READ_PARAM:
-            continue
-        # Decode reply arb ID: [type(5)][status(8)][src motor(8)][dest host(8)]
-        reply_status = (raw_id >> 16) & 0xFF
-        reply_motor = (raw_id >> 8) & 0xFF
-        reply_host = raw_id & 0xFF
-        if reply_motor != motor_id or reply_host != host_id:
-            continue  # not a reply addressed to us from this motor
-        if len(data) < 8:
-            continue
-        reply_index = struct.unpack("<H", data[:2])[0]
-        if reply_index != index:
-            continue
-        if reply_status == READ_STATUS_FAIL:
-            if VERBOSE:
-                print(f"    -> motor rejected read of index 0x{index:04X} "
-                      f"(status byte = 0x{reply_status:02X}). "
-                      "Is this index in the 0x70xx namespace?")
-            return None
-        if reply_status != READ_STATUS_OK:
-            if VERBOSE:
-                print(f"    -> reply status byte = 0x{reply_status:02X} "
-                      f"(expected 0x00 or 0x01); treating as failure.")
-            return None
-        return bytes(data[4:8])
-    return None
-
-
-def read_float(sock, host_id, motor_id, index):
-    raw = read_param_raw(sock, host_id, motor_id, index)
-    return struct.unpack("<f", raw)[0] if raw else None
-
-
-def read_u32(sock, host_id, motor_id, index):
-    raw = read_param_raw(sock, host_id, motor_id, index)
-    return struct.unpack("<I", raw)[0] if raw else None
-
-
-def read_u8(sock, host_id, motor_id, index):
-    raw = read_param_raw(sock, host_id, motor_id, index)
-    return raw[0] if raw else None
-
-
-# --- Commands ----------------------------------------------------------------
-
-def cmd_stop(sock, host_id, motor_id):
-    send_frame(sock, COMM_TYPE_STOP, host_id, motor_id, b"\x00")
-
-
-def cmd_set_zero(sock, host_id, motor_id):
-    send_frame(sock, COMM_TYPE_SET_ZERO, host_id, motor_id, b"\x01")
-
-
-def cmd_save_params(sock, host_id, motor_id):
-    send_frame(sock, COMM_TYPE_SAVE_PARAMS, host_id, motor_id, b"")
-
-
-# --- Top-level flow ----------------------------------------------------------
 
 def dump_state(sock, host_id, motor_id, label):
     """Read and print the runtime observables exposed via type-17 (0x70xx).
@@ -288,8 +115,7 @@ def main():
                     help="Print every TX/RX CAN frame in hex.")
     args = ap.parse_args()
 
-    global VERBOSE
-    VERBOSE = args.verbose
+    set_verbose(args.verbose)
 
     sock = open_bus(args.iface)
     print(f"bound {args.iface}, talking to motor 0x{args.motor_id:02X} "

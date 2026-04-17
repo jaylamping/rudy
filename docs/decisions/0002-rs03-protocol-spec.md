@@ -79,6 +79,48 @@ Type 1 frame, 8 bytes, big-endian within each field:
 **Prior code in this repo used kp [0,500] and kd [0,5]. That is wrong by 10× and
 20×. It MUST be fixed before sending MIT frames.**
 
+### Enable motor run (type 3)
+
+Per vendor manual §4.1.4, the host sends comm type `0x03` with arbitration ID
+`[0x03][host_id][motor_id]`. The **8-byte data payload is don't-care** (all-zero
+padding is fine on transmit); the motor enters the enabled run state according
+to the current `run_mode` and RAM setpoints (`spd_ref`, `loc_ref`, MIT stream,
+etc.).
+
+Bench tooling: `tools/robstride/rs03_can.py:cmd_enable()`.
+
+### Motor feedback frame (type 2)
+
+Emitted while the motor is active (after enable). **Canonical field packing is
+vendor manual §4.1.3**; the table below is what
+`tools/robstride/rs03_can.py:decode_motor_feedback()` implements for Pi-side
+commissioning scripts.
+
+**Empirical check (required on first bring-up):** run
+`tools/robstride/bench_enable_disable.py --go --verbose` and compare decoded
+`pos_rad` / `vel_rad_s` against type-17 reads of `0x7019` / `0x701B` at the same
+instant. If the scaling or byte order is wrong, fix `decode_motor_feedback()`
+and update this table.
+
+**Reply arbitration ID** (29-bit extended, as seen on the host RX path — motor
+is source):
+
+```
+bits 28..24 : 0x02               (comm type)
+bits 23..16 : source motor_id (8 bits)
+bits 15..8  : status            (fault/mode bits; see manual §4.1.3 / §3.3.7)
+bits  7..0  : destination host_id
+```
+
+**Data payload** (8 bytes, **big-endian 16-bit words**):
+
+| bytes | field        | encoding |
+|------:|--------------|----------|
+| 0..1  | mechPos raw | `uint16` BE → linear map −4π..+4π rad |
+| 2..3  | mechVel raw  | `uint16` BE → linear map −20..+20 rad/s |
+| 4..5  | torque raw   | `uint16` BE → linear map −60..+60 Nm |
+| 6..7  | MOS temp raw | `uint16` BE → physical °C = raw / 10 |
+
 ### Run modes (`run_mode`, parameter `0x7005`, uint8)
 
 | value | mode                          |
