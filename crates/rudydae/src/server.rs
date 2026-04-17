@@ -2,7 +2,7 @@
 //!
 //! Everything under `/api/*` is gated by the shared-token auth middleware.
 //! Everything else falls through to a `rust-embed`-backed handler that
-//! serves `crates/rudyd/static/` (copied from `link/dist/` at build time)
+//! serves `crates/rudydae/static/` (copied from `link/dist/` at build time)
 //! with SPA-style fallback to `index.html` for client-side routing.
 
 use std::net::SocketAddr;
@@ -68,13 +68,13 @@ pub async fn run(state: SharedState) -> Result<()> {
         let tls_cfg = axum_server::tls_rustls::RustlsConfig::from_pem_file(cert, key)
             .await
             .context("loading TLS cert/key for axum")?;
-        info!(%bind, "rudyd https listener up");
+        info!(%bind, "rudydae https listener up");
         axum_server::bind_rustls(bind, tls_cfg)
             .serve(app.into_make_service())
             .await
             .context("axum_server serve")?;
     } else {
-        warn!(%bind, "rudyd http listener up (TLS disabled - dev only)");
+        warn!(%bind, "rudydae http listener up (TLS disabled - dev only)");
         axum_server::bind(bind)
             .serve(app.into_make_service())
             .await

@@ -4,14 +4,16 @@ Scripts in this directory target **Ubuntu 24.04 (aarch64)** on a Raspberry Pi 5 
 
 ## Files
 
-| File | Purpose |
-|------|---------|
-| `Dockerfile.pi5` | Cross-compilation image (Rust + aarch64 toolchain) |
-| `setup_pi5.sh` | One-time Pi setup: ROS 2 Jazzy base, CycloneDDS, CAN systemd unit |
-| `can_setup.sh` | Bring up `can0` / `can1` at 1 Mbps |
-| `robot-can.service` | systemd unit (installed to `/etc/systemd/system/`) |
-| `deploy.sh` | `rsync` of `install/` + `config/` to the Pi |
+
+| File                 | Purpose                                                              |
+| -------------------- | -------------------------------------------------------------------- |
+| `Dockerfile.pi5`     | Cross-compilation image (Rust + aarch64 toolchain)                   |
+| `setup_pi5.sh`       | One-time Pi setup: ROS 2 Jazzy base, CycloneDDS, CAN systemd unit    |
+| `can_setup.sh`       | Bring up `can0` / `can1` at 1 Mbps                                   |
+| `robot-can.service`  | systemd unit (installed to `/etc/systemd/system/`)                   |
+| `deploy.sh`          | `rsync` of `install/` + `config/` to the Pi                          |
 | `config.txt.example` | Example `/boot/firmware/config.txt` lines for SPI + MCP2515 overlays |
+
 
 ## Quick start
 
@@ -28,10 +30,12 @@ On the Waveshare 2-CH CAN HAT, the **silkscreen labels on the PCB** ("CAN0" / "C
 
 Empirically on **our** Pi 5 with the overlays in `config.txt.example` (`mcp2515-can0,interrupt=23` + `mcp2515-can1,interrupt=25`), the mapping is:
 
+
 | silkscreen label | SPI CE | interrupt GPIO | **Linux iface** |
-|------------------|--------|----------------|-----------------|
-| `CAN0`           | CE0    | GPIO 23        | **`can1`**      |
-| `CAN1`           | CE1    | GPIO 25        | **`can0`**      |
+| ---------------- | ------ | -------------- | --------------- |
+| `CAN0`           | CE0    | GPIO 23        | `**can1`**      |
+| `CAN1`           | CE1    | GPIO 25        | `**can0**`      |
+
 
 **Translation: if you plug your wires into the screw terminals labeled "CAN0" on the board, talk to `can1` in software.** This is counter-intuitive but matches what a `candump` sanity test confirmed 2026-04-17 (full RobStride RS03 parameter export received on `can1`, nothing on `can0`, with wires in the silkscreen-"CAN0" terminal).
 

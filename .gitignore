@@ -26,7 +26,7 @@ crates/target/
 target/
 
 # ts-rs default export dir (bindings land in link/src/lib/types/ via TS_RS_EXPORT_DIR)
-crates/rudyd/bindings/
+crates/rudydae/bindings/
 
 # Node / Vite (link frontend)
 link/node_modules/
@@ -34,5 +34,5 @@ link/dist/
 link/.vite/
 link/*.tsbuildinfo
 
-# rudyd local state
+# rudyd local state (paths + token file naming; binary is `rudydae`)
 **/.rudyd/

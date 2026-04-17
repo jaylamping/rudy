@@ -1,6 +1,6 @@
 // Thin fetch wrapper that injects the bearer token on every request. The
 // actual server-state caching lives in TanStack Query (see `./query.ts`).
-// Requests are same-origin (Vite dev proxy or rudyd serving the built SPA).
+// Requests are same-origin (Vite dev proxy or rudydae serving the built SPA).
 
 import { clearToken, getToken } from "./hooks/useAuth";
 

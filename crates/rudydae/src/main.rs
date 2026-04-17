@@ -1,4 +1,4 @@
-//! `rudyd` - Rudy operator-console daemon.
+//! `rudydae` - Rudy operator-console daemon.
 //!
 //! See docs/decisions/0004-operator-console.md for architecture + safety.
 
@@ -13,8 +13,8 @@ mod audit;
 mod auth;
 mod can;
 mod config;
-mod server;
 mod inventory;
+mod server;
 mod spec;
 mod state;
 mod telemetry;
@@ -27,7 +27,7 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| EnvFilter::new("rudyd=info,tower_http=info")),
+                .unwrap_or_else(|_| EnvFilter::new("rudydae=info,tower_http=info")),
         )
         .with_target(true)
         .init();
@@ -39,7 +39,7 @@ async fn main() -> Result<()> {
         .unwrap_or("./config/rudyd.toml");
 
     let cfg = config::Config::load(config_path)
-        .with_context(|| format!("loading rudyd config from {config_path}"))?;
+        .with_context(|| format!("loading config from {config_path}"))?;
     info!("loaded config from {config_path}");
 
     let spec = spec::ActuatorSpec::load(&cfg.paths.actuator_spec)
@@ -61,7 +61,7 @@ async fn main() -> Result<()> {
     let http_handle = tokio::spawn(server::run(app_state.clone()));
     let wt_handle = tokio::spawn(wt::run(app_state.clone()));
 
-    info!("rudyd is up");
+    info!("rudydae is up");
 
     tokio::select! {
         res = http_handle => res??,

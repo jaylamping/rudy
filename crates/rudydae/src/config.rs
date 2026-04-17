@@ -1,4 +1,4 @@
-//! rudyd configuration loaded from `config/rudyd.toml`.
+//! Operator daemon configuration loaded from `config/rudyd.toml` by default.
 
 use std::path::{Path, PathBuf};
 
@@ -93,8 +93,8 @@ fn default_true() -> bool {
 impl Config {
     pub fn load(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
-        let contents = std::fs::read_to_string(path)
-            .with_context(|| format!("reading {}", path.display()))?;
+        let contents =
+            std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
         let cfg: Config = toml::from_str(&contents)
             .with_context(|| format!("parsing TOML in {}", path.display()))?;
         Ok(cfg)

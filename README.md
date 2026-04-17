@@ -18,7 +18,7 @@ Monorepo for the Rudy upper-body humanoid (RobStride RS03 actuators, CAN bus, Is
   - `simulation` — Isaac Lab scaffold + sim YAML configs
   - `tests` — `launch_testing` + parity tests
 - [`crates/`](crates/) — Non-ROS Rust (Cargo workspace):
-  - `rudyd` — operator-console daemon (axum HTTPS + WebTransport over Tailscale)
+  - `rudydae` — operator-console daemon (axum HTTPS + WebTransport over Tailscale)
 - [`link/`](link/) — Vite + React + TypeScript operator console UI (shadcn/ui, TanStack Query, WebTransport)
 - [`config/`](config/) — Workspace-wide configuration (actuator specs, `rudyd.toml`, inventory)
 - [`deploy/pi5/`](deploy/pi5/) — Raspberry Pi 5 bring-up + systemd units + deploy scripts
@@ -43,8 +43,8 @@ rosdep install --from-paths src --ignore-src -r -y
 colcon build --symlink-install
 source install/setup.bash
 
-# rudyd daemon
-cd ../crates && cargo build --release -p rudyd
+# rudydae daemon
+cd ../crates && cargo build --release -p rudydae
 
 # link frontend
 cd ../link && npm install && npm run build
@@ -60,7 +60,7 @@ python3 -m pytest -q tests
 # Rust unit tests (driver crate, inside ROS workspace)
 (cd ros/src/driver && cargo test)
 
-# Rust unit tests (rudyd + future crates)
+# Rust unit tests (rudydae + future crates)
 (cd crates && cargo test)
 
 # ROS package tests (after colcon build inside ros/)
@@ -90,7 +90,7 @@ PATH="$PWD/.venv/bin:$PATH" python3 scripts/validate_urdf.py
 
 ## Operator console
 
-The `rudyd` daemon plus `link` SPA together form the operator console — live
+The `rudydae` daemon plus `link` SPA together form the operator console — live
 telemetry, firmware parameter editor, jog/enable controls, URDF 3D view, log
 tail. Reachable over Tailscale only. See:
 
@@ -100,7 +100,7 @@ tail. Reachable over Tailscale only. See:
 
 ## CI
 
-GitHub Actions workflow: [`.github/workflows/ci.yaml`](.github/workflows/ci.yaml) — separate jobs for `ros` (Rust + aarch64 `cargo check`, `colcon` build/test, pytest), `rudyd` (crates workspace fmt/clippy/test), `link` (lint + typecheck + build), and `docs-links`.
+GitHub Actions workflow: [`.github/workflows/ci.yaml`](.github/workflows/ci.yaml) — separate jobs for `ros` (Rust + aarch64 `cargo check`, `colcon` build/test, pytest), `rudydae` (crates workspace fmt/clippy/test), `link` (lint + typecheck + build), and `docs-links`.
 
 ## License
 

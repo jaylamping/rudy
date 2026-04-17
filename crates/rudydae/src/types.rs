@@ -1,7 +1,7 @@
-//! Wire types shared between rudyd and the `link` SPA.
+//! Wire types shared between rudydae and the `link` SPA.
 //!
 //! Every type here has `#[derive(TS)] #[ts(export, export_to = "...")]`, so
-//! `cargo test -p rudyd export_bindings` regenerates `link/src/lib/types/*.ts`.
+//! `cargo test -p rudydae export_bindings` regenerates `link/src/lib/types/*.ts`.
 //! `crates/.cargo/config.toml` sets `TS_RS_EXPORT_DIR` so outputs land next to the SPA.
 //! Run `python scripts/fix-ts-rs-imports.py` (or `npm run gen:types` in `link/`) to fix serde_json paths. See
 //! <https://github.com/Aleph-Alpha/ts-rs>.
@@ -93,7 +93,7 @@ pub struct ParamValue {
 #[ts(export, export_to = "./")]
 pub struct ParamWrite {
     pub value: serde_json::Value,
-    /// If `true`, rudyd also issues the type-22 save after the write. If
+    /// If `true`, rudydae also issues the type-22 save after the write. If
     /// `false` (default), the value lives in RAM and `POST /api/motors/:role/save`
     /// is required to persist it.
     #[serde(default)]
@@ -113,6 +113,7 @@ pub struct ApiError {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "./")]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[allow(dead_code)] // Wire shape for WebTransport; parsed in wt/ when Phase 2 lands.
 pub enum WtSubscribe {
     /// High-rate feedback datagrams for the listed motor roles (empty = all).
     Feedback { roles: Vec<String> },

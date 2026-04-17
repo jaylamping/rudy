@@ -69,7 +69,7 @@ function LoginScreen() {
           {busy ? "Signing in..." : "Sign in"}
         </button>
         <p className="text-xs text-muted-foreground">
-          Tokens rotate via the runbook. If you are running rudyd with{" "}
+          Tokens rotate via the runbook. If you are running rudydae with{" "}
           <code className="font-mono">dev_allow_no_token = true</code>, any value works.
         </p>
       </form>

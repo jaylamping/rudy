@@ -7,7 +7,7 @@
 //
 // Messages arrive as CBOR datagrams; we ship a minimal decoder rather than
 // pulling in a full CBOR library for the first pass. This handles only the
-// shapes rudyd emits from `types::MotorFeedback`.
+// shapes rudydae emits from `types::MotorFeedback`.
 
 import { useEffect, useRef, useState } from "react";
 import { getToken } from "./useAuth";

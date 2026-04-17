@@ -1,18 +1,18 @@
 ---
 name: rudy operator console
-overview: Build a Tailscale-reachable web operator console for Rudy that streams live telemetry, edits firmware parameters, jogs joints, visualizes the URDF, and tails logs. Introduces a long-lived Rust `rudyd` daemon on the Pi 5 that owns the CAN bus and exposes two network surfaces — HTTP/1.1+2 (axum) for CRUD and a WebTransport/HTTP3 endpoint (wtransport) for the telemetry + log firehose. The UI is a standalone React/TypeScript project (`link/`) built on shadcn/ui, TanStack Query for server state, and WebTransport for streaming.
+overview: Build a Tailscale-reachable web operator console for Rudy that streams live telemetry, edits firmware parameters, jogs joints, visualizes the URDF, and tails logs. Introduces a long-lived Rust `rudydae` daemon on the Pi 5 that owns the CAN bus and exposes two network surfaces — HTTP/1.1+2 (axum) for CRUD and a WebTransport/HTTP3 endpoint (wtransport) for the telemetry + log firehose. The UI is a standalone React/TypeScript project (`link/`) built on shadcn/ui, TanStack Query for server state, and WebTransport for streaming.
 todos:
   - id: reorg_top_level
-    content: "Step 0 (before any rudyd code): reorganize the repo top level per Option B. git mv src/{description,bringup,msgs,control,telemetry,simulation,tests,driver}/ to ros/src/<same>/. Create empty crates/ with a Cargo.toml workspace manifest (members=[rudyd]). Update .github/workflows/ci.yaml (cargo working-directory, colcon in ros/), README.md, docs/architecture.md, docs/runbooks/isaac_lab.md, scripts/validate_urdf.py, src/driver/README.md, tools/robstride/commission.md, tools/robstride/*.py, tests/*.py, .gitignore. Verify with a full local `cd ros && colcon build` + `(cd ros/src/driver && cargo test)` before landing. Commit as a single reorg commit so blame-through-move works."
+    content: "Step 0 (before any rudydae code): reorganize the repo top level per Option B. git mv src/{description,bringup,msgs,control,telemetry,simulation,tests,driver}/ to ros/src/<same>/. Create empty crates/ with a Cargo.toml workspace manifest (members=[rudydae]). Update .github/workflows/ci.yaml (cargo working-directory, colcon in ros/), README.md, docs/architecture.md, docs/runbooks/isaac_lab.md, scripts/validate_urdf.py, src/driver/README.md, tools/robstride/commission.md, tools/robstride/*.py, tests/*.py, .gitignore. Verify with a full local `cd ros && colcon build` + `(cd ros/src/driver && cargo test)` before landing. Commit as a single reorg commit so blame-through-move works."
     status: pending
   - id: adr_0004
-    content: Write ADR-0004 capturing the "rudyd owns the bus" decision, dual-listener architecture (axum + wtransport), WebTransport-via-Tailscale TLS story, safety model, auth, and the deferred-for-now decision to leave driver as a hybrid ament/cargo package instead of splitting it into crates/driver + ros/src/driver_node today.
+    content: Write ADR-0004 capturing the "rudydae owns the bus" decision, dual-listener architecture (axum + wtransport), WebTransport-via-Tailscale TLS story, safety model, auth, and the deferred-for-now decision to leave driver as a hybrid ament/cargo package instead of splitting it into crates/driver + ros/src/driver_node today.
     status: completed
-  - id: rudyd_skeleton
-    content: Create crates/rudyd/ Rust binary (axum + tokio + wtransport), workspace member. Depends on driver = { path = "../../ros/src/driver" }. Binary runs, serves a health endpoint over HTTPS (Tailscale cert), opens a WebTransport listener on :4433/udp, loads config/rudyd.toml.
+  - id: rudydae_skeleton
+    content: Create crates/rudydae/ Rust binary (axum + tokio + wtransport), workspace member. Depends on driver = { path = "../../ros/src/driver" }. Binary runs, serves a health endpoint over HTTPS (Tailscale cert), opens a WebTransport listener on :4433/udp, loads config/rudyd.toml.
     status: pending
   - id: can_ownership
-    content: "Move CAN ownership into rudyd: single writer task wrapping driver::socketcan_bus::CanBus, async broadcast channel for telemetry fan-out. bench_tool gains --direct vs --via-rudyd."
+    content: "Move CAN ownership into rudydae: single writer task wrapping driver::socketcan_bus::CanBus, async broadcast channel for telemetry fan-out. bench_tool gains --direct vs --via-rudydae."
     status: pending
   - id: telemetry_loop
     content: Background poller emits type-17 reads for the params observables block in config/actuators/robstride_rs03.yaml; publishes decoded feedback on a broadcast channel.
@@ -27,7 +27,7 @@ todos:
     content: Shared-token middleware on all /api/* routes. Token loaded from file referenced by config/rudyd.toml. Audit log (~/.rudyd/audit.jsonl) for every mutating request.
     status: pending
   - id: spa_shell
-    content: "Vite + React + TS project at top-level link/. Own package.json, tsconfig, eslint, CI job. Stack: shadcn/ui (via shadcn MCP server — user must add it in Cursor Settings before execution) for all components, Tailwind v4, TanStack Query for all HTTP server-state, TanStack Router for routing (search-param-driven UI state), plain React useState/useReducer for ephemeral local state. No global state library yet — revisit if/when a shared state need actually emerges. Dark-mode-first, login-with-token screen, layout with telemetry/params/jog/viz/logs routes. Build output (link/dist) copied into src/rudyd/static/ by a cargo build script and embedded via rust-embed for single-binary Pi deploys; npm run dev proxies /api to a locally-running rudyd for fast iteration."
+    content: "Vite + React + TS project at top-level link/. Own package.json, tsconfig, eslint, CI job. Stack: shadcn/ui (via shadcn MCP server — user must add it in Cursor Settings before execution) for all components, Tailwind v4, TanStack Query for all HTTP server-state, TanStack Router for routing (search-param-driven UI state), plain React useState/useReducer for ephemeral local state. No global state library yet — revisit if/when a shared state need actually emerges. Dark-mode-first, login-with-token screen, layout with telemetry/params/jog/viz/logs routes. Build output (link/dist) copied into crates/rudydae/static/ by a cargo build script and embedded via rust-embed for single-binary Pi deploys; npm run dev proxies /api to a locally-running rudydae for fast iteration."
     status: pending
   - id: param_editor
     content: "Phase-1 UI: parameter inspector + editor generated from config/actuators/robstride_rs03.yaml. Typed-confirm dialog, \"write to RAM\" vs \"save to flash\" clearly separate."
@@ -66,7 +66,7 @@ graph LR
     SPA["link (React SPA)"]
   end
   subgraph pi5 [Pi5]
-    subgraph daemon [rudyd Rust daemon]
+    subgraph daemon [rudydae Rust daemon]
       Axum["axum (HTTP/1.1+2)"]
       WT["wtransport (HTTP/3 QUIC)"]
       Core["shared core: CanBus + broadcast channels"]
@@ -83,14 +83,14 @@ graph LR
   Bus --> RS03[RS03_actuators]
 ```
 
-Key decision: **one process on the Pi owns the bus.** `rudyd` subsumes what `bench_tool` does today; `bench_tool` becomes a thin CLI client of `rudyd` (or stays standalone for the "daemon is down" case — TBD). When the ROS 2 `driver_node` lands, it runs *inside* `rudyd` as another consumer of the same shared bus handle, not as a competitor.
+Key decision: **one process on the Pi owns the bus.** `rudydae` subsumes what `bench_tool` does today; `bench_tool` becomes a thin CLI client of `rudydae` (or stays standalone for the "daemon is down" case — TBD). When the ROS 2 `driver_node` lands, it runs *inside* `rudydae` as another consumer of the same shared bus handle, not as a competitor.
 
 ## Stack choices (with why)
 
 - **Backend: Rust, dual-listener.** `axum` + `tokio` serves HTTP/1.1+2 for CRUD and embedded static assets. [`wtransport`](https://docs.rs/wtransport) (QUIC-based HTTP/3) serves the telemetry + log firehose on its own UDP port. Both listeners share an in-process core (CAN bus handle + `tokio::sync::broadcast` channels). Same toolchain as the driver; can `use driver::rs03::session::*` directly (see `ros/src/driver/src/rs03/session.rs` post-reorg).
 - **CAN ownership: `socketcan` async wrapper** around the existing `ros/src/driver/src/socketcan_bus.rs` (post-reorg path). Single writer task, broadcast channels to both the axum handlers and the WebTransport session tasks.
-- **TLS: Tailscale HTTPS on the Pi.** Tailscale-provisioned Let's Encrypt cert (via `tailscale cert` + `tailscale serve` or native integration) gives us a real cert chain without cert-rotation glue. `rudyd` only binds Tailscale-local addresses. Anything outside Tailscale gets no response.
-- **Frontend: Vite + React + TypeScript.** UI library is **shadcn/ui** (all components; Tailwind v4); `TanStack Query` owns all HTTP server-state (params, inventory, fault history, config) with standard cache keys + optimistic mutations; `TanStack Router` handles typed routing, with search params carrying selectable UI state (current motor ID, chart time range, jog mode) so it's shareable/bookmarkable; plain React `useState`/`useReducer` for the rest. **No global state library** — we'll add Zustand (or Jotai, or Redux) only when an actual shared-state need emerges that local + URL + server state can't express cleanly. `uPlot` for telemetry strip charts; `three-fiber` + `urdf-loader` for the 3D view. Lives in its own top-level `link/` project; `link/dist/` is embedded into `rudyd` via `rust-embed` for Pi deploys.
+- **TLS: Tailscale HTTPS on the Pi.** Tailscale-provisioned Let's Encrypt cert (via `tailscale cert` + `tailscale serve` or native integration) gives us a real cert chain without cert-rotation glue. `rudydae` only binds Tailscale-local addresses. Anything outside Tailscale gets no response.
+- **Frontend: Vite + React + TypeScript.** UI library is **shadcn/ui** (all components; Tailwind v4); `TanStack Query` owns all HTTP server-state (params, inventory, fault history, config) with standard cache keys + optimistic mutations; `TanStack Router` handles typed routing, with search params carrying selectable UI state (current motor ID, chart time range, jog mode) so it's shareable/bookmarkable; plain React `useState`/`useReducer` for the rest. **No global state library** — we'll add Zustand (or Jotai, or Redux) only when an actual shared-state need emerges that local + URL + server state can't express cleanly. `uPlot` for telemetry strip charts; `three-fiber` + `urdf-loader` for the 3D view. Lives in its own top-level `link/` project; `link/dist/` is embedded into `rudydae` via `rust-embed` for Pi deploys.
 - **shadcn tooling:** component adds go through the **shadcn MCP server** ([ui.shadcn.com/docs/mcp](https://ui.shadcn.com/docs/mcp)) so AI-driven component installs + the shadcn skill stay in sync. Prereq: user runs `npx skills add shadcn/ui` and enables the MCP server in Cursor Settings before execution starts — the skill is not yet installed locally and the MCP server is not yet in the enabled MCP list.
 - **Transport split:**
   - **HTTPS + TanStack Query** for everything request/response: `GET /api/motors`, `GET/PUT /api/motors/:id/params`, `POST /api/motors/:id/{enable,stop,save,set_zero}`, `GET /api/config` (advertises WebTransport URL + features), `GET /api/inventory`, etc. Curlable, cacheable, optimistic-update-friendly.
@@ -101,22 +101,22 @@ Key decision: **one process on the Pi owns the bus.** `rudyd` subsumes what `ben
 
 ## Safety model (non-negotiable)
 
-The firmware layering in [docs/robotics-best-practices-reference.md](docs/robotics-best-practices-reference.md) still holds — `rudyd` is **strictly outside** the firmware `limit_*` envelope. In addition:
+The firmware layering in [docs/robotics-best-practices-reference.md](docs/robotics-best-practices-reference.md) still holds — `rudydae` is **strictly outside** the firmware `limit_*` envelope. In addition:
 
 - **Write confirmation:** every param write round-trips a server-side dry-run (range-check against `firmware_limits.hardware_range` + commissioning caps), requires a typed-confirm dialog in the UI, and logs to a append-only `~/.rudyd/audit.jsonl`.
 - **Save-to-flash is its own button**, never implicit. Matches the Step 6/7 split in [tools/robstride/commission.md](tools/robstride/commission.md).
 - **Jog UI has a dead-man switch:** holding a key sends command packets at ≥ 20 Hz; releasing → server cancels → `cmd_stop`. `can_timeout` from the motor side is the backstop.
-- **Single-operator lock:** `rudyd` refuses to enable / write when another session is already "in control." First-come, with a visible "take over" button.
+- **Single-operator lock:** `rudydae` refuses to enable / write when another session is already "in control." First-come, with a visible "take over" button.
 - **Enable-gated by `inventory.yaml:verified`.** Same gate the Rust driver uses per [tools/robstride/commission.md](tools/robstride/commission.md); the UI must not provide a way to bypass it.
 
 ## Phasing (weeks, not days)
 
 Phase 0 is a prerequisite — the repo reorg that makes the rest fit cleanly. Phase 1 is the useful-immediately core; 2 and 3 are the "tons of other things."
 
-- **Phase 0 — top-level reorg.** `src/` → `ros/src/`, introduce `crates/` as a Cargo workspace (initially containing only `rudyd` once it's scaffolded). All path references in CI, docs, runbooks, scripts, tests, and tools updated in a single commit so blame-through-move works. Local verification: `cd ros && colcon build` clean, `(cd ros/src/driver && cargo test)` passes.
+- **Phase 0 — top-level reorg.** `src/` → `ros/src/`, introduce `crates/` as a Cargo workspace (initially containing only `rudydae` once it's scaffolded). All path references in CI, docs, runbooks, scripts, tests, and tools updated in a single commit so blame-through-move works. Local verification: `cd ros && colcon build` clean, `(cd ros/src/driver && cargo test)` passes.
 
-- **Phase 1 — telemetry + params (MVP that replaces Motor Studio for you):** `rudyd` skeleton with both listeners (axum + wtransport), Tailscale cert wiring, CAN ownership, type-17 poller, WebTransport datagram stream, REST `GET/PUT /params`, `link/` SPA shell with shadcn/ui theme + TanStack Query client, param editor, live uPlot charts for `mechPos`/`mechVel`/`vbus`/`faultSta` driven by WebTransport datagrams. Success = write `limit_torque` from the browser and verify across PSU cycle.
-- **Phase 2 — control + viz:** jog panel, enable/disable, set-zero + save-to-flash flows, URDF 3D view driven by live `joint_states` reconstructed from per-motor `mechPos`, log tail (journald `rudyd` + kernel CAN errors).
+- **Phase 1 — telemetry + params (MVP that replaces Motor Studio for you):** `rudydae` skeleton with both listeners (axum + wtransport), Tailscale cert wiring, CAN ownership, type-17 poller, WebTransport datagram stream, REST `GET/PUT /params`, `link/` SPA shell with shadcn/ui theme + TanStack Query client, param editor, live uPlot charts for `mechPos`/`mechVel`/`vbus`/`faultSta` driven by WebTransport datagrams. Success = write `limit_torque` from the browser and verify across PSU cycle.
+- **Phase 2 — control + viz:** jog panel, enable/disable, set-zero + save-to-flash flows, URDF 3D view driven by live `joint_states` reconstructed from per-motor `mechPos`, log tail (journald `rudydae` + kernel CAN errors).
 - **Phase 3 — operations:** multi-motor fan-in when actuator_b arrives, rosbag-style session recording, fault-history browser, sim-link (plot Isaac Lab ghost vs real), Tailscale-exposed HTTPS.
 
 ## Layout (post-reorg)
@@ -129,8 +129,8 @@ rudy/
 │   └── src/              # colcon packages live here (colcon expects "src" as its subdir)
 │       ├── description/ bringup/ msgs/ control/ telemetry/ simulation/ tests/ driver/
 ├── crates/               # Cargo workspace for non-ROS Rust
-│   ├── Cargo.toml        # [workspace] members = ["rudyd"]
-│   └── rudyd/            # the new daemon
+│   ├── Cargo.toml        # [workspace] members = ["rudydae"]
+│   └── rudydae/            # the new daemon
 ├── link/                 # Vite + React + TS frontend
 ├── config/               # actuator specs, rudyd.toml, inventory
 ├── deploy/               # Pi 5 bring-up, systemd units, Tailscale cert runbook
@@ -142,8 +142,8 @@ rudy/
 
 Per-folder detail for the new pieces:
 
-- `crates/rudyd/` — Binary `rudyd`. Depends on `driver = { path = "../../ros/src/driver" }` (driver stays in the ROS workspace today because it's a hybrid ament/cargo package; splitting it into a pure `crates/driver/` + thin `ros/src/driver_node/` is a future ADR). Two listener tasks inside one binary: axum on `:8443` (HTTPS, Tailscale cert) and wtransport on `:4433/udp` (HTTP/3). `build.rs` copies `../../link/dist/` into `crates/rudyd/static/` pre-compile (skipped when `RUDYD_NO_EMBED=1` for Vite dev loop).
-- `link/` — own `package.json`, `tsconfig.json`, `.eslintrc`, Vitest config. shadcn/ui (via `components.json`), TanStack Query, TanStack Router, uPlot, three-fiber, urdf-loader. `link/src/api/generated/` holds ts-rs-generated TS types mirroring `rudyd`'s Rust structs. Can be pointed at a remote `rudyd` via `VITE_RUDYD_URL`.
+- `crates/rudydae/` — Binary `rudydae`. Depends on `driver = { path = "../../ros/src/driver" }` (driver stays in the ROS workspace today because it's a hybrid ament/cargo package; splitting it into a pure `crates/driver/` + thin `ros/src/driver_node/` is a future ADR). Two listener tasks inside one binary: axum on `:8443` (HTTPS, Tailscale cert) and wtransport on `:4433/udp` (HTTP/3). `build.rs` copies `../../link/dist/` into `crates/rudydae/static/` pre-compile (skipped when `RUDYD_NO_EMBED=1` for Vite dev loop).
+- `link/` — own `package.json`, `tsconfig.json`, `.eslintrc`, Vitest config. shadcn/ui (via `components.json`), TanStack Query, TanStack Router, uPlot, three-fiber, urdf-loader. `link/src/api/generated/` holds ts-rs-generated TS types mirroring `rudydae`'s Rust structs. Can be pointed at a remote `rudydae` via `VITE_RUDYD_URL`.
 - `deploy/pi5/tailscale-cert.md` — runbook fragment on provisioning the Tailscale cert + wiring it into `rudyd.service`.
 - `ros/src/driver_node/` (future, not Phase 1) — thin ROS 2 ament package that wraps the Rust driver crate for `ros2_control` consumption. Creating this is the trigger for the eventual `driver` → `crates/driver/` split.
 - `config/rudyd.toml` — port, bind addr, token file path, audit log path, inventory path.
@@ -153,6 +153,6 @@ Per-folder detail for the new pieces:
 
 ## Open items I'd like to decide before writing code
 
-- Whether `bench_tool` stays CAN-direct (for "daemon is down" rescue) or becomes a thin REST client of `rudyd`. I lean: **keep both**, gated by `--direct` flag, because you want a working CLI when the daemon is crashed.
+- Whether `bench_tool` stays CAN-direct (for "daemon is down" rescue) or becomes a thin REST client of `rudydae`. I lean: **keep both**, gated by `--direct` flag, because you want a working CLI when the daemon is crashed.
 - Telemetry wire format resolved: JSON over HTTPS/REST, CBOR over WebTransport datagrams (same serde structs).
 - Whether to bake in a Grafana-style "dashboard" config (saved views) in Phase 1 or defer to Phase 3.

@@ -6,7 +6,7 @@ import type { JsonValue } from "./serde_json/JsonValue";
  */
 export type ParamWrite = { value: JsonValue, 
 /**
- * If `true`, rudyd also issues the type-22 save after the write. If
+ * If `true`, rudydae also issues the type-22 save after the write. If
  * `false` (default), the value lives in RAM and `POST /api/motors/:role/save`
  * is required to persist it.
  */

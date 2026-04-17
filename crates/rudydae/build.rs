@@ -1,4 +1,4 @@
-//! Build script for `rudyd`.
+//! Build script for `rudydae`.
 //!
 //! Responsibilities:
 //!
@@ -38,14 +38,14 @@ fn main() {
         }
         _ => {
             let stub = r#"<!doctype html>
-<html><head><meta charset="utf-8"><title>rudyd (no SPA embedded)</title></head>
+<html><head><meta charset="utf-8"><title>rudydae (no SPA embedded)</title></head>
 <body style="font-family:system-ui;background:#0b0f14;color:#d7dce1;padding:2rem;">
-<h1>rudyd is running.</h1>
+<h1>rudydae is running.</h1>
 <p>The <code>link/</code> SPA is not embedded in this build.</p>
 <p>During development, run <code>npm run dev</code> inside <code>link/</code>
 and point your browser at <code>http://localhost:5173</code>.</p>
 <p>For a production build, run <code>npm run build</code> in <code>link/</code>
-and rebuild <code>rudyd</code>.</p>
+and rebuild <code>rudydae</code>.</p>
 </body></html>"#;
             fs::write(static_dir.join("index.html"), stub).unwrap();
         }

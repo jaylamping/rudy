@@ -14,7 +14,10 @@ use crate::types::MotorFeedback;
 
 pub fn spawn(state: SharedState) -> Result<()> {
     let period = Duration::from_millis(state.cfg.telemetry.poll_interval_ms.max(10));
-    info!(period_ms = period.as_millis() as u64, "mock CAN core spawned");
+    info!(
+        period_ms = period.as_millis() as u64,
+        "mock CAN core spawned"
+    );
 
     tokio::spawn(async move {
         let mut tick = interval(period);

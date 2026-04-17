@@ -1,12 +1,12 @@
 [package]
-name = "rudyd"
+name = "rudydae"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 description = "Rudy operator-console daemon: CAN bus owner, REST + WebTransport surface"
 
 [[bin]]
-name = "rudyd"
+name = "rudydae"
 path = "src/main.rs"
 
 [dependencies]

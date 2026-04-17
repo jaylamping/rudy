@@ -1,4 +1,4 @@
-//! Shared-bearer-token auth for rudyd.
+//! Shared-bearer-token auth for rudydae.
 //!
 //! Semantics:
 //! - REST side: `Authorization: Bearer <token>` header.
@@ -29,7 +29,7 @@ pub fn load_token(cfg: &AuthConfig) -> Result<Option<String>> {
                 if cfg.dev_allow_no_token {
                     warn!(
                         path = %cfg.token_file.display(),
-                        "rudyd: token file is empty and dev_allow_no_token=true; auth disabled"
+                        "rudydae: token file is empty and dev_allow_no_token=true; auth disabled"
                     );
                     Ok(None)
                 } else {
@@ -45,7 +45,7 @@ pub fn load_token(cfg: &AuthConfig) -> Result<Option<String>> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound && cfg.dev_allow_no_token => {
             warn!(
                 path = %cfg.token_file.display(),
-                "rudyd: token file missing and dev_allow_no_token=true; auth disabled"
+                "rudydae: token file missing and dev_allow_no_token=true; auth disabled"
             );
             Ok(None)
         }
@@ -75,7 +75,10 @@ pub async fn middleware(
         .strip_prefix("Bearer ")
         .or_else(|| header.strip_prefix("bearer "));
 
-    if token.map(|t| constant_time_eq(t.as_bytes(), expected.as_bytes())).unwrap_or(false) {
+    if token
+        .map(|t| constant_time_eq(t.as_bytes(), expected.as_bytes()))
+        .unwrap_or(false)
+    {
         Ok(next.run(req).await)
     } else {
         Err(StatusCode::UNAUTHORIZED)

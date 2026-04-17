@@ -1764,7 +1764,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "rudyd"
+name = "rudydae"
 version = "0.1.0"
 dependencies = [
  "anyhow",

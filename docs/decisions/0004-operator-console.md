@@ -1,4 +1,4 @@
-# ADR 0004: Operator console (`rudyd` + `link`) (2026-04)
+# ADR 0004: Operator console (`rudydae` + `link`) (2026-04)
 
 ## Status
 
@@ -29,18 +29,18 @@ any remote access.
 
 ## Decision
 
-### D1. One daemon owns the bus: `rudyd` (new crate at `crates/rudyd/`)
+### D1. One daemon owns the bus: `rudydae` (new crate at `crates/rudydae/`)
 
 A long-lived Rust daemon takes exclusive ownership of `can0` / `can1` on the
 Pi and exposes typed HTTP + streaming APIs to the `link/` SPA. The daemon is
 not a ROS 2 node. When a ROS 2 `driver_node` is eventually written, it will
-be a **sibling consumer** of the same `rudyd` CAN handle (likely via ROS
-topics that `rudyd` also publishes), not a competitor for the socket.
+be a **sibling consumer** of the same `rudydae` CAN handle (likely via ROS
+topics that `rudydae` also publishes), not a competitor for the socket.
 Rationale: we need one writer to the bus; two would race.
 
 ### D2. Dual-listener architecture
 
-`rudyd` runs two network listeners in the same process, sharing in-process
+`rudydae` runs two network listeners in the same process, sharing in-process
 state via `tokio::sync::broadcast` channels:
 
 - **axum on `:8443` (HTTPS/1.1+2)** — all CRUD + embedded SPA static assets.
@@ -59,7 +59,7 @@ anyway and split cleanly.
 
 No self-signed cert rotation glue. The Pi provisions a real Let's Encrypt
 cert via `tailscale cert` (see [deploy/pi5/tailscale-cert.md](../../deploy/pi5/tailscale-cert.md)),
-`rudyd` binds only Tailscale-local addresses, and access from outside
+`rudydae` binds only Tailscale-local addresses, and access from outside
 Tailscale yields no response. Browsers accept both the HTTPS and WebTransport
 endpoints without cert pinning or developer-mode flags.
 
@@ -71,7 +71,7 @@ One `serde` struct per API concept, encoded two ways:
 - **CBOR** on WebTransport datagrams for throughput.
 
 TypeScript types are generated from the Rust structs via `ts-rs` into
-`link/src/lib/types/` when running `cargo test -p rudyd export_bindings` (see `crates/.cargo/config.toml` for `TS_RS_EXPORT_DIR`) followed by `python scripts/fix-ts-rs-imports.py` (or `npm run gen:types` in `link/`). No second source of truth.
+`link/src/lib/types/` when running `cargo test -p rudydae export_bindings` (see `crates/.cargo/config.toml` for `TS_RS_EXPORT_DIR`) followed by `python scripts/fix-ts-rs-imports.py` (or `npm run gen:types` in `link/`). No second source of truth.
 
 ### D5. Auth: shared bearer token
 
@@ -86,11 +86,11 @@ Rationale: single operator, Tailscale-bounded reachability — anything more
 (OIDC, mTLS, per-action signing) is ceremony without a threat model to match.
 Token rotation is documented in the runbook.
 
-### D6. Safety model: `rudyd` is strictly outside the firmware envelope
+### D6. Safety model: `rudydae` is strictly outside the firmware envelope
 
 The firmware layering in
 [docs/robotics-best-practices-reference.md](../robotics-best-practices-reference.md)
-holds. On top of it, `rudyd` adds:
+holds. On top of it, `rudydae` adds:
 
 - **Write confirmation.** Every `PUT /api/motors/:id/params/:index` is
   server-side range-checked against
@@ -105,12 +105,12 @@ holds. On top of it, `rudyd` adds:
 - **Enable gating.** `POST /api/motors/:id/enable` refuses unless the motor's
   `config/actuators/inventory.yaml` entry has `verified: true`. Same gate the
   Rust driver already enforces.
-- **Single-operator lock.** `rudyd` tracks which session currently holds the
+- **Single-operator lock.** `rudydae` tracks which session currently holds the
   "control lock." Other sessions can view telemetry but cannot enable, write
   parameters, or jog. Lock can be transferred via an explicit UI action.
 - **Dead-man jog.** Holding a jog key sends commands at ≥ 20 Hz; releasing
-  (or disconnecting) causes `rudyd` to issue `cmd_stop`. The firmware
-  `canTimeout` is the backstop if `rudyd` itself hangs.
+  (or disconnecting) causes `rudydae` to issue `cmd_stop`. The firmware
+  `canTimeout` is the backstop if `rudydae` itself hangs.
 - **Append-only audit log.** Every mutating action is recorded with ISO 8601
   timestamp, session id, motor id, endpoint, and pre/post values. Survives
   restarts; rotation is the operator's problem (logrotate config shipped in
@@ -131,7 +131,7 @@ See [docs/architecture.md](../architecture.md) for the full table.
 ### D8. `driver` crate stays as a hybrid ament/cargo package (for now)
 
 The `ros/src/driver/` package is both a Rust crate and a ROS 2 ament package
-(has `package.xml` + `CMakeLists.txt`). `rudyd` depends on it via a relative
+(has `package.xml` + `CMakeLists.txt`). `rudydae` depends on it via a relative
 Cargo path:
 
 ```toml
@@ -141,7 +141,7 @@ driver = { path = "../../ros/src/driver" }
 We do **not** split it today into a pure `crates/driver/` library + a thin
 `ros/src/driver_node/` ament wrapper. Rationale: the ROS wrapper doesn't
 exist yet, so splitting now would be busywork that precedes its trigger. When
-`driver_node` is actually written (to bridge `ros2_control` to `rudyd`), that
+`driver_node` is actually written (to bridge `ros2_control` to `rudydae`), that
 is the moment to revisit; the split becomes ADR-0005 then.
 
 ## Consequences
@@ -180,7 +180,7 @@ is the moment to revisit; the split becomes ADR-0005 then.
 - Remote (non-Tailscale) access. If needed, either tailnet-funnel or a
   proper reverse-proxy + OIDC; neither is ADR-0004.
 - Splitting the `driver` package (see D8) — future ADR.
-- `bench_tool` routing through `rudyd`. For now, `bench_tool` keeps direct
+- `bench_tool` routing through `rudydae`. For now, `bench_tool` keeps direct
   CAN access (`--direct`) as a rescue path when the daemon is crashed; a
   `--via-rudyd` mode may be added in Phase 2 so `bench_tool` can respect the
   single-operator lock.
@@ -190,13 +190,13 @@ is the moment to revisit; the split becomes ADR-0005 then.
 1. **Single axum process, WebSocket for streaming.** Rejected: user
    specifically chose WebTransport for future growth and has accepted the
    dual-listener cost.
-2. **Put `rudyd` under `ros/src/`.** Rejected: `rudyd` is not a ROS 2 package
+2. **Put `rudydae` under `ros/src/`.** Rejected: `rudydae` is not a ROS 2 package
    and forcing it into colcon's world adds ament overhead with no ROS
    integration in return. Living in `crates/` is honest about what it is.
-3. **Separate repo for `link/`.** Rejected: `link/` and `rudyd` move together
+3. **Separate repo for `link/`.** Rejected: `link/` and `rudydae` move together
    on safety-relevant changes (param schemas, auth, lock semantics). Atomic
    commits across the API boundary matter more than repo purity.
-4. **Let `ros2_control` own the bus and `rudyd` subscribe via DDS.**
+4. **Let `ros2_control` own the bus and `rudydae` subscribe via DDS.**
    Rejected for Phase 1: adds a ROS dependency to the operator console for
    no current benefit, and the `driver_node` that would be the DDS owner
    doesn't exist yet.

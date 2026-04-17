@@ -1,9 +1,9 @@
 [workspace]
 resolver = "2"
-members = ["rudyd"]
+members = ["rudydae"]
 
 # Non-ROS Rust lives here. The `driver` crate stays in `ros/src/driver/`
-# because it is a hybrid ament_cmake / Cargo package today; `rudyd` depends on
+# because it is a hybrid ament_cmake / Cargo package today; `rudydae` depends on
 # it by relative path. If/when `driver` is split into a pure library crate +
 # a thin `ros/src/driver_node/` ament wrapper (see ADR-0004), the library
 # moves here and joins `members`.

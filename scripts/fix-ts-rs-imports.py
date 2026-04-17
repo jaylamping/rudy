@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Normalize ts-rs imports after `cargo test -p rudyd export_bindings`.
+"""Normalize ts-rs imports after `cargo test -p rudydae export_bindings`.
 
-ts-rs emits imports to `crates/rudyd/bindings/serde_json/JsonValue` for serde_json::Value;
+ts-rs emits imports to `crates/rudydae/bindings/serde_json/JsonValue` for serde_json::Value;
 we keep JsonValue next to the other bindings under `link/src/lib/types/serde_json/`.
 """
 from __future__ import annotations
@@ -13,7 +13,7 @@ TYPES = REPO / "link" / "src" / "lib" / "types"
 
 REPLACEMENTS: tuple[tuple[str, str], ...] = (
     (
-        'from "../../../../crates/rudyd/bindings/serde_json/JsonValue"',
+        'from "../../../../crates/rudydae/bindings/serde_json/JsonValue"',
         'from "./serde_json/JsonValue"',
     ),
 )

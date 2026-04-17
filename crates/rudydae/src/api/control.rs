@@ -87,7 +87,9 @@ pub async fn save_to_flash(
         )
     })?;
     audit(&state, "save_to_flash", &role, AuditResult::Ok);
-    Ok(Json(serde_json::json!({ "ok": true, "role": role, "saved": true })))
+    Ok(Json(
+        serde_json::json!({ "ok": true, "role": role, "saved": true }),
+    ))
 }
 
 pub async fn set_zero(

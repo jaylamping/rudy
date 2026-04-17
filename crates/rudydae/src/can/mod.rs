@@ -12,7 +12,7 @@
 //! stubbed here with a `todo!()`-style warning + fallback to mock, so the
 //! binary compiles and runs on both developer laptops and the Pi today.
 //! Replacing the fallback with the real driver wiring is tracked by the
-//! `rudyd_can_core` plan task.
+//! `rudydae_can_core` plan task.
 
 use anyhow::Result;
 use tracing::info;
@@ -31,8 +31,8 @@ pub fn spawn(state: SharedState) -> Result<()> {
     {
         if !state.cfg.can.mock {
             warn!(
-                "rudyd: real SocketCAN path is not yet wired end-to-end; falling back to mock. \
-                 See the rudyd_can_core task in docs/decisions/0004-operator-console.md."
+                "rudydae: real SocketCAN path is not yet wired end-to-end; falling back to mock. \
+                 See the rudydae_can_core task in docs/decisions/0004-operator-console.md."
             );
             // Once linux::spawn is ready, swap the body of this branch to:
             //   return linux::spawn(state);
@@ -41,6 +41,6 @@ pub fn spawn(state: SharedState) -> Result<()> {
         }
     }
 
-    info!("rudyd: starting mock CAN core");
+    info!("rudydae: starting mock CAN core");
     mock::spawn(state)
 }

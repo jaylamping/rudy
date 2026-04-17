@@ -94,8 +94,8 @@ jobs:
         run: |
           python3 -m pytest -q tests
 
-  rudyd:
-    name: rudyd daemon (crates workspace)
+  rudydae:
+    name: rudydae daemon (crates workspace)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -115,7 +115,7 @@ jobs:
           mkdir -p link/dist
           printf '<!doctype html><title>link stub</title>' > link/dist/index.html
 
-      - name: rudyd fmt + clippy + test
+      - name: rudydae fmt + clippy + test
         working-directory: ${{ github.workspace }}/crates
         env:
           RUDYD_NO_EMBED: "0"

@@ -43,7 +43,7 @@ distinct concern; no single folder dominates.
 | Directory  | Toolchain            | Role                                              |
 | ---------- | -------------------- | ------------------------------------------------- |
 | `ros/src/` | colcon / ament_cmake | ROS 2 Jazzy packages (see table below)            |
-| `crates/`  | Cargo workspace      | Non-ROS Rust — currently `rudyd` daemon           |
+| `crates/`  | Cargo workspace      | Non-ROS Rust — currently `rudydae` daemon           |
 | `link/`    | npm / Vite           | React + TypeScript operator-console UI            |
 | `config/`  | YAML / TOML          | Actuator specs, `rudyd.toml`, inventory           |
 | `deploy/`  | shell / systemd      | Pi 5 bring-up, systemd units, Tailscale           |
@@ -68,17 +68,17 @@ distinct concern; no single folder dominates.
 | `tests`       | `launch_testing` + parity tests                                                                                                       |
 
 
-## Operator console (`rudyd` + `link`)
+## Operator console (`rudydae` + `link`)
 
-Separate from the ROS 2 runtime. `rudyd` (in `crates/rudyd/`) owns the CAN bus
+Separate from the ROS 2 runtime. `rudydae` (in `crates/rudydae/`) owns the CAN bus
 directly and exposes two network surfaces: HTTPS CRUD (axum) for parameter
 editing + commands, and WebTransport over HTTP/3 (wtransport) for the
 telemetry firehose. The `link` SPA (in `link/`) consumes both. Tailscale-only
 reachable. See [ADR-0004](decisions/0004-operator-console.md).
 
 When the ROS 2 `driver_node` is eventually written, it will be a sibling
-consumer of the same `rudyd` CAN handle — not a competitor. This is why
-`rudyd` is the long-lived process and not `driver_node`.
+consumer of the same `rudydae` CAN handle — not a competitor. This is why
+`rudydae` is the long-lived process and not `driver_node`.
 
 ## Data flow (target)
 

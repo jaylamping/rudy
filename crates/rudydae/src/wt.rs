@@ -46,12 +46,12 @@ pub async fn run(state: SharedState) -> Result<()> {
         .clone()
         .context("http.tls.key_path required for WebTransport")?;
 
-    let bind: std::net::SocketAddr = state
-        .cfg
-        .webtransport
-        .bind
-        .parse()
-        .with_context(|| format!("parsing webtransport.bind {:?}", state.cfg.webtransport.bind))?;
+    let bind: std::net::SocketAddr = state.cfg.webtransport.bind.parse().with_context(|| {
+        format!(
+            "parsing webtransport.bind {:?}",
+            state.cfg.webtransport.bind
+        )
+    })?;
 
     let config = wtransport::ServerConfig::builder()
         .with_bind_address(bind)
@@ -95,7 +95,10 @@ async fn handle_session(
     }
 
     let connection = session_req.accept().await.context("accepting WT session")?;
-    info!("wt: session accepted from {:?}", connection.remote_address());
+    info!(
+        "wt: session accepted from {:?}",
+        connection.remote_address()
+    );
 
     let mut rx = state.feedback_tx.subscribe();
     loop {
