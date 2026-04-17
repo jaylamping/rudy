@@ -112,16 +112,51 @@ when configuring firmware-level joint limits.
 | `0x702A` | damper       | uint8  | 0 or 1        | 1 = disable post-power-off backdrive braking  |
 | `0x702B` | add_offset   | float  | rad           | Zero-point offset                             |
 
-Observables (read-only) relevant to bring-up:
+Observables (read-only) relevant to bring-up (0x70xx shadow = type-17 readable,
+0x30xx original = type-17 **NOT** readable, see "Parameter-read scope" below):
 
-| index    | name       | type   | meaning                                    |
-|:--------:|------------|--------|--------------------------------------------|
-| `0x3016` | mechPos    | float  | load-end mechanical angle (post-gearbox)   |
-| `0x3017` | mechVel    | float  | load-end speed                             |
-| `0x300C` | VBUS       | float  | bus voltage                                |
-| `0x3022` | faultSta   | uint32 | fault bit field (see manual §3.3.7)        |
-| `0x3041` | can_status | uint8  | 0 = onboard 240 Ω IS in-circuit via the currently-wired connector; 1 = it is NOT (see termination topology note below) |
-| `0x1003` | AppCodeVersion | str | firmware version (e.g. "0.3.1.10")        |
+| shadow idx | orig idx | name           | type   | meaning                                  |
+|:----------:|:--------:|----------------|--------|------------------------------------------|
+| `0x7019`   | `0x3016` | mechPos        | float  | load-end mechanical angle (post-gearbox) |
+| `0x701B`   | `0x3017` | mechVel        | float  | load-end speed                           |
+| `0x701A`   | `0x301E` | iqf            | float  | filtered q-axis current                  |
+| `0x701C`   | `0x300C` | VBUS           | float  | bus voltage                              |
+| n/a        | `0x3022` | faultSta       | uint32 | fault bit field (see manual §3.3.7)      |
+| n/a        | `0x3041` | can_status     | uint8  | 0 = onboard 240 Ω in-circuit via currently-wired connector |
+| n/a        | `0x1003` | AppCodeVersion | str    | firmware version (e.g. "0.3.1.41")       |
+
+### Parameter-read scope (type 17): 0x70xx only
+
+**This is the #2 footgun after flash-vs-RAM writes, and it bit us in Step 9.**
+
+Type-17 "Read single parameter" does NOT expose the full Motor Studio
+parameter table.  It can ONLY address indices in the **0x70xx namespace**
+listed in vendor manual §4.1.14.  Anything else (0x20xx stored config,
+0x30xx observables, 0x10xx version strings) reports as a failed read:
+
+- Reply frame still arrives, correctly source-swapped, with the requested
+  index echoed back in bytes 0-1.
+- But value bytes 4-7 are zero.
+- And bit 16 of the reply arbitration ID is set (`[0x11][0x01][motor][host]`
+  instead of `[0x11][0x00][motor][host]`).  That bit is the motor's
+  "read failed" status flag, documented as "0 = read OK, 1 = read failed"
+  in §4.1.6 (description truncated in the PDF but confirmed empirically).
+
+Observable-parameter access paths by namespace:
+
+| namespace | what's in it               | type-17 single read? | other access                     |
+|-----------|----------------------------|----------------------|----------------------------------|
+| `0x10xx`  | firmware version strings   | no                   | type-26 version-read frame       |
+| `0x20xx`  | stored config (MechOffset, CAN_ID, limit_*, baud, …) | no                   | Motor Studio type-0x13 bulk export; individual fields via type-7 / type-23 / type-25 as documented |
+| `0x30xx`  | runtime observables        | no (use 0x70xx shadow) | Motor Studio type-0x13 bulk export |
+| `0x70xx`  | runtime observables + settable safety params | **yes** (§4.1.14 is the canonical list) | also via Motor Studio |
+
+Implication for our driver: the type-17 shadow at `0x70xx` is our only single-
+frame read path from the Pi.  We use it for observability (mechPos, mechVel,
+iqf, VBUS) and for verifying that firmware-level limits written via type-18
+were accepted.  `faultSta` is NOT reachable via type-17; we depend on the
+type-21 fault-feedback frame or the type-2 motor-feedback frame (embedded
+fault bits in bits 16..21 of the reply arb ID) for fault visibility.
 
 ### Parameter-write frame layout (type 18)
 

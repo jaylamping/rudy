@@ -37,7 +37,15 @@ motors:
   #   notes: ""
 
   - role: shoulder_actuator_a
-    can_bus: can0
+    can_bus: can1                     # Linux iface; NOT the silkscreen label.
+                                      # On the Waveshare 2-CH HAT the screw
+                                      # terminal silkscreened "CAN0" is driven
+                                      # by the MCP2515 that Linux exports as
+                                      # `can1`.  See deploy/pi5/README.md
+                                      # "Gotcha: can0/can1 vs silkscreen labels".
+                                      # Verified 2026-04-17 by candump capturing
+                                      # a full Motor Studio param export on can1
+                                      # while can0 saw nothing.
     can_id: 0x08
     sourced_from: unknown
     verified: false
