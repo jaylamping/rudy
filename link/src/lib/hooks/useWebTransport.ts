@@ -10,7 +10,7 @@
 // shapes rudyd emits from `types::MotorFeedback`.
 
 import { useEffect, useRef, useState } from "react";
-import { getToken } from "./auth";
+import { getToken } from "./useAuth";
 import type { MotorFeedback } from "@/lib/types/MotorFeedback";
 
 export interface WtStatus {
@@ -43,8 +43,15 @@ export function useWebTransport(url: string | null | undefined): {
 
     (async () => {
       try {
-        if (typeof (globalThis as { WebTransport?: unknown }).WebTransport === "undefined") {
-          setStatus({ enabled: true, connected: false, error: "WebTransport not supported by this browser" });
+        if (
+          typeof (globalThis as { WebTransport?: unknown }).WebTransport ===
+          "undefined"
+        ) {
+          setStatus({
+            enabled: true,
+            connected: false,
+            error: "WebTransport not supported by this browser",
+          });
           return;
         }
 

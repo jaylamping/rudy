@@ -1,6 +1,6 @@
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { Activity, Cog, Gamepad2, LogOut, ScrollText, View } from "lucide-react";
-import { clearToken } from "@/lib/auth";
+import { useAuth } from "@/lib/hooks/useAuth";
 import { cn } from "@/lib/utils";
 
 const NAV = [
@@ -13,6 +13,7 @@ const NAV = [
 
 export function AppShell() {
   const { location } = useRouterState();
+  const { clearToken } = useAuth();
 
   return (
     <div className="flex h-full min-h-screen">

@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { setToken } from "@/lib/auth";
+import { useAuth } from "@/lib/hooks/useAuth";
 import { apiFetch } from "@/lib/api";
 
 export const Route = createFileRoute("/login")({
@@ -9,6 +9,7 @@ export const Route = createFileRoute("/login")({
 
 function LoginScreen() {
   const navigate = useNavigate();
+  const { setToken } = useAuth();
   const [token, setTokenInput] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);

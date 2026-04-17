@@ -5,7 +5,7 @@
 // served from something other than rudyd itself. The default is same-origin,
 // which is how the production Pi deploy works (rudyd embeds the built SPA).
 
-import { clearToken, getToken } from "./auth";
+import { clearToken, getToken } from "./hooks/useAuth";
 
 const BASE_URL: string = (import.meta.env.VITE_RUDYD_URL as string | undefined) ?? "";
 
