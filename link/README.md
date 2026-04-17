@@ -17,12 +17,6 @@ npm run dev
 # -> http://localhost:5173
 ```
 
-If you want to develop against a real Pi over Tailscale:
-
-```bash
-VITE_RUDYD_URL=https://rudy.your-tailnet.ts.net:8443 npm run dev
-```
-
 WebTransport requires HTTPS in the browser, so dev-mode Vite (plain HTTP) does
 not get live WT streaming. The SPA falls back to REST polling in that case
 (see `TelemetryGrid`).

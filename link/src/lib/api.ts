@@ -1,13 +1,8 @@
 // Thin fetch wrapper that injects the bearer token on every request. The
 // actual server-state caching lives in TanStack Query (see `./query.ts`).
-//
-// `VITE_RUDYD_URL` is honored for "offsite laptop" workflows where the SPA is
-// served from something other than rudyd itself. The default is same-origin,
-// which is how the production Pi deploy works (rudyd embeds the built SPA).
+// Requests are same-origin (Vite dev proxy or rudyd serving the built SPA).
 
 import { clearToken, getToken } from "./hooks/useAuth";
-
-const BASE_URL: string = (import.meta.env.VITE_RUDYD_URL as string | undefined) ?? "";
 
 export class ApiError extends Error {
   status: number;
@@ -32,8 +27,7 @@ export async function apiFetch<T>(
     headers.set("Authorization", `Bearer ${token}`);
   }
 
-  const url = `${BASE_URL}${path}`;
-  const res = await fetch(url, { ...init, headers });
+  const res = await fetch(path, { ...init, headers });
 
   if (res.status === 401) {
     // Token is stale or wrong - bounce to login.
