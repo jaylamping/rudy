@@ -2,8 +2,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { api, ApiError } from "@/lib/api";
-import type { ParamSnapshot } from "@/api/generated/ParamSnapshot";
-import type { ParamValue } from "@/api/generated/ParamValue";
+import type { ParamSnapshot } from "@/lib/types/ParamSnapshot";
+import type { JsonValue } from "@/lib/types/serde_json/JsonValue";
+import type { ParamValue } from "@/lib/types/ParamValue";
 
 export const Route = createFileRoute("/_authed/params")({
   validateSearch: (s: Record<string, unknown>): { role?: string } => ({
@@ -133,7 +134,7 @@ function ParamRow({ role, param }: { role: string; param: ParamValue }) {
 
   const write = useMutation({
     mutationFn: async ({ save }: { save: boolean }) => {
-      const value = parseValue(draft, param.ty);
+      const value = parseValue(draft, param.type);
       return api.writeParam(role, param.name, { value, save_after: save });
     },
     onSuccess: () => {
@@ -199,7 +200,7 @@ function ParamRow({ role, param }: { role: string; param: ParamValue }) {
   );
 }
 
-function parseValue(s: string, ty: string): unknown {
+function parseValue(s: string, ty: string): JsonValue {
   if (ty.startsWith("u") || ty === "uint8" || ty === "uint16" || ty === "uint32") {
     const n = Number(s);
     if (!Number.isFinite(n)) throw new Error(`expected integer, got ${s}`);

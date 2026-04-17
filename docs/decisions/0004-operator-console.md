@@ -71,7 +71,7 @@ One `serde` struct per API concept, encoded two ways:
 - **CBOR** on WebTransport datagrams for throughput.
 
 TypeScript types are generated from the Rust structs via `ts-rs` into
-`link/src/api/generated/` at `cargo build` time. No second source of truth.
+`link/src/lib/types/` when running `cargo test -p rudyd export_bindings` (see `crates/.cargo/config.toml` for `TS_RS_EXPORT_DIR`) followed by `python scripts/fix-ts-rs-imports.py` (or `npm run gen:types` in `link/`). No second source of truth.
 
 ### D5. Auth: shared bearer token
 

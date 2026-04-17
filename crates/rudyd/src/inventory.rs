@@ -19,7 +19,7 @@ pub struct Inventory {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../link/src/api/generated/")]
+#[ts(export, export_to = "./")]
 pub struct Motor {
     pub role: String,
     pub can_bus: String,

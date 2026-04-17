@@ -11,7 +11,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { getToken } from "./auth";
-import type { MotorFeedback } from "@/api/generated/MotorFeedback";
+import type { MotorFeedback } from "@/lib/types/MotorFeedback";
 
 export interface WtStatus {
   enabled: boolean;

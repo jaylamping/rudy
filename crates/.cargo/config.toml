@@ -1,0 +1,4 @@
+﻿# Ensures ts-rs writes TypeScript bindings next to the operator-console SPA
+# (`link/src/lib/types/`) when running `cargo test` from the `crates/` workspace.
+[env]
+TS_RS_EXPORT_DIR = { value = "../../../link/src/lib/types", force = true, relative = true }

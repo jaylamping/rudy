@@ -65,19 +65,19 @@ function safeJson(s: string): unknown {
 }
 
 export const api = {
-  config: () => apiFetch<import("@/api/generated/ServerConfig").ServerConfig>("/api/config"),
+  config: () => apiFetch<import("@/lib/types/ServerConfig").ServerConfig>("/api/config"),
   listMotors: () =>
-    apiFetch<import("@/api/generated/MotorSummary").MotorSummary[]>("/api/motors"),
+    apiFetch<import("@/lib/types/MotorSummary").MotorSummary[]>("/api/motors"),
   getMotor: (role: string) =>
-    apiFetch<import("@/api/generated/MotorSummary").MotorSummary>(`/api/motors/${encodeURIComponent(role)}`),
+    apiFetch<import("@/lib/types/MotorSummary").MotorSummary>(`/api/motors/${encodeURIComponent(role)}`),
   getParams: (role: string) =>
-    apiFetch<import("@/api/generated/ParamSnapshot").ParamSnapshot>(
+    apiFetch<import("@/lib/types/ParamSnapshot").ParamSnapshot>(
       `/api/motors/${encodeURIComponent(role)}/params`,
     ),
   writeParam: (
     role: string,
     name: string,
-    body: import("@/api/generated/ParamWrite").ParamWrite,
+    body: import("@/lib/types/ParamWrite").ParamWrite,
   ) =>
     apiFetch<{ ok: boolean; saved: boolean; role: string; name: string; value: unknown }>(
       `/api/motors/${encodeURIComponent(role)}/params/${encodeURIComponent(name)}`,

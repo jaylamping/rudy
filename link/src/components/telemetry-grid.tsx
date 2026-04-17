@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import uPlot, { type Options } from "uplot";
 import "uplot/dist/uPlot.min.css";
-import type { MotorSummary } from "@/api/generated/MotorSummary";
+import type { MotorSummary } from "@/lib/types/MotorSummary";
 
 const WINDOW_SEC = 60;
 

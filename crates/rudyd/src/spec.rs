@@ -24,7 +24,7 @@ pub struct ActuatorSpec {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../link/src/api/generated/")]
+#[ts(export, export_to = "./")]
 pub struct ParamDescriptor {
     /// Hex index like `0x700B`, stored as u16 after parsing.
     #[serde(deserialize_with = "de_hex_u16")]

@@ -51,10 +51,9 @@ npx shadcn@latest add button input dialog
 
 ## Regenerate wire types
 
-The canonical wire types live in `crates/rudyd/src/types.rs` and are mirrored
-in `src/api/generated/`. For now the mirrors are hand-maintained; the
-`ts-rs` derives in `rudyd` are wired and a future Phase-2 task will automate
-the regeneration step (see ADR-0004 follow-ups).
+The canonical wire types live in `crates/rudyd/src/types.rs` (and related
+Rust modules) and are exported to `src/lib/types/` via `ts-rs` when you run
+`npm run gen:types` (runs `cargo test -p rudyd export_bindings` in `crates/` and normalizes serde_json imports).
 
 ## Layout
 
@@ -83,5 +82,5 @@ src/
     query.ts               TanStack QueryClient
     utils.ts               cn() helper (shadcn)
     wt.ts                  WebTransport client hook
-  api/generated/           wire type mirrors (see above)
+  lib/types/               ts-rs-generated wire types (see above)
 ```

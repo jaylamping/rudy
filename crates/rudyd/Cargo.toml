@@ -40,7 +40,7 @@ mime_guess = "2"
 # wtransport pins its own rustls/quinn versions; we follow it.
 wtransport = "0.6"
 
-# Shared type codegen to link/src/api/generated/
+# Shared type codegen: see crates/.cargo/config.toml (TS_RS_EXPORT_DIR) + link/package.json gen:types
 ts-rs = { version = "10", features = ["serde-json-impl", "chrono-impl"] }
 
 # CBOR for WebTransport datagrams

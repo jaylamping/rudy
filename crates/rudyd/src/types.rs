@@ -1,7 +1,9 @@
 //! Wire types shared between rudyd and the `link` SPA.
 //!
 //! Every type here has `#[derive(TS)] #[ts(export, export_to = "...")]`, so
-//! `cargo test` regenerates `link/src/api/generated/*.ts`. See
+//! `cargo test -p rudyd export_bindings` regenerates `link/src/lib/types/*.ts`.
+//! `crates/.cargo/config.toml` sets `TS_RS_EXPORT_DIR` so outputs land next to the SPA.
+//! Run `python scripts/fix-ts-rs-imports.py` (or `npm run gen:types` in `link/`) to fix serde_json paths. See
 //! <https://github.com/Aleph-Alpha/ts-rs>.
 
 use std::collections::BTreeMap;
@@ -11,7 +13,7 @@ use ts_rs::TS;
 
 /// GET /api/config — what the UI needs to bootstrap.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../link/src/api/generated/")]
+#[ts(export, export_to = "./")]
 pub struct ServerConfig {
     pub version: String,
     pub actuator_model: String,
@@ -20,7 +22,7 @@ pub struct ServerConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../link/src/api/generated/")]
+#[ts(export, export_to = "./")]
 pub struct WebTransportAdvert {
     pub enabled: bool,
     /// Fully-qualified URL the browser should open. Example:
@@ -29,7 +31,7 @@ pub struct WebTransportAdvert {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../link/src/api/generated/")]
+#[ts(export, export_to = "./")]
 pub struct ServerFeatures {
     pub mock_can: bool,
     pub require_verified: bool,
@@ -37,7 +39,7 @@ pub struct ServerFeatures {
 
 /// GET /api/motors — list summary.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../link/src/api/generated/")]
+#[ts(export, export_to = "./")]
 pub struct MotorSummary {
     pub role: String,
     pub can_bus: String,
@@ -51,7 +53,7 @@ pub struct MotorSummary {
 /// - as JSON from `GET /api/motors/:role/feedback` (polled),
 /// - as CBOR from WebTransport datagrams (pushed).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../link/src/api/generated/")]
+#[ts(export, export_to = "./")]
 pub struct MotorFeedback {
     /// Milliseconds since unix epoch, for trivial client-side ordering.
     pub t_ms: i64,
@@ -68,14 +70,14 @@ pub struct MotorFeedback {
 
 /// GET /api/motors/:role/params — full catalog snapshot.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../link/src/api/generated/")]
+#[ts(export, export_to = "./")]
 pub struct ParamSnapshot {
     pub role: String,
     pub values: BTreeMap<String, ParamValue>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../link/src/api/generated/")]
+#[ts(export, export_to = "./")]
 pub struct ParamValue {
     pub name: String,
     pub index: u16,
@@ -88,7 +90,7 @@ pub struct ParamValue {
 
 /// PUT /api/motors/:role/params/:index body.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../link/src/api/generated/")]
+#[ts(export, export_to = "./")]
 pub struct ParamWrite {
     pub value: serde_json::Value,
     /// If `true`, rudyd also issues the type-22 save after the write. If
@@ -100,7 +102,7 @@ pub struct ParamWrite {
 
 /// Standard error envelope for API responses.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../link/src/api/generated/")]
+#[ts(export, export_to = "./")]
 pub struct ApiError {
     pub error: String,
     pub detail: Option<String>,
@@ -109,7 +111,7 @@ pub struct ApiError {
 /// WebTransport subscription request (sent on a bidirectional stream by the
 /// client right after session open).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../link/src/api/generated/")]
+#[ts(export, export_to = "./")]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum WtSubscribe {
     /// High-rate feedback datagrams for the listed motor roles (empty = all).
