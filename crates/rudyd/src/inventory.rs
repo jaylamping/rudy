@@ -23,7 +23,8 @@ pub struct Inventory {
 pub struct Motor {
     pub role: String,
     pub can_bus: String,
-    #[serde(deserialize_with = "crate::util::de_u8_flex")]
+    #[serde(with = "crate::util::serde_u8_flex")]
+    #[ts(as = "u8")]
     pub can_id: u8,
     #[serde(default)]
     pub firmware_version: Option<String>,
@@ -52,6 +53,7 @@ impl Inventory {
         self.motors.iter().find(|m| m.role == role)
     }
 
+    #[allow(dead_code)]
     pub fn by_can_id(&self, can_id: u8) -> Option<&Motor> {
         self.motors.iter().find(|m| m.can_id == can_id)
     }

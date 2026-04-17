@@ -16,7 +16,7 @@ use axum::{
     routing::get,
     Router,
 };
-use rust_embed::{Embed as _, RustEmbed};
+use rust_embed::RustEmbed;
 use tower_http::trace::TraceLayer;
 use tracing::{info, warn};
 

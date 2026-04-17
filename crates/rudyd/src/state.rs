@@ -30,6 +30,7 @@ pub struct AppState {
 
     /// Control-lock state: which session id (if any) is allowed to issue
     /// mutating commands (enable / jog / param write / save).
+    #[allow(dead_code)]
     pub control_lock: RwLock<Option<String>>,
 }
 
@@ -56,6 +57,7 @@ impl AppState {
     }
 
     /// Helper used by control handlers to enforce single-operator semantics.
+    #[allow(dead_code)]
     pub fn has_control(&self, session_id: &str) -> bool {
         match &*self.control_lock.read().expect("control_lock poisoned") {
             None => true,

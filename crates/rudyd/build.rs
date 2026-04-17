@@ -35,7 +35,6 @@ fn main() {
     match (link_dist, no_embed) {
         (Some(dist), false) if dist.is_dir() => {
             copy_dir_all(&dist, &static_dir).expect("copy link/dist -> static/");
-            println!("cargo:warning=rudyd: embedded link/dist/");
         }
         _ => {
             let stub = r#"<!doctype html>
@@ -49,7 +48,6 @@ and point your browser at <code>http://localhost:5173</code>.</p>
 and rebuild <code>rudyd</code>.</p>
 </body></html>"#;
             fs::write(static_dir.join("index.html"), stub).unwrap();
-            println!("cargo:warning=rudyd: using stub SPA (set RUDYD_NO_EMBED=0 and build link/ to embed)");
         }
     }
 }

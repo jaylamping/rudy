@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug)]
 pub struct AuditLog {
+    #[allow(dead_code)]
     path: PathBuf,
     file: Mutex<File>,
 }
@@ -55,6 +56,7 @@ impl AuditLog {
         })
     }
 
+    #[allow(dead_code)]
     pub fn path(&self) -> &Path {
         &self.path
     }

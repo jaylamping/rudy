@@ -1,6 +1,7 @@
 //! Small shared helpers.
 
-use serde::{de::Error, Deserialize, Deserializer};
+use serde::de::Error;
+use serde::{Deserialize, Deserializer};
 
 /// Accept either a bare YAML integer or a string like "0x08" / "0X7F" / "127".
 pub fn de_u8_flex<'de, D: Deserializer<'de>>(d: D) -> Result<u8, D::Error> {
@@ -22,3 +23,23 @@ pub fn de_u8_flex<'de, D: Deserializer<'de>>(d: D) -> Result<u8, D::Error> {
         other => Err(D::Error::custom(format!("expected u8, got {other:?}"))),
     }
 }
+
+/// `serde::Deserialize` adapter for `de_u8_flex` (ts-rs understands `with`, not `deserialize_with`).
+pub mod serde_u8_flex {
+    use serde::{Deserializer, Serialize, Serializer};
+
+    pub fn deserialize<'de, D>(d: D) -> Result<u8, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        super::de_u8_flex(d)
+    }
+
+    pub fn serialize<S>(v: &u8, s: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        v.serialize(s)
+    }
+}
+

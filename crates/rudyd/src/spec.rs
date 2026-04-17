@@ -27,7 +27,8 @@ pub struct ActuatorSpec {
 #[ts(export, export_to = "./")]
 pub struct ParamDescriptor {
     /// Hex index like `0x700B`, stored as u16 after parsing.
-    #[serde(deserialize_with = "de_hex_u16")]
+    #[serde(with = "serde_hex_u16")]
+    #[ts(as = "u16")]
     pub index: u16,
     #[serde(rename = "type")]
     pub ty: String,
@@ -42,24 +43,38 @@ pub struct ParamDescriptor {
     pub values: Option<BTreeMap<String, u32>>,
 }
 
-fn de_hex_u16<'de, D: serde::Deserializer<'de>>(d: D) -> Result<u16, D::Error> {
-    use serde::de::Error;
-    let s: serde_yaml::Value = serde::Deserialize::deserialize(d)?;
-    match s {
-        serde_yaml::Value::Number(n) => n
-            .as_u64()
-            .and_then(|v| u16::try_from(v).ok())
-            .ok_or_else(|| Error::custom("index out of u16 range")),
-        serde_yaml::Value::String(s) => {
-            let s = s.trim();
-            let stripped = s
-                .strip_prefix("0x")
-                .or_else(|| s.strip_prefix("0X"))
-                .unwrap_or(s);
-            u16::from_str_radix(stripped, 16)
-                .map_err(|e| Error::custom(format!("parse hex {s}: {e}")))
+mod serde_hex_u16 {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn deserialize<'de, D>(d: D) -> Result<u16, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        use serde::de::Error;
+        let s: serde_yaml::Value = Deserialize::deserialize(d)?;
+        match s {
+            serde_yaml::Value::Number(n) => n
+                .as_u64()
+                .and_then(|v| u16::try_from(v).ok())
+                .ok_or_else(|| Error::custom("index out of u16 range")),
+            serde_yaml::Value::String(s) => {
+                let s = s.trim();
+                let stripped = s
+                    .strip_prefix("0x")
+                    .or_else(|| s.strip_prefix("0X"))
+                    .unwrap_or(s);
+                u16::from_str_radix(stripped, 16)
+                    .map_err(|e| Error::custom(format!("parse hex {s}: {e}")))
+            }
+            _ => Err(Error::custom("expected number or hex string")),
         }
-        _ => Err(Error::custom("expected number or hex string")),
+    }
+
+    pub fn serialize<S>(v: &u16, s: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        v.serialize(s)
     }
 }
 
