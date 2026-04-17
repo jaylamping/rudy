@@ -78,14 +78,13 @@ def open_bus(iface: str) -> socket.socket:
     # Linux delivers a copy of our own TX frames back to our RAW socket by
     # default.  Disable that so we don't see our read requests as "replies".
     # Linux/can.h: SOL_CAN_RAW=101, CAN_RAW_RECV_OWN_MSGS=4.
+    SOL_CAN_RAW = 101
+    CAN_RAW_RECV_OWN_MSGS = 4
     try:
-        SOL_CAN_RAW = 101
-        CAN_RAW_RECV_OWN_MSGS = 4
         s.setsockopt(SOL_CAN_RAW, CAN_RAW_RECV_OWN_MSGS, 0)
-    except OSError:
-        # Kernel is old / option unsupported; fall back to content-based
-        # filtering in recv_frame.  Not fatal.
-        pass
+    except OSError as exc:
+        print(f"WARNING: setsockopt(CAN_RAW_RECV_OWN_MSGS, 0) failed: {exc}")
+        print("         Falling back to content-based TX filtering.")
     s.settimeout(SOCKET_TIMEOUT_S)
     return s
 
@@ -125,17 +124,33 @@ def recv_frame(sock: socket.socket):
 def read_param_raw(sock: socket.socket, host_id: int, motor_id: int,
                    index: int, timeout_s: float = 0.5) -> bytes | None:
     """Send a type-17 read, wait for the matching reply, return the 4 value
-    bytes (little-endian).  None on timeout or mismatch."""
+    bytes (little-endian).  None on timeout or mismatch.
+
+    Motor replies invert the arbitration ID: our TX has bits 23..16 = host_id,
+    bits 7..0 = motor_id.  A legitimate reply from the motor is the mirror
+    image: bits 23..16 = motor_id (as source), bits 7..0 = host_id (as dest).
+    We use that to distinguish replies from self-loopback if the kernel ignores
+    our CAN_RAW_RECV_OWN_MSGS setting.
+    """
     req = struct.pack("<HHI", index, 0, 0)  # idx, pad, zero
+    tx_id = arb_id(COMM_TYPE_READ_PARAM, host_id, motor_id)
+    expected_reply_id = arb_id(COMM_TYPE_READ_PARAM, motor_id, host_id)
     send_frame(sock, COMM_TYPE_READ_PARAM, host_id, motor_id, req)
 
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
         try:
-            comm_type, _can_id, data = recv_frame(sock)
+            comm_type, can_id, data = recv_frame(sock)
         except (socket.timeout, TimeoutError):
             return None
+        raw_id = can_id & 0x1FFFFFFF
+        if raw_id == tx_id:
+            # Self-loopback -- ignore.  This is the frame we just sent.
+            continue
         if comm_type != COMM_TYPE_READ_PARAM:
+            continue
+        if raw_id != expected_reply_id:
+            # Wrong source/dest; not a reply to our request.
             continue
         if len(data) < 8:
             continue
