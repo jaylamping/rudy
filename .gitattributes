@@ -1,0 +1,3 @@
+# Normalize text so shell scripts run on Linux (LF, UTF-8).
+* text=auto
+*.sh text eol=lf
