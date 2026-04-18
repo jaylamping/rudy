@@ -2,7 +2,14 @@
 <launch>
   <!-- Headless smoke test: no RViz / GUI (CI + Pi5). -->
   <arg name="use_sim_time" default="false"/>
-  <set_use_sim_time value="$(var use_sim_time)"/>
+  <!--
+    Only invoke <set_use_sim_time> when the user opts in. The action's
+    post-condition check in launch_ros<=0.26.x asserts the resulting parameter
+    is truthy, which raises "Failed to set use_sim_time parameter" whenever
+    the requested value is false (see ros2/launch_ros#487, fix in #488/#491).
+    Defaulting nodes to wall time matches the action's no-op intent here.
+  -->
+  <set_use_sim_time if="$(var use_sim_time)" value="$(var use_sim_time)"/>
 
   <let name="robot_description"
     value="$(command 'xacro $(find-pkg-share description)/urdf/robot.urdf.xacro')"/>

@@ -4,7 +4,8 @@
   <arg name="use_sim_time" default="false"/>
   <arg name="rviz_config" default="$(find-pkg-share bringup)/rviz/display.rviz"/>
 
-  <set_use_sim_time value="$(var use_sim_time)"/>
+  <!-- Guarded against ros2/launch_ros#487 (action raises when value is false). -->
+  <set_use_sim_time if="$(var use_sim_time)" value="$(var use_sim_time)"/>
 
   <let name="robot_description"
     value="$(command 'xacro $(find-pkg-share description)/urdf/robot.urdf.xacro')"/>
