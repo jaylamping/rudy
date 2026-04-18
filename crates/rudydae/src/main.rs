@@ -8,18 +8,7 @@ use anyhow::{Context, Result};
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
-mod api;
-mod audit;
-mod can;
-mod config;
-mod inventory;
-mod server;
-mod spec;
-mod state;
-mod telemetry;
-mod types;
-mod util;
-mod wt;
+use rudydae::{audit, can, config, inventory, server, spec, state, telemetry, wt};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -72,16 +61,49 @@ async fn main() -> Result<()> {
     can::spawn(app_state.clone())?;
     telemetry::spawn(app_state.clone());
 
-    let http_handle = tokio::spawn(server::run(app_state.clone()));
-    let wt_handle = tokio::spawn(wt::run(app_state.clone()));
+    let mut http_handle = tokio::spawn(server::run(app_state.clone()));
+    let mut wt_handle = tokio::spawn(wt::run(app_state.clone()));
 
     info!("rudydae is up");
 
-    tokio::select! {
-        res = http_handle => res??,
-        res = wt_handle => res??,
-        _ = tokio::signal::ctrl_c() => {
-            info!("shutdown signal received");
+    // NOTE: when webtransport.enabled = false, `wt::run` returns `Ok(())`
+    // almost immediately. A naive `tokio::select!` on both handles would let
+    // the daemon exit as soon as the WT task finishes — silently taking the
+    // HTTP listener down with it (caught by
+    // `link/scripts/smoke-contract.mjs`). So we treat a *clean* exit on
+    // either side as "this surface is no longer needed" and only shut down
+    // when the HTTP listener stops, an error surfaces, or Ctrl-C arrives.
+    loop {
+        tokio::select! {
+            res = &mut http_handle => {
+                res??;
+                info!("http listener stopped; shutting down");
+                break;
+            }
+            res = &mut wt_handle => {
+                match res? {
+                    Ok(()) => info!("webtransport task finished; http listener still serving"),
+                    Err(e) => return Err(e),
+                }
+                // Don't poll wt_handle again; await the rest from a smaller
+                // select.
+                tokio::select! {
+                    res = &mut http_handle => {
+                        res??;
+                        info!("http listener stopped; shutting down");
+                    }
+                    res = tokio::signal::ctrl_c() => {
+                        res?;
+                        info!("shutdown signal received");
+                    }
+                }
+                break;
+            }
+            res = tokio::signal::ctrl_c() => {
+                res?;
+                info!("shutdown signal received");
+                break;
+            }
         }
     }
 
