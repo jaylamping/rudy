@@ -221,9 +221,18 @@ function LimbAssignmentCard({ motor }: { motor: MotorSummary }) {
       }
       return await api.renameMotor(motor.role, previewRole);
     },
-    onSuccess: (resp) => {
-      qc.invalidateQueries({ queryKey: ["motors"] });
-      qc.invalidateQueries({ queryKey: ["inventory", motor.role] });
+    onSuccess: async (resp) => {
+      // The role just changed under us. Before we navigate, `["motors"]`
+      // must reflect the new role — otherwise the detail route's loader
+      // calls `ensureQueryData(["motors"])`, gets the stale cached
+      // array, can't find `resp.new_role`, and renders NotFoundActuator
+      // until you hit refresh. So we explicitly refetch and *await* it.
+      //
+      // Also: drop the old inventory cache entry and warm the new one,
+      // since the old key (`["inventory", motor.role]`) now points at a
+      // role the daemon no longer knows about.
+      qc.removeQueries({ queryKey: ["inventory", motor.role], exact: true });
+      await qc.refetchQueries({ queryKey: ["motors"], exact: true });
       navigate({
         to: "/actuators/$role",
         params: { role: resp.new_role },

@@ -199,9 +199,22 @@ export function WebTransportBridge({
         }),
     );
 
+    // Inventory-shape `safety_event`s that change the `["motors"]` cache
+    // structure (not just per-motor telemetry, which the regular reducers
+    // handle). A `motor_renamed` event can arrive here either because
+    // *this* tab triggered an assign/rename, or because another tab /
+    // operator did — either way, the cached motor list is now wrong and
+    // a refetch is the only honest fix.
+    const unsubInv = wt.onKind<{ kind: string }>("safety_event", (env) => {
+      if (env.data.kind === "motor_renamed") {
+        queryClient.invalidateQueries({ queryKey: ["motors"] });
+      }
+    });
+
     return () => {
       unsub();
       unsubGap();
+      unsubInv();
       if (rafHandleRef.current !== null) {
         const cancel =
           typeof cancelAnimationFrame === "function"
