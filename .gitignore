@@ -28,6 +28,13 @@ target/
 # ts-rs default export dir (bindings land in link/src/lib/types/ via TS_RS_EXPORT_DIR)
 crates/rudydae/bindings/
 
+# rust-embed copy target. `crates/rudydae/build.rs` regenerates this from
+# `link/dist/` on every cargo build (or writes a stub if dist/ is missing),
+# so committing it just produces enormous review-noise diffs and per-machine
+# working-tree churn. Real shipping happens via `release.yaml`, which builds
+# `link/` first and embeds the result into the Pi binary.
+crates/rudydae/static/
+
 # Node / Vite (link frontend)
 link/node_modules/
 link/dist/
