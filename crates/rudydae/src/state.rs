@@ -152,10 +152,7 @@ impl AppState {
     /// that successfully sends a `stop` frame (per-motor stop, e-stop, jog
     /// watchdog timeout, auto-recovery cleanup).
     pub fn mark_stopped(&self, role: &str) {
-        self.enabled
-            .write()
-            .expect("enabled poisoned")
-            .remove(role);
+        self.enabled.write().expect("enabled poisoned").remove(role);
     }
 
     /// Cheap predicate for the `rename` / `assign` gates.

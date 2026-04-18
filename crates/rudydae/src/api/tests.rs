@@ -191,7 +191,7 @@ async fn run_real(
     role: &str,
     seq: std::sync::Arc<AtomicU64>,
 ) {
-    use driver::rs03::tests::{self as bench, Common, Level, Reporter, RoutineOutcome};
+    use driver::rs03::tests::{self as bench, Common, JogParams, Level, Reporter, RoutineOutcome};
     use std::sync::atomic::AtomicBool;
 
     struct WtReporter {
@@ -262,16 +262,29 @@ async fn run_real(
                 bench::run_jog(
                     bus,
                     &common,
-                    body.target_vel.unwrap_or(0.2),
-                    body.duration.unwrap_or(2.0),
-                    true,
-                    false,
+                    &JogParams {
+                        target_vel: body.target_vel.unwrap_or(0.2),
+                        duration: body.duration.unwrap_or(2.0),
+                        go: true,
+                        test_overlimit: false,
+                    },
                     &stop,
                     &mut reporter,
                 )
             }),
             TestName::JogOverlimit => core.with_bus_for_test(&motor.can_bus, |bus| {
-                bench::run_jog(bus, &common, 0.0, 1.0, true, true, &stop, &mut reporter)
+                bench::run_jog(
+                    bus,
+                    &common,
+                    &JogParams {
+                        target_vel: 0.0,
+                        duration: 1.0,
+                        go: true,
+                        test_overlimit: true,
+                    },
+                    &stop,
+                    &mut reporter,
+                )
             }),
         }
     })

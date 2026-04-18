@@ -180,10 +180,12 @@ fn main() {
                 tests::run_jog(
                     &bus,
                     &common.to_lib(),
-                    *target_vel,
-                    *duration,
-                    *go,
-                    *test_overlimit,
+                    &tests::JogParams {
+                        target_vel: *target_vel,
+                        duration: *duration,
+                        go: *go,
+                        test_overlimit: *test_overlimit,
+                    },
                     &stop_flag,
                     &mut reporter,
                 )

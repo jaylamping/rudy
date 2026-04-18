@@ -98,6 +98,24 @@ pub struct Common {
     pub motor_id: u8,
 }
 
+/// What `run_jog` should actually do. Bundled into a struct so the
+/// function signature stays under clippy's `too_many_arguments` cap and
+/// so callers (CLI, rudydae HTTP handler) can build it field-by-field
+/// without lining up six positional booleans/floats correctly.
+pub struct JogParams {
+    /// Trapezoidal-ramp setpoint (rad/s). Clamped to `±MAX_TARGET_VEL_RAD_S`.
+    pub target_vel: f32,
+    /// Total run time (s) including ramps. Clamped to `[1.0, MAX_DURATION_S]`.
+    pub duration: f32,
+    /// `false` is a dry-run: prints what it *would* do and returns Pass
+    /// without ever issuing `cmd_enable`. `true` actually drives the motor.
+    pub go: bool,
+    /// When true, ignores `target_vel`/`duration` and runs the firmware-cap
+    /// validation routine: commands `OVERLIMIT_SPD_REF` and asserts the
+    /// firmware clamps observed velocity into the OK window.
+    pub test_overlimit: bool,
+}
+
 // ============================================================================
 // read
 // ============================================================================
@@ -326,26 +344,28 @@ pub fn run_smoke(
 pub fn run_jog(
     bus: &CanBus,
     c: &Common,
-    target_vel: f32,
-    duration: f32,
-    go: bool,
-    test_overlimit: bool,
+    p: &JogParams,
     stop: &AtomicBool,
     r: &mut dyn Reporter,
 ) -> io::Result<RoutineOutcome> {
-    let target = target_vel.clamp(-MAX_TARGET_VEL_RAD_S, MAX_TARGET_VEL_RAD_S);
-    if target_vel.abs() > MAX_TARGET_VEL_RAD_S {
+    let target = p
+        .target_vel
+        .clamp(-MAX_TARGET_VEL_RAD_S, MAX_TARGET_VEL_RAD_S);
+    if p.target_vel.abs() > MAX_TARGET_VEL_RAD_S {
         r.report(
             "clamp",
             Level::Warn,
-            &format!("clamped |target-vel| to ±{MAX_TARGET_VEL_RAD_S} rad/s (was {target_vel})"),
+            &format!(
+                "clamped |target-vel| to ±{MAX_TARGET_VEL_RAD_S} rad/s (was {})",
+                p.target_vel
+            ),
         );
     }
-    if duration.is_nan() || target_vel.is_nan() {
+    if p.duration.is_nan() || p.target_vel.is_nan() {
         r.report("sanity", Level::Fail, "NaN duration or target velocity");
         return Ok(RoutineOutcome::Fail(2));
     }
-    let duration = duration.clamp(1.0, MAX_DURATION_S);
+    let duration = p.duration.clamp(1.0, MAX_DURATION_S);
 
     dump_minimal(bus, c.host_id, c.motor_id, "pre-check", r)?;
     let pre = sanity_pre_jog(bus, c.host_id, c.motor_id, r)?;
@@ -353,8 +373,8 @@ pub fn run_jog(
         return Ok(RoutineOutcome::Fail(pre));
     }
 
-    if !go {
-        if test_overlimit {
+    if !p.go {
+        if p.test_overlimit {
             r.report(
                 "dry_run",
                 Level::Info,
@@ -372,7 +392,7 @@ pub fn run_jog(
         return Ok(RoutineOutcome::Pass);
     }
 
-    let rc = if test_overlimit {
+    let rc = if p.test_overlimit {
         run_overlimit(bus, c.host_id, c.motor_id, stop, r)?
     } else {
         run_jog_ramp(bus, c.host_id, c.motor_id, target, duration, stop, r)?

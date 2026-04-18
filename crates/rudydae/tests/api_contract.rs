@@ -1253,10 +1253,19 @@ async fn rename_stopped_motor_skips_auto_stop_cycle() {
     let resp_json: serde_json::Value = body_json(resp).await;
     // skip_serializing_if drops the false flags entirely; assert by
     // checking the field is absent OR explicitly false.
-    let auto_stopped = resp_json.get("auto_stopped").and_then(|v| v.as_bool()).unwrap_or(false);
-    let auto_reenabled = resp_json.get("auto_reenabled").and_then(|v| v.as_bool()).unwrap_or(false);
+    let auto_stopped = resp_json
+        .get("auto_stopped")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let auto_reenabled = resp_json
+        .get("auto_reenabled")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
     assert!(!auto_stopped, "stopped motor should not trigger auto-stop");
-    assert!(!auto_reenabled, "stopped motor should not trigger auto-reenable");
+    assert!(
+        !auto_reenabled,
+        "stopped motor should not trigger auto-reenable"
+    );
     assert!(!state.is_enabled("left_arm.shoulder_pitch"));
 }
 

@@ -178,10 +178,9 @@ async fn do_rename(
     if needs_auto_stop {
         if let Some(core) = state.real_can.clone() {
             let motor_for_stop = motor_snapshot.clone();
-            let stop_result =
-                tokio::task::spawn_blocking(move || core.stop(&motor_for_stop))
-                    .await
-                    .expect("rename auto-stop task panicked");
+            let stop_result = tokio::task::spawn_blocking(move || core.stop(&motor_for_stop))
+                .await
+                .expect("rename auto-stop task panicked");
             if let Err(e) = stop_result {
                 state.audit.write(AuditEntry {
                     timestamp: Utc::now(),
@@ -361,8 +360,7 @@ async fn do_rename(
                 }
             }
             None => {
-                auto_reenable_error =
-                    Some(format!("motor {new_role} disappeared after rename"));
+                auto_reenable_error = Some(format!("motor {new_role} disappeared after rename"));
             }
         }
     }
