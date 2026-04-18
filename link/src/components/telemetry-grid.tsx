@@ -45,7 +45,7 @@ function MotorCard({ motor }: { motor: MotorSummary }) {
     setLatest(motor.latest);
     const fb = motor.latest;
     const s = seriesRef.current;
-    const tSec = fb.t_ms / 1000;
+    const tSec = Number(fb.t_ms) / 1000;
     if (t0Ref.current === null) t0Ref.current = tSec;
     const t = tSec - t0Ref.current;
     s.t.push(t);

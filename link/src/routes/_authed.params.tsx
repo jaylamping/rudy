@@ -56,7 +56,7 @@ function ParamsPage() {
 }
 
 function ParamTable({ role, snap }: { role: string; snap: ParamSnapshot }) {
-  const entries = useMemo(() => Object.values(snap.values), [snap]);
+  const entries = useMemo(() => Object.values(snap.values).filter((p): p is ParamValue => p !== undefined), [snap]);
   const editable = entries.filter((p) => p.hardware_range !== null && p.hardware_range !== undefined);
   const observables = entries.filter((p) => !p.hardware_range);
 

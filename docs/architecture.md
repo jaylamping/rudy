@@ -7,7 +7,7 @@ This document is the **living** system architecture for the Rudy monorepo. Updat
 Rudy uses a **two-machine** layout:
 
 - **Desktop (x86_64 + NVIDIA GPU)**: development, `colcon` builds, Isaac Lab training, RViz, heavy logging.
-- **Raspberry Pi 5 (aarch64 + CAN HAT)**: onboard runtime — CAN driver, `ros2_control`, telemetry, policy inference.
+- **Raspberry Pi 5 (aarch64 + CAN HAT)**: onboard runtime — **`rudydae`** owns SocketCAN and the operator console; ROS 2 / `ros2_control` on the Pi is **deferred** until `driver_node` integration.
 
 ```mermaid
 graph LR
@@ -19,16 +19,12 @@ graph LR
   end
 
   subgraph pi5 [Pi5_aarch64]
-    Driver[driver_Rust]
-    Control[control]
-    Telem[telemetry]
-    Driver --> CAN[SocketCAN]
-    Control --> Driver
-    Telem --> Driver
+    Daemon[rudydae]
+    Daemon --> CAN[SocketCAN]
   end
 
   desktop -->|rsync_install| pi5
-  desktop <-->|CycloneDDS| pi5
+  desktop -.->|future_ROS_DDS| pi5
   CAN --> Act[Robstride_RS03]
 ```
 

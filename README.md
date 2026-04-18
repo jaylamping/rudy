@@ -31,7 +31,7 @@ Monorepo for the Rudy upper-body humanoid (RobStride RS03 actuators, CAN bus, Is
 ## Prerequisites
 
 - **Desktop**: ROS 2 **Jazzy** (`desktop` or `desktop-full`), `colcon`, Rust (`cargo`, `rustfmt`, `clippy`), Node 20+, plus `xacro` for tests.
-- **Pi 5**: Ubuntu **24.04** aarch64 + `ros-jazzy-ros-base` (see [`deploy/pi5/`](deploy/pi5/)). For the operator console: Tailscale 1.60+.
+- **Pi 5**: Ubuntu LTS aarch64, [`deploy/pi5/setup_pi5.sh`](deploy/pi5/setup_pi5.sh) for SocketCAN + `chrony` (no ROS on the device yet). Operator console: `rudydae` + Tailscale 1.60+.
 
 ## Build
 

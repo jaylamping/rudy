@@ -33,11 +33,19 @@ fn audit(state: &SharedState, action: &str, role: &str, result: AuditResult) {
     });
 }
 
+fn can_err(action: &str, role: &str, error: &anyhow::Error) -> (StatusCode, Json<ApiError>) {
+    err(
+        StatusCode::BAD_GATEWAY,
+        "can_command_failed",
+        Some(format!("{action} failed for {role}: {error:#}")),
+    )
+}
+
 pub async fn enable(
     State(state): State<SharedState>,
     Path(role): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ApiError>)> {
-    let motor = state.inventory.by_role(&role).ok_or_else(|| {
+    let motor = state.inventory.by_role(&role).cloned().ok_or_else(|| {
         err(
             StatusCode::NOT_FOUND,
             "unknown_motor",
@@ -56,6 +64,19 @@ pub async fn enable(
         ));
     }
 
+    if let Some(core) = state.real_can.clone() {
+        tokio::task::spawn_blocking({
+            let motor = motor.clone();
+            move || core.enable(&motor)
+        })
+        .await
+        .expect("enable task panicked")
+        .map_err(|e| {
+            audit(&state, "enable", &role, AuditResult::Denied);
+            can_err("enable", &role, &e)
+        })?;
+    }
+
     audit(&state, "enable", &role, AuditResult::Ok);
     Ok(Json(serde_json::json!({ "ok": true, "role": role })))
 }
@@ -64,13 +85,27 @@ pub async fn stop(
     State(state): State<SharedState>,
     Path(role): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ApiError>)> {
-    state.inventory.by_role(&role).ok_or_else(|| {
+    let motor = state.inventory.by_role(&role).cloned().ok_or_else(|| {
         err(
             StatusCode::NOT_FOUND,
             "unknown_motor",
             Some(format!("no motor with role={role}")),
         )
     })?;
+
+    if let Some(core) = state.real_can.clone() {
+        tokio::task::spawn_blocking({
+            let motor = motor.clone();
+            move || core.stop(&motor)
+        })
+        .await
+        .expect("stop task panicked")
+        .map_err(|e| {
+            audit(&state, "stop", &role, AuditResult::Denied);
+            can_err("stop", &role, &e)
+        })?;
+    }
+
     audit(&state, "stop", &role, AuditResult::Ok);
     Ok(Json(serde_json::json!({ "ok": true, "role": role })))
 }
@@ -79,13 +114,27 @@ pub async fn save_to_flash(
     State(state): State<SharedState>,
     Path(role): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ApiError>)> {
-    state.inventory.by_role(&role).ok_or_else(|| {
+    let motor = state.inventory.by_role(&role).cloned().ok_or_else(|| {
         err(
             StatusCode::NOT_FOUND,
             "unknown_motor",
             Some(format!("no motor with role={role}")),
         )
     })?;
+
+    if let Some(core) = state.real_can.clone() {
+        tokio::task::spawn_blocking({
+            let motor = motor.clone();
+            move || core.save_to_flash(&motor)
+        })
+        .await
+        .expect("save_to_flash task panicked")
+        .map_err(|e| {
+            audit(&state, "save_to_flash", &role, AuditResult::Denied);
+            can_err("save_to_flash", &role, &e)
+        })?;
+    }
+
     audit(&state, "save_to_flash", &role, AuditResult::Ok);
     Ok(Json(
         serde_json::json!({ "ok": true, "role": role, "saved": true }),
@@ -96,13 +145,27 @@ pub async fn set_zero(
     State(state): State<SharedState>,
     Path(role): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ApiError>)> {
-    state.inventory.by_role(&role).ok_or_else(|| {
+    let motor = state.inventory.by_role(&role).cloned().ok_or_else(|| {
         err(
             StatusCode::NOT_FOUND,
             "unknown_motor",
             Some(format!("no motor with role={role}")),
         )
     })?;
+
+    if let Some(core) = state.real_can.clone() {
+        tokio::task::spawn_blocking({
+            let motor = motor.clone();
+            move || core.set_zero(&motor)
+        })
+        .await
+        .expect("set_zero task panicked")
+        .map_err(|e| {
+            audit(&state, "set_zero", &role, AuditResult::Denied);
+            can_err("set_zero", &role, &e)
+        })?;
+    }
+
     audit(&state, "set_zero", &role, AuditResult::Ok);
     Ok(Json(serde_json::json!({ "ok": true, "role": role })))
 }

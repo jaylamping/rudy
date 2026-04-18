@@ -1,26 +1,30 @@
 # Raspberry Pi 5 deployment (Rudy)
 
-Scripts in this directory target **Ubuntu 24.04 (aarch64)** on a Raspberry Pi 5 with the **Waveshare 2-CH CAN HAT** (MCP2515).
+Scripts in this directory target **Ubuntu LTS (aarch64)** on a Raspberry Pi 5 with the **Waveshare 2-CH CAN HAT** (MCP2515).
+
+**Onboard today:** `rudydae` + SocketCAN + systemd (`robot-can`, `rudyd`). **ROS 2 on the Pi is not installed** by these scripts; it will return when `driver_node` / `ros2_control` integration is implemented (desktop `ros/` workspace unchanged).
 
 ## Files
 
 
 | File                 | Purpose                                                              |
 | -------------------- | -------------------------------------------------------------------- |
-| `Dockerfile.pi5`     | Cross-compilation image (Rust + aarch64 toolchain)                   |
-| `setup_pi5.sh`       | One-time Pi setup: ROS 2 Jazzy base, CycloneDDS, CAN systemd unit    |
+| `Dockerfile.pi5`     | Cross-compilation image (Rust + aarch64; Jazzy base matches CI)     |
+| `setup_pi5.sh`       | One-time Pi setup: chrony, CAN utils, `robot-can` systemd unit       |
 | `can_setup.sh`       | Bring up `can0` / `can1` at 1 Mbps                                   |
 | `robot-can.service`  | systemd unit (installed to `/etc/systemd/system/`)                   |
-| `deploy.sh`          | `rsync` of `install/` + `config/` to the Pi                          |
+| `install.sh`         | Builds frontend + `rudydae` on the Pi and installs `/opt/rudy` + `/etc/rudy` |
+| `deploy.sh`          | Syncs repo sources to the Pi and runs `install.sh` remotely          |
 | `config.txt.example` | Example `/boot/firmware/config.txt` lines for SPI + MCP2515 overlays |
+| `install_can_overlays.sh` | Idempotent append of those lines to `/boot/firmware/config.txt` (run on Pi) |
 
 
 ## Quick start
 
-1. Flash **Ubuntu 24.04** for Pi 5, ensure `noble-updates` / `noble-backports` are enabled (ROS Jazzy arm64).
-2. Copy CAN overlay lines from `config.txt.example` into `/boot/firmware/config.txt`, reboot.
+1. Flash **Ubuntu LTS** for Pi 5 (24.04 recommended; newer LTS/non‑LTS works for `rudydae`-only).
+2. On the Pi: `sudo bash deploy/pi5/install_can_overlays.sh` (or merge `config.txt.example` into `/boot/firmware/config.txt`), then reboot.
 3. On the Pi: `sudo bash deploy/pi5/setup_pi5.sh`
-4. On your desktop: `colcon build`, then `./deploy/pi5/deploy.sh user@pi.local`
+4. Either on the Pi: `sudo bash deploy/pi5/install.sh`, or from your desktop: `./deploy/pi5/deploy.sh user@pi.local`
 
 See [docs/runbooks/pi5.md](../../docs/runbooks/pi5.md) for full details.
 
@@ -33,7 +37,7 @@ Empirically on **our** Pi 5 with the overlays in `config.txt.example` (`mcp2515-
 
 | silkscreen label | SPI CE | interrupt GPIO | **Linux iface** |
 | ---------------- | ------ | -------------- | --------------- |
-| `CAN0`           | CE0    | GPIO 23        | `**can1`**      |
+| `CAN0`           | CE0    | GPIO 23        | `**can1**`      |
 | `CAN1`           | CE1    | GPIO 25        | `**can0**`      |
 
 

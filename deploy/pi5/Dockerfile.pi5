@@ -1,4 +1,5 @@
-# Cross-build image: same ROS base as Pi 5 runtime (Noble + Jazzy) with aarch64 toolchain.
+# Cross-build image: Jazzy-on-Noble base matches CI / desktop for compiling the driver crate;
+# the Pi runtime image does not install ROS (see deploy/pi5/setup_pi5.sh).
 # Build on x86_64 with: docker build -f deploy/pi5/Dockerfile.pi5 -t robot-pi5-build .
 FROM osrf/ros:jazzy-ros-base-noble
 

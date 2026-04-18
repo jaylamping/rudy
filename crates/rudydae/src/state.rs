@@ -6,6 +6,7 @@ use std::sync::{Arc, RwLock};
 use tokio::sync::broadcast;
 
 use crate::audit::AuditLog;
+use crate::can::RealCanHandle;
 use crate::config::Config;
 use crate::inventory::Inventory;
 use crate::spec::ActuatorSpec;
@@ -17,6 +18,7 @@ pub struct AppState {
     pub inventory: Inventory,
     pub audit: AuditLog,
     pub auth_token: Option<String>,
+    pub real_can: Option<Arc<RealCanHandle>>,
 
     /// In-memory per-motor latest feedback (role -> feedback).
     pub latest: RwLock<BTreeMap<String, MotorFeedback>>,
@@ -41,6 +43,7 @@ impl AppState {
         inventory: Inventory,
         audit: AuditLog,
         auth_token: Option<String>,
+        real_can: Option<Arc<RealCanHandle>>,
     ) -> Self {
         let (feedback_tx, _) = broadcast::channel::<MotorFeedback>(512);
         Self {
@@ -49,6 +52,7 @@ impl AppState {
             inventory,
             audit,
             auth_token,
+            real_can,
             latest: RwLock::new(BTreeMap::new()),
             params: RwLock::new(BTreeMap::new()),
             feedback_tx,

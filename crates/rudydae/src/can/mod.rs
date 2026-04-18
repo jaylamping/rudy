@@ -8,17 +8,19 @@
 //!   generator so the full REST + WebTransport stack is exercisable without
 //!   hardware.
 //!
-//! Phase 1 ships only the mock path wired end-to-end. The Linux branch is
-//! stubbed here with a `todo!()`-style warning + fallback to mock, so the
-//! binary compiles and runs on both developer laptops and the Pi today.
-//! Replacing the fallback with the real driver wiring is tracked by the
-//! `rudydae_can_core` plan task.
+use std::sync::Arc;
 
 use anyhow::Result;
 use tracing::info;
-#[cfg(target_os = "linux")]
+#[cfg(not(target_os = "linux"))]
 use tracing::warn;
 
+use crate::config::Config;
+use crate::inventory::Inventory;
+#[cfg(not(target_os = "linux"))]
+use crate::inventory::Motor;
+#[cfg(not(target_os = "linux"))]
+use crate::spec::ParamDescriptor;
 use crate::state::SharedState;
 
 pub mod mock;
@@ -26,21 +28,73 @@ pub mod mock;
 #[cfg(target_os = "linux")]
 pub mod linux;
 
-pub fn spawn(state: SharedState) -> Result<()> {
+#[cfg(target_os = "linux")]
+pub use linux::LinuxCanCore as RealCanHandle;
+
+#[cfg(not(target_os = "linux"))]
+#[derive(Debug)]
+pub struct RealCanHandle;
+
+#[cfg(not(target_os = "linux"))]
+#[allow(dead_code)]
+impl RealCanHandle {
+    pub fn write_param(
+        &self,
+        _motor: &Motor,
+        _desc: &ParamDescriptor,
+        _value: &serde_json::Value,
+        _save_after: bool,
+    ) -> Result<serde_json::Value> {
+        anyhow::bail!("real CAN is only available on Linux targets")
+    }
+
+    pub fn enable(&self, _motor: &Motor) -> Result<()> {
+        anyhow::bail!("real CAN is only available on Linux targets")
+    }
+
+    pub fn stop(&self, _motor: &Motor) -> Result<()> {
+        anyhow::bail!("real CAN is only available on Linux targets")
+    }
+
+    pub fn save_to_flash(&self, _motor: &Motor) -> Result<()> {
+        anyhow::bail!("real CAN is only available on Linux targets")
+    }
+
+    pub fn set_zero(&self, _motor: &Motor) -> Result<()> {
+        anyhow::bail!("real CAN is only available on Linux targets")
+    }
+
+    pub fn refresh_all_params(&self, _state: &SharedState) -> Result<()> {
+        anyhow::bail!("real CAN is only available on Linux targets")
+    }
+
+    pub fn poll_once(&self, _state: &SharedState) -> Result<()> {
+        anyhow::bail!("real CAN is only available on Linux targets")
+    }
+}
+
+pub fn build_handle(cfg: &Config, inventory: &Inventory) -> Result<Option<Arc<RealCanHandle>>> {
     #[cfg(target_os = "linux")]
     {
-        if !state.cfg.can.mock {
-            warn!(
-                "rudydae: real SocketCAN path is not yet wired end-to-end; falling back to mock. \
-                 See the rudydae_can_core task in docs/decisions/0004-operator-console.md."
-            );
-            // Once linux::spawn is ready, swap the body of this branch to:
-            //   return linux::spawn(state);
-            let _ = linux::placeholder;
-            return mock::spawn(state);
+        if !cfg.can.mock {
+            return Ok(Some(Arc::new(linux::LinuxCanCore::open(cfg, inventory)?)));
         }
     }
 
-    info!("rudydae: starting mock CAN core");
-    mock::spawn(state)
+    #[cfg(not(target_os = "linux"))]
+    if !cfg.can.mock {
+        warn!("rudydae: real CAN requested on a non-Linux target; using mock CAN");
+    }
+
+    Ok(None)
+}
+
+pub fn spawn(state: SharedState) -> Result<()> {
+    if state.cfg.can.mock {
+        info!("rudydae: starting mock CAN core");
+        return mock::spawn(state);
+    }
+
+    info!("rudydae: real SocketCAN core initialized");
+    Ok(())
 }

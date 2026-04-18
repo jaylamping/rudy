@@ -52,8 +52,16 @@ async fn main() -> Result<()> {
         .with_context(|| format!("opening audit log {:?}", cfg.paths.audit_log))?;
 
     let token = auth::load_token(&cfg.auth).context("loading auth token")?;
+    let real_can = can::build_handle(&cfg, &inv).context("opening CAN core")?;
 
-    let app_state = Arc::new(state::AppState::new(cfg.clone(), spec, inv, audit, token));
+    let app_state = Arc::new(state::AppState::new(
+        cfg.clone(),
+        spec,
+        inv,
+        audit,
+        token,
+        real_can,
+    ));
 
     can::spawn(app_state.clone())?;
     telemetry::spawn(app_state.clone());

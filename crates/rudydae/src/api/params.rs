@@ -48,7 +48,7 @@ pub async fn put_param(
         )
     };
 
-    let motor = state.inventory.by_role(&role).ok_or_else(|| {
+    let motor = state.inventory.by_role(&role).cloned().ok_or_else(|| {
         err(
             StatusCode::NOT_FOUND,
             "unknown_motor",
@@ -91,13 +91,41 @@ pub async fn put_param(
         }
     }
 
-    // Mutate the in-memory snapshot. Real CAN wiring will replace this with a
-    // call to driver::rs03::session::write_param_*.
+    let normalized_value = if let Some(core) = state.real_can.clone() {
+        tokio::task::spawn_blocking({
+            let motor = motor.clone();
+            let desc = desc.clone();
+            let value = body.value.clone();
+            move || core.write_param(&motor, &desc, &value, body.save_after)
+        })
+        .await
+        .expect("put_param task panicked")
+        .map_err(|e| {
+            state.audit.write(AuditEntry {
+                timestamp: Utc::now(),
+                session_id: None,
+                remote: None,
+                action: "param_write".into(),
+                target: Some(format!("{role}.{name}")),
+                details: serde_json::json!({ "value": body.value, "error": format!("{e:#}") }),
+                result: AuditResult::Denied,
+            });
+            err(
+                StatusCode::BAD_GATEWAY,
+                "can_command_failed",
+                Some(format!("param write failed for {role}.{name}: {e:#}")),
+            )
+        })?
+    } else {
+        body.value.clone()
+    };
+
+    // Mutate the in-memory snapshot.
     {
         let mut params = state.params.write().expect("params poisoned");
         if let Some(snap) = params.get_mut(&role) {
             if let Some(pv) = snap.values.get_mut(&name) {
-                pv.value = body.value.clone();
+                pv.value = normalized_value.clone();
             }
         }
     }
@@ -116,7 +144,7 @@ pub async fn put_param(
         details: serde_json::json!({
             "can_id": motor.can_id,
             "index": format!("0x{:04X}", desc.index),
-            "value": body.value,
+            "value": normalized_value,
         }),
         result: AuditResult::Ok,
     });
@@ -126,6 +154,6 @@ pub async fn put_param(
         "saved": body.save_after,
         "role": role,
         "name": name,
-        "value": body.value,
+        "value": normalized_value,
     })))
 }
