@@ -40,8 +40,7 @@ impl ReminderStore {
             if raw.trim().is_empty() {
                 Vec::new()
             } else {
-                serde_json::from_str(&raw)
-                    .with_context(|| format!("parsing {}", path.display()))?
+                serde_json::from_str(&raw).with_context(|| format!("parsing {}", path.display()))?
             }
         } else {
             Vec::new()

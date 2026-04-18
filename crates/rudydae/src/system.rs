@@ -108,11 +108,7 @@ fn mock_snapshot() -> SystemSnapshot {
     SystemSnapshot {
         t_ms: now_ms(),
         cpu_pct: cpu as f32,
-        load: [
-            0.4 + 0.2 * osc.abs() as f32,
-            0.5,
-            0.6,
-        ],
+        load: [0.4 + 0.2 * osc.abs() as f32, 0.5, 0.6],
         mem_used_mb: 1850 + (200.0 * osc.abs()) as u64,
         mem_total_mb: 8192,
         temps_c: SystemTemps {
@@ -149,7 +145,7 @@ fn hostname_or(default: &str) -> String {
 mod linux {
     use std::process::Command;
 
-    use super::{now_ms, hostname_or, CpuTotals, SystemPoller};
+    use super::{hostname_or, now_ms, CpuTotals, SystemPoller};
     use crate::types::{SystemSnapshot, SystemTemps, SystemThrottled};
 
     pub fn read_snapshot(poller: &mut SystemPoller) -> std::io::Result<SystemSnapshot> {

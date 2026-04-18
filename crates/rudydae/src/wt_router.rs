@@ -38,8 +38,8 @@ use wtransport::SendStream;
 
 use crate::state::SharedState;
 use crate::types::{
-    MotorFeedback, SystemSnapshot, WtEnvelope, WtKind, WtPayload, WtSubscribe,
-    WtSubscribeFilters, WtTransport,
+    MotorFeedback, SystemSnapshot, WtEnvelope, WtKind, WtPayload, WtSubscribe, WtSubscribeFilters,
+    WtTransport,
 };
 
 /// Per-session router: owns subscriptions, sequence counters, the lazily-
@@ -165,7 +165,12 @@ impl SessionRouter {
                 connection
                     .send_datagram(self.scratch.as_slice())
                     .map_err(|e| anyhow::anyhow!("send_datagram failed: {e}"))?;
-                trace!("wt: dgram kind={} seq={} bytes={}", kind.as_str(), seq, self.scratch.len());
+                trace!(
+                    "wt: dgram kind={} seq={} bytes={}",
+                    kind.as_str(),
+                    seq,
+                    self.scratch.len()
+                );
             }
             WtTransport::Stream => {
                 self.write_reliable(connection).await?;

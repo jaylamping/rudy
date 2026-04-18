@@ -517,8 +517,7 @@ async fn reminders_crud_roundtrip() {
     assert_eq!(listed[0].id, created.id);
 
     // Update done=true.
-    let body =
-        serde_json::to_vec(&json!({ "text": created.text, "done": true })).unwrap();
+    let body = serde_json::to_vec(&json!({ "text": created.text, "done": true })).unwrap();
     let resp = app
         .clone()
         .oneshot(

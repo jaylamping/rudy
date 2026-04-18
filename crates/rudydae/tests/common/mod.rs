@@ -109,8 +109,7 @@ pub fn make_state() -> (SharedState, tempfile::TempDir) {
     let inv = Inventory::load(&inv_path).expect("load inventory");
     let audit = AuditLog::open(&audit_path).expect("open audit");
     let real_can = can::build_handle(&cfg, &inv).expect("build can");
-    let reminders =
-        ReminderStore::open(dir.path().join("reminders.json")).expect("open reminders");
+    let reminders = ReminderStore::open(dir.path().join("reminders.json")).expect("open reminders");
 
     let state = Arc::new(AppState::new(cfg, spec, inv, audit, real_can, reminders));
     (state, dir)

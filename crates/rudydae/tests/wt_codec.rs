@@ -205,8 +205,7 @@ fn reliable_stream_framing_is_length_prefixed() {
     // Decoder side: read 4 bytes BE -> length -> then exactly that many
     // bytes -> CBOR decode.
     let (header, rest) = frame.split_at(4);
-    let parsed_len =
-        u32::from_be_bytes([header[0], header[1], header[2], header[3]]) as usize;
+    let parsed_len = u32::from_be_bytes([header[0], header[1], header[2], header[3]]) as usize;
     assert_eq!(parsed_len, body.len(), "length header round-trips");
     let parsed: WtFrame = ciborium::from_reader(rest).expect("body decodes");
     let WtFrame::SystemSnapshot(_) = parsed else {
