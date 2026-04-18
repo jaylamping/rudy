@@ -49,6 +49,15 @@ pub struct MotorSummary {
     pub present: bool,
     pub travel_limits: Option<crate::inventory::TravelLimits>,
     pub latest: Option<MotorFeedback>,
+    /// Per-power-cycle gate state. UI renders a colored badge driven off
+    /// the variant; OutOfBand carries enough detail to display
+    /// "X.X deg outside [Y.Y, Z.Z]" without a second roundtrip.
+    pub boot_state: crate::boot_state::BootState,
+    /// Limb assignment, if any (`left_arm`, `right_leg`, etc.). None for
+    /// ungrouped motors that haven't been assigned via the inventory tab.
+    pub limb: Option<String>,
+    /// Canonical position in the kinematic chain. None for ungrouped motors.
+    pub joint_kind: Option<crate::limb::JointKind>,
 }
 
 /// One snapshot of telemetry for a motor. Sent:
@@ -223,6 +232,53 @@ pub enum SafetyEvent {
         attempted_rad: f32,
         min_rad: f32,
         max_rad: f32,
+    },
+    /// Layer 6 began driving a motor back toward its band.
+    AutoRecoveryAttempted {
+        t_ms: i64,
+        role: String,
+        from_rad: f32,
+        target_rad: f32,
+        delta_rad: f32,
+    },
+    /// Layer 6 reached the in-band target; motor was left disabled. The
+    /// operator still needs to do the Verify & Home ritual to enable.
+    AutoRecoverySucceeded {
+        t_ms: i64,
+        role: String,
+        final_pos_rad: f32,
+        ticks: u32,
+    },
+    /// Layer 6 aborted (resistance / fault / timeout / budget exceeded).
+    /// Operator must manually move the joint into band.
+    AutoRecoveryFailed {
+        t_ms: i64,
+        role: String,
+        reason: String,
+        last_pos_rad: f32,
+    },
+    /// Layer 6 refused to start (delta to band exceeds budget, or feature
+    /// disabled). No motion frame was sent on the bus.
+    AutoRecoveryRefused {
+        t_ms: i64,
+        role: String,
+        reason: String,
+        delta_rad: f32,
+    },
+    /// Slow-ramp homer reached its target. Full torque/speed limits restored.
+    Homed {
+        t_ms: i64,
+        role: String,
+        final_pos_rad: f32,
+        samples_count: u32,
+    },
+    /// A motor's role was changed at runtime (operator clicked Rename or
+    /// Assign). Subscribers should drop any per-role caches keyed by the
+    /// old role.
+    MotorRenamed {
+        t_ms: i64,
+        old_role: String,
+        new_role: String,
     },
 }
 

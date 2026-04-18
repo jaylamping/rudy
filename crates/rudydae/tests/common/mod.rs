@@ -102,6 +102,15 @@ pub fn make_state() -> (SharedState, tempfile::TempDir) {
         },
         safety: SafetyConfig {
             require_verified: true,
+            boot_max_step_rad: 0.087,
+            auto_recovery_max_rad: std::f32::consts::FRAC_PI_2,
+            recovery_margin_rad: 0.087,
+            step_size_rad: 0.02,
+            tick_interval_ms: 5,
+            tracking_error_max_rad: 0.05,
+            target_tolerance_rad: 0.005,
+            homer_timeout_ms: 5_000,
+            auto_recovery_enabled: true,
         },
     };
 
@@ -197,6 +206,27 @@ pub fn seed_feedback(state: &SharedState) {
             },
         );
     }
+}
+
+/// Force every motor's boot state to `Homed`. Call from tests whose intent
+/// pre-dates the boot-time gate so they don't trip the new enable
+/// preconditions; tests for the gate itself should NOT use this.
+pub fn force_homed(state: &SharedState) {
+    use rudydae::boot_state::BootState;
+    let mut bs = state.boot_state.write().expect("boot_state");
+    let inv = state.inventory.read().expect("inventory poisoned");
+    for m in &inv.motors {
+        bs.insert(m.role.clone(), BootState::Homed);
+    }
+}
+
+/// Seed boot state for a single motor.
+pub fn set_boot_state(state: &SharedState, role: &str, bs: rudydae::boot_state::BootState) {
+    state
+        .boot_state
+        .write()
+        .expect("boot_state")
+        .insert(role.into(), bs);
 }
 
 /// Suppress a clippy::dead_code-style warning if `Write` isn't used; some

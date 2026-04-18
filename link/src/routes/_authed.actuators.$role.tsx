@@ -184,6 +184,7 @@ function ActuatorHeader({ motor }: { motor: MotorSummary }) {
               <Badge variant="warning">needs travel limits</Badge>
             </Link>
           )}
+          <BootStateBadge motor={motor} />
         </div>
       </div>
 
@@ -200,6 +201,52 @@ function ActuatorHeader({ motor }: { motor: MotorSummary }) {
       </div>
     </header>
   );
+}
+
+// Per-power-cycle gate badge. Drives off the discriminated `boot_state`
+// union from MotorSummary; renders a colored pill plus, for OutOfBand,
+// a tooltip with the offending position.
+function BootStateBadge({ motor }: { motor: MotorSummary }) {
+  const bs = motor.boot_state;
+  const RAD_TO_DEG = 180 / Math.PI;
+  if (bs.kind === "homed") {
+    return <Badge variant="success">homed</Badge>;
+  }
+  if (bs.kind === "in_band") {
+    return (
+      <Link
+        to="/actuators/$role"
+        params={{ role: motor.role }}
+        search={{ tab: "travel" }}
+        title="In band but not yet homed; click to run Verify & Home."
+      >
+        <Badge variant="warning">needs verify &amp; home</Badge>
+      </Link>
+    );
+  }
+  if (bs.kind === "out_of_band") {
+    const pos = (bs.mech_pos_rad * RAD_TO_DEG).toFixed(1);
+    const lo = (bs.min_rad * RAD_TO_DEG).toFixed(1);
+    const hi = (bs.max_rad * RAD_TO_DEG).toFixed(1);
+    return (
+      <Badge
+        variant="destructive"
+        title={`At ${pos}° outside [${lo}°, ${hi}°]; manual recovery required`}
+      >
+        out of band: {pos}°
+      </Badge>
+    );
+  }
+  if (bs.kind === "auto_recovering") {
+    const from = (bs.from_rad * RAD_TO_DEG).toFixed(1);
+    const target = (bs.target_rad * RAD_TO_DEG).toFixed(1);
+    return (
+      <Badge variant="warning" className="animate-pulse">
+        auto-recovering {from}° → {target}°
+      </Badge>
+    );
+  }
+  return <Badge variant="outline">no telemetry</Badge>;
 }
 
 function Stat({

@@ -6,6 +6,7 @@ use axum::{
     Json,
 };
 
+use crate::boot_state;
 use crate::state::SharedState;
 use crate::types::{ApiError, MotorFeedback, MotorSummary};
 
@@ -15,7 +16,7 @@ pub async fn list_motors(State(state): State<SharedState>) -> Json<Vec<MotorSumm
     let out = inv
         .motors
         .iter()
-        .map(|m| summary_for(m, latest.get(&m.role).cloned()))
+        .map(|m| summary_for(&state, m, latest.get(&m.role).cloned()))
         .collect();
     Json(out)
 }
@@ -40,12 +41,17 @@ pub async fn get_motor(
         .expect("latest poisoned")
         .get(&role)
         .cloned();
-    Ok(Json(summary_for(motor, latest)))
+    let summary = summary_for(&state, motor, latest);
+    Ok(Json(summary))
 }
 
-/// Build a `MotorSummary` from inventory + latest. Pulled out so list / get
-/// stay 1:1 (the SPA destructures the same shape from both).
-fn summary_for(m: &crate::inventory::Motor, latest: Option<MotorFeedback>) -> MotorSummary {
+/// Build a `MotorSummary` from inventory + latest + boot state. Pulled
+/// out so list / get stay 1:1 (the SPA destructures the same shape from both).
+fn summary_for(
+    state: &SharedState,
+    m: &crate::inventory::Motor,
+    latest: Option<MotorFeedback>,
+) -> MotorSummary {
     MotorSummary {
         role: m.role.clone(),
         can_bus: m.can_bus.clone(),
@@ -55,6 +61,9 @@ fn summary_for(m: &crate::inventory::Motor, latest: Option<MotorFeedback>) -> Mo
         present: m.present,
         travel_limits: m.travel_limits.clone(),
         latest,
+        boot_state: boot_state::current(state, &m.role),
+        limb: m.limb.clone(),
+        joint_kind: m.joint_kind,
     }
 }
 

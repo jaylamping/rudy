@@ -1,11 +1,12 @@
 //! Shared application state injected into every axum handler.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex, RwLock};
 
 use tokio::sync::broadcast;
 
 use crate::audit::AuditLog;
+use crate::boot_state::BootState;
 use crate::can::RealCanHandle;
 use crate::config::Config;
 use crate::inventory::Inventory;
@@ -69,6 +70,23 @@ pub struct AppState {
 
     /// Operator reminders, file-backed at `.rudyd/reminders.json`.
     pub reminders: ReminderStore,
+
+    /// Per-power-cycle boot-time gate state for each motor (role -> state).
+    /// Populated on first telemetry tick by `boot_state::classify`; consulted
+    /// by every motion-producing endpoint to refuse commands until the
+    /// operator runs the slow-ramp homer (Layers 0/2/5 of the boot-time
+    /// gate). NOT persisted across daemon restarts: a motor that was Homed
+    /// yesterday is back to Unknown after a power cycle, by design.
+    pub boot_state: RwLock<HashMap<String, BootState>>,
+
+    /// Per-motor mutex guarding the auto-recovery routine (Layer 6). The
+    /// routine acquires this for the entire duration so two telemetry ticks
+    /// can't both spawn recovery for the same motor, and so manual commands
+    /// can detect "recovery in progress" by trying to lock with `try_lock`.
+    /// Sequential-across-motors policy (one recovery at a time globally) is
+    /// enforced by `auto_recovery::GLOBAL_RECOVERY_LOCK`.
+    pub auto_recovery_attempted:
+        Mutex<std::collections::HashSet<String>>,
 }
 
 impl AppState {
@@ -99,6 +117,8 @@ impl AppState {
             control_lock: RwLock::new(None),
             system: Mutex::new(SystemPoller::new()),
             reminders,
+            boot_state: RwLock::new(HashMap::new()),
+            auto_recovery_attempted: Mutex::new(std::collections::HashSet::new()),
         }
     }
 

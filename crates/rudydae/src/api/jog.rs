@@ -29,7 +29,9 @@ use serde::{Deserialize, Serialize};
 use tokio::time::Instant;
 
 use crate::audit::{AuditEntry, AuditResult};
-use crate::can::travel::{enforce_position, BandCheck};
+use crate::boot_state::{self, BootState};
+use crate::can::motion::shortest_signed_delta;
+use crate::can::travel::{enforce_position_with_path, BandCheck};
 use crate::state::SharedState;
 use crate::types::ApiError;
 use crate::util::session_from_headers;
@@ -120,32 +122,102 @@ pub async fn jog(
     let clamped = body.vel_rad_s.clamp(-MAX_JOG_VEL_RAD_S, MAX_JOG_VEL_RAD_S);
     let ttl_ms = body.ttl_ms.clamp(50, MAX_TTL_MS);
 
+    // Boot-state gate: refuse jog while Layer 6 is driving the motor, and
+    // refuse while Unknown/OutOfBand. InBand is permitted (operator can jog
+    // around for inspection), Homed is permitted.
+    let bs = boot_state::current(&state, &role);
+    if bs.is_auto_recovering() {
+        return Err(err(
+            StatusCode::CONFLICT,
+            "auto_recovery_in_progress",
+            Some(format!("auto-recovery is driving {role}; wait for completion")),
+        ));
+    }
+    if matches!(bs, BootState::Unknown) {
+        return Err(err(
+            StatusCode::CONFLICT,
+            "not_ready",
+            Some(format!("no telemetry yet for {role}; cannot jog")),
+        ));
+    }
+    if let BootState::OutOfBand {
+        mech_pos_rad,
+        min_rad,
+        max_rad,
+    } = bs
+    {
+        return Err(err(
+            StatusCode::CONFLICT,
+            "out_of_band",
+            Some(format!(
+                "{role} is at {mech_pos_rad:.3} rad outside [{min_rad:.3}, {max_rad:.3}]; manual recovery required"
+            )),
+        ));
+    }
+
     // Use the latest cached position to bound the next setpoint. The check
     // is conservative: if we have no recent feedback we let the firmware
     // envelope handle it.
     if let Some(fb) = state.latest.read().expect("latest poisoned").get(&role) {
         // Project where the motor would be after `ttl_ms` at `clamped` and
-        // refuse if that lands outside the band. Treats the band as a
-        // hard limit even with mid-flight predictions.
+        // refuse if that lands outside the band. Path-aware: also rejects
+        // any jog that would sweep across the band boundary.
         let projected = fb.mech_pos_rad + clamped * (ttl_ms as f32 / 1000.0);
-        if let BandCheck::OutOfBand {
-            min_rad,
-            max_rad,
-            attempted_rad,
-        } = enforce_position(&state, &role, projected).map_err(|e| {
-            err(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "internal",
-                Some(format!("{e:#}")),
-            )
-        })? {
-            return Err(err(
-                StatusCode::CONFLICT,
-                "travel_limit_violation",
-                Some(format!(
+        let check = enforce_position_with_path(&state, &role, fb.mech_pos_rad, projected)
+            .map_err(|e| {
+                err(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "internal",
+                    Some(format!("{e:#}")),
+                )
+            })?;
+        match check {
+            BandCheck::OutOfBand {
+                min_rad,
+                max_rad,
+                attempted_rad,
+            } => {
+                return Err(err(
+                    StatusCode::CONFLICT,
+                    "travel_limit_violation",
+                    Some(format!(
                     "projected position {attempted_rad:.3} rad outside [{min_rad:.3}, {max_rad:.3}]"
                 )),
-            ));
+                ));
+            }
+            BandCheck::PathViolation {
+                min_rad,
+                max_rad,
+                current_rad,
+                target_rad,
+            } => {
+                return Err(err(
+                    StatusCode::CONFLICT,
+                    "path_violation",
+                    Some(format!(
+                    "current {current_rad:.3} -> target {target_rad:.3} sweeps outside [{min_rad:.3}, {max_rad:.3}]"
+                )),
+                ));
+            }
+            _ => {}
+        }
+
+        // Per-step ceiling (Defense Layer 2): while not Homed, the
+        // projected motion can't exceed `boot_max_step_rad` regardless of
+        // the band check above. This is the safety net that catches
+        // anything trying to skip past the homer.
+        if !matches!(bs, BootState::Homed) {
+            let delta = shortest_signed_delta(fb.mech_pos_rad, projected).abs();
+            if delta > state.cfg.safety.boot_max_step_rad {
+                return Err(err(
+                    StatusCode::CONFLICT,
+                    "step_too_large",
+                    Some(format!(
+                    "projected delta {delta:.3} rad exceeds boot_max_step_rad {:.3} rad; run /home first",
+                    state.cfg.safety.boot_max_step_rad
+                )),
+                ));
+            }
         }
     }
 

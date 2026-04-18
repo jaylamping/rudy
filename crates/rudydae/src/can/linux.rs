@@ -12,6 +12,8 @@ use driver::rs03::feedback::MotorFeedback as DriverFeedback;
 use driver::rs03::session;
 use driver::CanBus;
 
+use crate::boot_state::{self, BootState, ClassifyOutcome};
+use crate::can::auto_recovery;
 use crate::can::backoff::MotorBackoff;
 use crate::config::Config;
 use crate::inventory::{Inventory, Motor};
@@ -184,6 +186,71 @@ impl LinuxCanCore {
         })
     }
 
+    /// RAM-write low torque AND speed limits for every present motor.
+    ///
+    /// Called once at telemetry startup. Implements Layer 4 of the
+    /// boot-time gate: even if the higher layers got the state machine
+    /// wrong, the worst-case behavior of a misfiring motor is "slow and
+    /// weak" instead of "fast and strong." Uses RAM writes only (NO
+    /// `save_params`) so a daemon restart restores the operator's
+    /// flash-resident commissioning values.
+    ///
+    /// Failures are logged and per-motor isolated; a single motor that
+    /// won't accept the write doesn't block the others. Callers SHOULD
+    /// keep the affected motors in `BootState::Unknown` so enable refuses
+    /// — that's the safer fallback than enabling with unknown limits.
+    pub fn seed_boot_low_limits(&self, state: &SharedState) {
+        let motors: Vec<Motor> = state
+            .inventory
+            .read()
+            .expect("inventory poisoned")
+            .motors
+            .iter()
+            .filter(|m| m.present)
+            .cloned()
+            .collect();
+
+        let limit_torque_nm = state
+            .spec
+            .commissioning_defaults
+            .get("limit_torque_nm")
+            .and_then(|v| v.as_f64())
+            .map(|v| v as f32);
+        let limit_spd_rad_s = state
+            .spec
+            .commissioning_defaults
+            .get("limit_spd_rad_s")
+            .and_then(|v| v.as_f64())
+            .map(|v| v as f32);
+
+        for motor in motors {
+            if let (Some(t), Some(_)) = (limit_torque_nm, &motor.travel_limits) {
+                if let Some(desc) = state.spec.firmware_limits.get("limit_torque") {
+                    if let Err(e) = self.write_param(
+                        &motor,
+                        desc,
+                        &serde_json::json!(t),
+                        false,
+                    ) {
+                        tracing::warn!(role = %motor.role, error = ?e, "boot-time limit_torque RAM write failed");
+                    }
+                }
+            }
+            if let Some(s) = limit_spd_rad_s {
+                if let Some(desc) = state.spec.firmware_limits.get("limit_spd") {
+                    if let Err(e) = self.write_param(
+                        &motor,
+                        desc,
+                        &serde_json::json!(s),
+                        false,
+                    ) {
+                        tracing::warn!(role = %motor.role, error = ?e, "boot-time limit_spd RAM write failed");
+                    }
+                }
+            }
+        }
+    }
+
     /// Refresh the full parameter snapshot for every present motor.
     ///
     /// Per-motor failures are isolated: a motor that errors out logs
@@ -250,6 +317,17 @@ impl LinuxCanCore {
                         .write()
                         .expect("latest poisoned")
                         .insert(motor.role.clone(), latest.clone());
+                    if let ClassifyOutcome::Changed { new, .. } =
+                        boot_state::classify(state, &motor.role, latest.mech_pos_rad)
+                    {
+                        if let BootState::OutOfBand { mech_pos_rad, .. } = new {
+                            auto_recovery::maybe_spawn_recovery(
+                                state,
+                                &motor.role,
+                                mech_pos_rad,
+                            );
+                        }
+                    }
                     let _ = state.feedback_tx.send(latest);
                 }
                 Err(e) => {

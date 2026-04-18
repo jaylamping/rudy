@@ -104,6 +104,50 @@ export const api = {
       `/api/motors/${encodeURIComponent(role)}/jog`,
       { method: "POST", body: JSON.stringify(body) },
     ),
+  // Slow-ramp homer. Validates current position is in band, then rolls
+  // setpoints toward `target_rad` (default 0.0) at low torque/speed under
+  // a tracking-error abort. On success transitions BootState -> Homed and
+  // restores per-motor full torque/speed limits.
+  homeMotor: (role: string, target_rad?: number) =>
+    apiFetch<{ ok: boolean; final_pos_rad: number; ticks: number }>(
+      `/api/motors/${encodeURIComponent(role)}/home`,
+      {
+        method: "POST",
+        body: JSON.stringify(target_rad === undefined ? {} : { target_rad }),
+      },
+    ),
+  // Run the multi-limb home orchestrator: sequential within each limb
+  // (proximal-to-distal), parallel across limbs.
+  homeAll: () =>
+    apiFetch<{
+      ok: boolean;
+      results: Record<
+        string,
+        {
+          status: string;
+          homed: string[];
+          failed_at: string | null;
+          failure_reason: string | null;
+        }
+      >;
+    }>(`/api/home_all`, { method: "POST" }),
+  // Atomic rename: changes the inventory primary key, migrates in-memory
+  // maps, audit-logs, broadcasts MotorRenamed safety event.
+  renameMotor: (role: string, new_role: string) =>
+    apiFetch<{ ok: boolean; new_role: string }>(
+      `/api/motors/${encodeURIComponent(role)}/rename`,
+      { method: "POST", body: JSON.stringify({ new_role }) },
+    ),
+  // Convenience: set limb + joint_kind on an unassigned motor and let
+  // the daemon derive the canonical role.
+  assignMotor: (
+    role: string,
+    body: { limb: string; joint_kind: import("@/lib/types/JointKind").JointKind },
+  ) =>
+    apiFetch<{ ok: boolean; new_role: string }>(
+      `/api/motors/${encodeURIComponent(role)}/assign`,
+      { method: "POST", body: JSON.stringify(body) },
+    ),
   // Bench routines. Returns a run_id that filters the test_progress stream.
   runTest: (
     role: string,

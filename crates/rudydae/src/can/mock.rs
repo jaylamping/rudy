@@ -9,6 +9,8 @@ use chrono::Utc;
 use tokio::time::interval;
 use tracing::info;
 
+use crate::boot_state::{self, ClassifyOutcome, BootState};
+use crate::can::auto_recovery;
 use crate::state::SharedState;
 use crate::types::MotorFeedback;
 
@@ -51,6 +53,20 @@ pub fn spawn(state: SharedState) -> Result<()> {
                     .write()
                     .expect("latest poisoned")
                     .insert(motor.role.clone(), fb.clone());
+
+                // Run the boot-time classifier. On the first OutOfBand
+                // transition for a present motor, maybe-spawn auto-recovery.
+                if let ClassifyOutcome::Changed {
+                    new: BootState::OutOfBand { mech_pos_rad, .. },
+                    ..
+                } = boot_state::classify(&state, &motor.role, fb.mech_pos_rad)
+                {
+                    auto_recovery::maybe_spawn_recovery(
+                        &state,
+                        &motor.role,
+                        mech_pos_rad,
+                    );
+                }
 
                 // Ignore errors: no WebTransport subscribers yet is fine.
                 let _ = state.feedback_tx.send(fb);

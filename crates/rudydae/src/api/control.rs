@@ -8,6 +8,8 @@ use axum::{
 use chrono::Utc;
 
 use crate::audit::{AuditEntry, AuditResult};
+use crate::boot_state::{self, BootState};
+use crate::can::travel::{enforce_position_with_path, BandCheck};
 use crate::state::SharedState;
 use crate::types::ApiError;
 
@@ -96,6 +98,79 @@ pub async fn enable(
         ));
     }
 
+    // Check A (the inviolable physics rule): if travel_limits is set the
+    // motor must currently be inside the band. Fires regardless of
+    // BootState — even if the operator hand-pushed state to Homed, even
+    // if telemetry is stale, if the cached position is outside the band
+    // we refuse. Check B catches the operational discipline gap when
+    // Check A passes.
+    if motor.travel_limits.is_some() {
+        let cached = state
+            .latest
+            .read()
+            .expect("latest poisoned")
+            .get(&role)
+            .map(|f| f.mech_pos_rad);
+        if let Some(pos) = cached {
+            let check = enforce_position_with_path(&state, &role, pos, pos)
+                .map_err(|e| {
+                    err(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "internal",
+                        Some(format!("{e:#}")),
+                    )
+                })?;
+            if let BandCheck::OutOfBand {
+                min_rad,
+                max_rad,
+                attempted_rad,
+            }
+            | BandCheck::PathViolation {
+                min_rad,
+                max_rad,
+                current_rad: attempted_rad,
+                ..
+            } = check
+            {
+                audit(&state, "enable", &role, AuditResult::Denied);
+                return Err(err(
+                    StatusCode::CONFLICT,
+                    "out_of_band",
+                    Some(format!(
+                        "{role} at {attempted_rad:.3} rad outside [{min_rad:.3}, {max_rad:.3}]"
+                    )),
+                ));
+            }
+        }
+    }
+
+    // Check B (operational discipline): operator must have explicitly
+    // homed since the last power-cycle.
+    let bs = boot_state::current(&state, &role);
+    if !bs.permits_enable() {
+        let (code, detail) = match bs {
+            BootState::Unknown => (
+                "not_ready",
+                format!("no telemetry yet for {role}; classify before enabling"),
+            ),
+            BootState::OutOfBand { .. } => (
+                "out_of_band",
+                format!("{role} reported outside band; manual recovery required"),
+            ),
+            BootState::AutoRecovering { .. } => (
+                "auto_recovery_in_progress",
+                format!("{role} is being driven by auto-recovery"),
+            ),
+            BootState::InBand => (
+                "not_homed",
+                format!("POST /motors/{role}/home first to verify position"),
+            ),
+            BootState::Homed => unreachable!(),
+        };
+        audit(&state, "enable", &role, AuditResult::Denied);
+        return Err(err(StatusCode::CONFLICT, code, Some(detail)));
+    }
+
     if let Some(core) = state.real_can.clone() {
         tokio::task::spawn_blocking({
             let motor = motor.clone();
@@ -179,6 +254,12 @@ pub async fn set_zero(
             can_err("set_zero", &role, &e)
         })?;
     }
+
+    // A re-zero invalidates the prior home attestation: every position
+    // the daemon has seen is now measured against a different origin.
+    // Reset BootState to Unknown so the next telemetry tick re-classifies
+    // and the operator must explicitly re-home before enable will work.
+    boot_state::reset_to_unknown(&state, &role);
 
     audit(&state, "set_zero", &role, AuditResult::Ok);
     Ok(Json(serde_json::json!({ "ok": true, "role": role })))

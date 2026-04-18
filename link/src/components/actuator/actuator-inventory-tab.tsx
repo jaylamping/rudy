@@ -6,8 +6,10 @@
 // `inventory.yaml` and audits the change.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { api, ApiError } from "@/lib/api";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -19,7 +21,64 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { ConfirmDialog } from "@/components/params";
+import type { JointKind } from "@/lib/types/JointKind";
 import type { MotorSummary } from "@/lib/types/MotorSummary";
+
+// SCAFFOLD: temporary inventory-tab-based limb assignment.
+// Future UX: drag-and-drop kinematic-tree assignment in a dedicated
+// "Robot setup" view. For now this gets the data into inventory.yaml so
+// `POST /api/home_all` and limb-aware UI grouping can land.
+const LIMB_OPTIONS = [
+  "left_arm",
+  "right_arm",
+  "left_leg",
+  "right_leg",
+  "torso",
+  "head",
+] as const;
+
+const LIMB_JOINTS: Record<string, JointKind[]> = {
+  left_arm: [
+    "shoulder_pitch",
+    "shoulder_roll",
+    "upper_arm_yaw",
+    "elbow_pitch",
+    "forearm_roll",
+    "wrist_pitch",
+    "wrist_yaw",
+    "wrist_roll",
+    "gripper",
+  ],
+  right_arm: [
+    "shoulder_pitch",
+    "shoulder_roll",
+    "upper_arm_yaw",
+    "elbow_pitch",
+    "forearm_roll",
+    "wrist_pitch",
+    "wrist_yaw",
+    "wrist_roll",
+    "gripper",
+  ],
+  left_leg: [
+    "hip_yaw",
+    "hip_roll",
+    "hip_pitch",
+    "knee_pitch",
+    "ankle_pitch",
+    "ankle_roll",
+  ],
+  right_leg: [
+    "hip_yaw",
+    "hip_roll",
+    "hip_pitch",
+    "knee_pitch",
+    "ankle_pitch",
+    "ankle_roll",
+  ],
+  torso: ["waist_rotation", "spine_pitch"],
+  head: ["neck_pitch", "neck_yaw"],
+};
 
 export function ActuatorInventoryTab({ motor }: { motor: MotorSummary }) {
   const qc = useQueryClient();
@@ -48,6 +107,7 @@ export function ActuatorInventoryTab({ motor }: { motor: MotorSummary }) {
 
   return (
     <div className="space-y-4">
+      <LimbAssignmentCard motor={motor} />
       <Card>
         <CardHeader className="flex flex-row items-baseline justify-between space-y-0">
           <div className="space-y-1">
@@ -136,5 +196,120 @@ export function ActuatorInventoryTab({ motor }: { motor: MotorSummary }) {
         </p>
       )}
     </div>
+  );
+}
+
+// Scaffold UI to assign a limb + joint_kind to an unassigned motor, OR to
+// rename an already-assigned motor to a different position. Calls
+// `/api/motors/:role/assign` for the unassigned case (the daemon derives
+// the new canonical role) or `/api/motors/:role/rename` for an explicit
+// canonical role change.
+function LimbAssignmentCard({ motor }: { motor: MotorSummary }) {
+  const qc = useQueryClient();
+  const navigate = useNavigate();
+  const [limb, setLimb] = useState<string>(motor.limb ?? "");
+  const [joint, setJoint] = useState<JointKind | "">(motor.joint_kind ?? "");
+  const previewRole =
+    limb && joint ? `${limb}.${joint}` : motor.role;
+  const isAssigned = motor.limb && motor.joint_kind;
+
+  const assign = useMutation({
+    mutationFn: async () => {
+      if (!limb || !joint) throw new Error("limb and joint_kind required");
+      if (!isAssigned) {
+        return await api.assignMotor(motor.role, { limb, joint_kind: joint });
+      }
+      return await api.renameMotor(motor.role, previewRole);
+    },
+    onSuccess: (resp) => {
+      qc.invalidateQueries({ queryKey: ["motors"] });
+      qc.invalidateQueries({ queryKey: ["inventory", motor.role] });
+      navigate({
+        to: "/actuators/$role",
+        params: { role: resp.new_role },
+        search: { tab: "inventory" },
+        replace: true,
+      });
+    },
+  });
+
+  const allowedJoints = limb && LIMB_JOINTS[limb] ? LIMB_JOINTS[limb] : [];
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Limb assignment</CardTitle>
+        <CardDescription>
+          {isAssigned
+            ? "This motor is assigned to a limb / joint kind. Renaming will change its role and broadcast a MotorRenamed event."
+            : "Pick a limb and joint kind to enable homing under POST /api/home_all. The daemon derives the canonical role."}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label className="text-sm">Limb</Label>
+            <select
+              className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+              value={limb}
+              onChange={(e) => {
+                setLimb(e.target.value);
+                setJoint("");
+              }}
+              disabled={assign.isPending}
+            >
+              <option value="">(unassigned)</option>
+              {LIMB_OPTIONS.map((l) => (
+                <option key={l} value={l}>
+                  {l}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-sm">Joint kind</Label>
+            <select
+              className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+              value={joint}
+              onChange={(e) => setJoint(e.target.value as JointKind | "")}
+              disabled={!limb || assign.isPending}
+            >
+              <option value="">(unassigned)</option>
+              {allowedJoints.map((j) => (
+                <option key={j} value={j}>
+                  {j}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <div className="rounded-md border border-border bg-background p-2 text-xs">
+          <span className="text-muted-foreground">new role: </span>
+          <code className="font-mono">{previewRole}</code>
+        </div>
+        <div className="flex justify-end">
+          <Button
+            disabled={
+              !limb ||
+              !joint ||
+              assign.isPending ||
+              previewRole === motor.role
+            }
+            onClick={() => assign.mutate()}
+          >
+            {assign.isPending
+              ? "Saving..."
+              : isAssigned
+                ? "Rename"
+                : "Assign"}
+          </Button>
+        </div>
+        {assign.isError && (
+          <p className="text-xs text-destructive">
+            {(assign.error as ApiError).message}
+          </p>
+        )}
+      </CardContent>
+    </Card>
   );
 }

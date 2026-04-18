@@ -10,9 +10,11 @@
 
 pub mod api;
 pub mod audit;
+pub mod boot_state;
 pub mod can;
 pub mod config;
 pub mod inventory;
+pub mod limb;
 pub mod reminders;
 pub mod server;
 pub mod spec;

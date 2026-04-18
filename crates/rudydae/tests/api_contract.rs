@@ -386,6 +386,10 @@ async fn put_param_unknown_param_404s() {
 #[tokio::test]
 async fn control_endpoints_return_ok_envelope_for_verified_motor() {
     let (state, _dir) = common::make_state();
+    // Pre-date the boot-time gate: this test only cares about the envelope
+    // shape, not the gate. Force every motor to Homed so enable doesn't
+    // trip the new ritual checks.
+    common::force_homed(&state);
     let app = rudydae::build_app(state);
 
     for (verb, suffix) in [
@@ -906,6 +910,374 @@ async fn travel_limits_rejected_when_lock_held_by_another() {
     assert_eq!(err.error, "lock_held");
 }
 
+// ============================================================================
+// Boot-time travel-band gate (Layers 0-6) + canonical role rename.
+// ============================================================================
+
+use rudydae::boot_state::BootState;
+
+/// Layer 5: enable refuses 409 `not_homed` when the motor is in band but
+/// the operator hasn't run the slow-ramp homer this power-cycle.
+#[tokio::test]
+async fn enable_not_homed_is_forbidden() {
+    let (state, _dir) = common::make_state();
+    common::seed_feedback(&state);
+    common::set_boot_state(&state, "shoulder_actuator_a", BootState::InBand);
+    let app = rudydae::build_app(state);
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/motors/shoulder_actuator_a/enable")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CONFLICT);
+    let err: ApiError = body_json(resp).await;
+    assert_eq!(err.error, "not_homed");
+}
+
+/// Layer 5: enable returns 409 `not_ready` when telemetry hasn't classified
+/// the motor yet.
+#[tokio::test]
+async fn enable_unknown_state_is_forbidden() {
+    let (state, _dir) = common::make_state();
+    let app = rudydae::build_app(state);
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/motors/shoulder_actuator_a/enable")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CONFLICT);
+    let err: ApiError = body_json(resp).await;
+    assert_eq!(err.error, "not_ready");
+}
+
+/// Layer 5: enable returns 409 `out_of_band` when classifier says
+/// OutOfBand. The operator must move the joint into band manually.
+#[tokio::test]
+async fn enable_out_of_band_is_forbidden() {
+    let (state, _dir) = common::make_state();
+    common::seed_feedback(&state);
+    common::set_boot_state(
+        &state,
+        "shoulder_actuator_a",
+        BootState::OutOfBand {
+            mech_pos_rad: 1.5,
+            min_rad: -1.0,
+            max_rad: 1.0,
+        },
+    );
+    let app = rudydae::build_app(state);
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/motors/shoulder_actuator_a/enable")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CONFLICT);
+    let err: ApiError = body_json(resp).await;
+    assert_eq!(err.error, "out_of_band");
+}
+
+/// Belt-and-suspenders: even if state is forced to Homed, a stale-cached
+/// position outside the configured band still blocks enable via Check A.
+#[tokio::test]
+async fn enable_homed_but_drifted_outside_band_is_forbidden() {
+    let (state, _dir) = common::make_state();
+
+    // Configure a band on the motor.
+    let _ = state
+        .inventory
+        .write()
+        .expect("inventory")
+        .motors
+        .iter_mut()
+        .find(|m| m.role == "shoulder_actuator_a")
+        .map(|m| {
+            m.travel_limits = Some(rudydae::inventory::TravelLimits {
+                min_rad: -1.0,
+                max_rad: 1.0,
+                updated_at: None,
+            });
+        });
+
+    // Latest cached position is OUTSIDE the band; state insists Homed.
+    {
+        let mut latest = state.latest.write().expect("latest");
+        latest.insert(
+            "shoulder_actuator_a".into(),
+            MotorFeedback {
+                t_ms: 1_700_000_000_000,
+                role: "shoulder_actuator_a".into(),
+                can_id: 0x08,
+                mech_pos_rad: 1.5,
+                mech_vel_rad_s: 0.0,
+                torque_nm: 0.0,
+                vbus_v: 48.0,
+                temp_c: 30.0,
+                fault_sta: 0,
+                warn_sta: 0,
+            },
+        );
+    }
+    common::set_boot_state(&state, "shoulder_actuator_a", BootState::Homed);
+    let app = rudydae::build_app(state);
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/motors/shoulder_actuator_a/enable")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CONFLICT);
+    let err: ApiError = body_json(resp).await;
+    assert_eq!(err.error, "out_of_band");
+}
+
+/// Layer 5: home transitions BootState to Homed, then enable returns 200.
+#[tokio::test]
+async fn home_succeeds_then_enable_succeeds() {
+    let (state, _dir) = common::make_state();
+    common::seed_feedback(&state);
+    common::set_boot_state(&state, "shoulder_actuator_a", BootState::InBand);
+    let app = rudydae::build_app(state.clone());
+
+    // POST /home with an empty body (defaults to target=0).
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/motors/shoulder_actuator_a/home")
+                .header("content-type", "application/json")
+                .body(Body::from(b"{}".to_vec()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.status(),
+        StatusCode::OK,
+        "home should succeed in mock mode when motor is InBand"
+    );
+
+    let bs = rudydae::boot_state::current(&state, "shoulder_actuator_a");
+    assert!(matches!(bs, BootState::Homed));
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/motors/shoulder_actuator_a/enable")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK, "enable after home");
+}
+
+/// Home refuses to start when motor is OutOfBand.
+#[tokio::test]
+async fn home_when_out_of_band_is_forbidden() {
+    let (state, _dir) = common::make_state();
+    common::seed_feedback(&state);
+    common::set_boot_state(
+        &state,
+        "shoulder_actuator_a",
+        BootState::OutOfBand {
+            mech_pos_rad: 1.5,
+            min_rad: -1.0,
+            max_rad: 1.0,
+        },
+    );
+    let app = rudydae::build_app(state);
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/motors/shoulder_actuator_a/home")
+                .header("content-type", "application/json")
+                .body(Body::from(b"{}".to_vec()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CONFLICT);
+    let err: ApiError = body_json(resp).await;
+    assert_eq!(err.error, "out_of_band");
+}
+
+/// Home target outside the configured band returns 409 `out_of_band`.
+#[tokio::test]
+async fn home_target_outside_band_is_forbidden() {
+    let (state, _dir) = common::make_state();
+    let _ = state
+        .inventory
+        .write()
+        .expect("inventory")
+        .motors
+        .iter_mut()
+        .find(|m| m.role == "shoulder_actuator_a")
+        .map(|m| {
+            m.travel_limits = Some(rudydae::inventory::TravelLimits {
+                min_rad: -1.0,
+                max_rad: 1.0,
+                updated_at: None,
+            });
+        });
+    common::seed_feedback(&state);
+    common::set_boot_state(&state, "shoulder_actuator_a", BootState::InBand);
+    let app = rudydae::build_app(state);
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/motors/shoulder_actuator_a/home")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&json!({"target_rad": 5.0})).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CONFLICT);
+    let err: ApiError = body_json(resp).await;
+    assert_eq!(err.error, "out_of_band");
+}
+
+/// Layer 2: jog projecting > boot_max_step_rad delta is refused while not
+/// Homed even when the projected position is in-band.
+#[tokio::test]
+async fn jog_step_too_large_when_not_homed_is_forbidden() {
+    let (state, _dir) = common::make_state();
+    let _ = state
+        .inventory
+        .write()
+        .expect("inventory")
+        .motors
+        .iter_mut()
+        .find(|m| m.role == "shoulder_actuator_a")
+        .map(|m| {
+            m.travel_limits = Some(rudydae::inventory::TravelLimits {
+                min_rad: -1.0,
+                max_rad: 1.0,
+                updated_at: None,
+            });
+        });
+    common::seed_feedback(&state);
+    common::set_boot_state(&state, "shoulder_actuator_a", BootState::InBand);
+    let app = rudydae::build_app(state);
+
+    // Velocity 0.5 rad/s × 1 s = 0.5 rad delta — well above the 0.087 rad ceiling.
+    let body = serde_json::to_vec(&json!({"vel_rad_s": 0.5, "ttl_ms": 1000})).unwrap();
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/motors/shoulder_actuator_a/jog")
+                .header("content-type", "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CONFLICT);
+    let err: ApiError = body_json(resp).await;
+    assert_eq!(err.error, "step_too_large");
+}
+
+/// set_zero resets BootState to Unknown so the operator must re-home before
+/// enable will work.
+#[tokio::test]
+async fn set_zero_resets_boot_state_to_unknown() {
+    let (state, _dir) = common::make_state();
+    common::set_boot_state(&state, "shoulder_actuator_a", BootState::Homed);
+    let app = rudydae::build_app(state.clone());
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/motors/shoulder_actuator_a/set_zero")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let bs = rudydae::boot_state::current(&state, "shoulder_actuator_a");
+    assert!(matches!(bs, BootState::Unknown));
+}
+
+/// Rename refuses while motor is Homed (i.e. ready for motion).
+#[tokio::test]
+async fn rename_active_motor_is_forbidden() {
+    let (state, _dir) = common::make_state();
+    common::set_boot_state(&state, "shoulder_actuator_a", BootState::Homed);
+    let app = rudydae::build_app(state);
+
+    let body = serde_json::to_vec(&json!({"new_role": "left_arm.shoulder_pitch"})).unwrap();
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/motors/shoulder_actuator_a/rename")
+                .header("content-type", "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CONFLICT);
+    let err: ApiError = body_json(resp).await;
+    assert_eq!(err.error, "motor_active");
+}
+
+/// Rename rejects malformed (non-canonical) target roles.
+#[tokio::test]
+async fn rename_invalid_role_format_is_rejected() {
+    let (state, _dir) = common::make_state();
+    let app = rudydae::build_app(state);
+
+    let body = serde_json::to_vec(&json!({"new_role": "Bad-Role"})).unwrap();
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/motors/shoulder_actuator_a/rename")
+                .header("content-type", "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    let err: ApiError = body_json(resp).await;
+    assert_eq!(err.error, "invalid_role");
+}
+
 /// Sanity check: the URL paths the test hits above are exactly the ones the
 /// SPA's `link/src/lib/api.ts` constructs. If someone renames a route in
 /// `crates/rudydae/src/api/mod.rs`, this test file fails to compile because
@@ -932,6 +1304,10 @@ fn endpoint_inventory_documented() {
         "GET    /api/motors/:role/travel_limits",
         "PUT    /api/motors/:role/travel_limits",
         "POST   /api/motors/:role/jog",
+        "POST   /api/motors/:role/home",
+        "POST   /api/motors/:role/rename",
+        "POST   /api/motors/:role/assign",
+        "POST   /api/home_all",
         "POST   /api/motors/:role/tests/:name",
         "GET    /api/motors/:role/inventory",
         "PUT    /api/motors/:role/verified",

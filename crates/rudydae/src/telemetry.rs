@@ -64,6 +64,19 @@ pub fn spawn(state: SharedState) {
         #[cfg(target_os = "linux")]
         if let Some(core) = state.real_can.clone() {
             tokio::spawn(async move {
+                // Layer 4: RAM-write low torque/speed before doing
+                // ANYTHING else with the bus. Runs once at startup; the
+                // operator-initiated home transition restores per-motor
+                // full limits via `home::run_homer`.
+                {
+                    let state = state.clone();
+                    let core = core.clone();
+                    let _ = tokio::task::spawn_blocking(move || {
+                        core.seed_boot_low_limits(&state);
+                    })
+                    .await;
+                }
+
                 if let Err(e) = tokio::task::spawn_blocking({
                     let state = state.clone();
                     let core = core.clone();

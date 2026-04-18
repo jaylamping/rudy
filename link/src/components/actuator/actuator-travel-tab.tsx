@@ -93,6 +93,7 @@ export function ActuatorTravelTab({ motor }: { motor: MotorSummary }) {
 
   return (
     <div className="space-y-4">
+      <VerifyAndHomeCard motor={motor} />
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Soft travel limits</CardTitle>
@@ -321,4 +322,87 @@ function errorCode(e: ApiError | undefined): string | undefined {
     if (typeof v === "string") return v;
   }
   return undefined;
+}
+
+// Verify & Home: the operator-initiated slow-ramp homing ritual. Disabled
+// unless boot_state is `in_band` AND a per-motor torque limit has been
+// written to flash (rudydae refuses without `limits_written.limit_torque_nm`).
+function VerifyAndHomeCard({ motor }: { motor: MotorSummary }) {
+  const qc = useQueryClient();
+  const [target, setTarget] = useState<number>(0); // degrees
+  const home = useMutation({
+    mutationFn: () => api.homeMotor(motor.role, target * DEG_TO_RAD),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["motors"] });
+    },
+  });
+  const bs = motor.boot_state;
+  const ready = bs.kind === "in_band";
+  const isAutoRecovering = bs.kind === "auto_recovering";
+  const live =
+    motor.latest != null ? motor.latest.mech_pos_rad * RAD_TO_DEG : null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Verify &amp; Home</CardTitle>
+        <CardDescription>
+          Slow-ramp homing ritual (~22 deg/s, low torque/speed,
+          aborts on stall). Required once per power-cycle before the
+          enable button works. Auto-recovery and stale telemetry both
+          block this — see the badge in the header.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="rounded-md border border-border bg-background p-3 text-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">current state</span>
+            <span className="font-mono">{bs.kind}</span>
+          </div>
+          {live != null && (
+            <div className="mt-1 flex items-center justify-between">
+              <span className="text-muted-foreground">live position</span>
+              <span className="font-mono">{live.toFixed(2)}°</span>
+            </div>
+          )}
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-sm">Target</Label>
+          <div className="flex items-center gap-2">
+            <Input
+              type="number"
+              step={1}
+              value={target}
+              onChange={(e) => {
+                const n = Number(e.target.value);
+                if (Number.isFinite(n)) setTarget(n);
+              }}
+              className="w-32 text-right font-mono"
+              disabled={!ready || home.isPending}
+            />
+            <span className="text-xs text-muted-foreground">°</span>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <Button
+            variant="default"
+            disabled={!ready || home.isPending || isAutoRecovering}
+            onClick={() => home.mutate()}
+          >
+            {home.isPending ? "Homing..." : "Verify & Home"}
+          </Button>
+        </div>
+        {home.isError && (
+          <p className="text-xs text-destructive">
+            {(home.error as ApiError).message}
+          </p>
+        )}
+        {home.isSuccess && (
+          <p className="text-xs text-emerald-400">
+            Homed at {(home.data.final_pos_rad * RAD_TO_DEG).toFixed(2)}° in {home.data.ticks} ticks.
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
 }

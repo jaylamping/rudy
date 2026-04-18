@@ -23,8 +23,10 @@ use crate::inventory::Motor;
 use crate::spec::ParamDescriptor;
 use crate::state::SharedState;
 
+pub mod auto_recovery;
 pub mod backoff;
 pub mod mock;
+pub mod motion;
 pub mod travel;
 
 #[cfg(target_os = "linux")]

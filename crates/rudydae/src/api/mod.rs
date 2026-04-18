@@ -13,12 +13,15 @@ use crate::state::SharedState;
 mod config_route;
 mod control;
 mod estop;
+mod home;
+mod home_all;
 mod inventory_route;
 mod jog;
 mod lock;
 mod motors;
 mod params;
 mod reminders_route;
+mod rename;
 mod system;
 mod tests;
 mod travel;
@@ -41,6 +44,10 @@ pub fn router(state: SharedState) -> Router<SharedState> {
             get(travel::get_travel_limits).put(travel::put_travel_limits),
         )
         .route("/motors/:role/jog", post(jog::jog))
+        .route("/motors/:role/home", post(home::home))
+        .route("/motors/:role/rename", post(rename::rename))
+        .route("/motors/:role/assign", post(rename::assign))
+        .route("/home_all", post(home_all::home_all))
         .route("/motors/:role/tests/:name", post(tests::run_test))
         .route(
             "/motors/:role/inventory",
