@@ -80,10 +80,7 @@ mod imp {
         pub fn recv(&self) -> io::Result<(u32, [u8; 8], usize)> {
             let frame = self.sock.read_frame()?;
             if matches!(frame, CanFrame::Error(_)) {
-                return Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    "received CAN error frame",
-                ));
+                return Err(io::Error::other("received CAN error frame"));
             }
             let raw_29 = match EmbeddedFrame::id(&frame) {
                 Id::Extended(eid) => eid.as_raw(),
