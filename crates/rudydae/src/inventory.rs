@@ -186,10 +186,7 @@ impl Inventory {
                 return Err(anyhow!("duplicate role: {}", m.role));
             }
             if m.joint_kind.is_some() && m.limb.is_none() {
-                return Err(anyhow!(
-                    "motor {} has joint_kind set without limb",
-                    m.role
-                ));
+                return Err(anyhow!("motor {} has joint_kind set without limb", m.role));
             }
             if let (Some(_), Some(_)) = (&m.limb, m.joint_kind) {
                 if let Some(canonical) = m.canonical_role() {
@@ -324,7 +321,10 @@ mod tests {
             joint_kind: Some(JointKind::ShoulderPitch),
             extra: BTreeMap::new(),
         };
-        assert_eq!(m.canonical_role().as_deref(), Some("left_arm.shoulder_pitch"));
+        assert_eq!(
+            m.canonical_role().as_deref(),
+            Some("left_arm.shoulder_pitch")
+        );
     }
 
     #[test]

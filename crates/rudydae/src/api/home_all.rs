@@ -105,11 +105,7 @@ pub async fn home_all(
             .map(|(r, why)| format!("{r}={why}"))
             .collect::<Vec<_>>()
             .join(", ");
-        return Err(err(
-            StatusCode::CONFLICT,
-            "preflight_failed",
-            Some(detail),
-        ));
+        return Err(err(StatusCode::CONFLICT, "preflight_failed", Some(detail)));
     }
 
     // Torso pre-phase: sequential across all torso joints in any limb.
@@ -177,8 +173,5 @@ pub async fn home_all(
         result: AuditResult::Ok,
     });
 
-    Ok(Json(HomeAllResp {
-        ok: true,
-        results,
-    }))
+    Ok(Json(HomeAllResp { ok: true, results }))
 }

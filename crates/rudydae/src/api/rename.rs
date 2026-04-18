@@ -218,8 +218,5 @@ async fn do_rename(
         result: AuditResult::Ok,
     });
 
-    Ok(Json(RenameResp {
-        ok: true,
-        new_role,
-    }))
+    Ok(Json(RenameResp { ok: true, new_role }))
 }

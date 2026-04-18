@@ -85,8 +85,7 @@ pub struct AppState {
     /// can detect "recovery in progress" by trying to lock with `try_lock`.
     /// Sequential-across-motors policy (one recovery at a time globally) is
     /// enforced by `auto_recovery::GLOBAL_RECOVERY_LOCK`.
-    pub auto_recovery_attempted:
-        Mutex<std::collections::HashSet<String>>,
+    pub auto_recovery_attempted: Mutex<std::collections::HashSet<String>>,
 }
 
 impl AppState {

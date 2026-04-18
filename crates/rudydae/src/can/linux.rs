@@ -226,24 +226,14 @@ impl LinuxCanCore {
         for motor in motors {
             if let (Some(t), Some(_)) = (limit_torque_nm, &motor.travel_limits) {
                 if let Some(desc) = state.spec.firmware_limits.get("limit_torque") {
-                    if let Err(e) = self.write_param(
-                        &motor,
-                        desc,
-                        &serde_json::json!(t),
-                        false,
-                    ) {
+                    if let Err(e) = self.write_param(&motor, desc, &serde_json::json!(t), false) {
                         tracing::warn!(role = %motor.role, error = ?e, "boot-time limit_torque RAM write failed");
                     }
                 }
             }
             if let Some(s) = limit_spd_rad_s {
                 if let Some(desc) = state.spec.firmware_limits.get("limit_spd") {
-                    if let Err(e) = self.write_param(
-                        &motor,
-                        desc,
-                        &serde_json::json!(s),
-                        false,
-                    ) {
+                    if let Err(e) = self.write_param(&motor, desc, &serde_json::json!(s), false) {
                         tracing::warn!(role = %motor.role, error = ?e, "boot-time limit_spd RAM write failed");
                     }
                 }
@@ -321,11 +311,7 @@ impl LinuxCanCore {
                         boot_state::classify(state, &motor.role, latest.mech_pos_rad)
                     {
                         if let BootState::OutOfBand { mech_pos_rad, .. } = new {
-                            auto_recovery::maybe_spawn_recovery(
-                                state,
-                                &motor.role,
-                                mech_pos_rad,
-                            );
+                            auto_recovery::maybe_spawn_recovery(state, &motor.role, mech_pos_rad);
                         }
                     }
                     let _ = state.feedback_tx.send(latest);

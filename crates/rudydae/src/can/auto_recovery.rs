@@ -149,7 +149,15 @@ pub fn maybe_spawn_recovery(state: &SharedState, role: &str, mech_pos_rad: f32) 
     let role_for_task = role.to_string();
     tokio::spawn(async move {
         let _global = global_lock().lock().await;
-        run_recovery(state_for_task, role_for_task, motor, limits, principal, target).await;
+        run_recovery(
+            state_for_task,
+            role_for_task,
+            motor,
+            limits,
+            principal,
+            target,
+        )
+        .await;
     });
     true
 }
@@ -231,19 +239,14 @@ async fn drive_to_target(
     while start.elapsed() < timeout {
         ticks = ticks.saturating_add(1);
         let remaining = shortest_signed_delta(setpoint, target);
-        let step = remaining
-            .signum()
-            .copysign(remaining)
-            * remaining.abs().min(cfg.step_size_rad);
+        let step = remaining.signum().copysign(remaining) * remaining.abs().min(cfg.step_size_rad);
         setpoint = wrap_to_pi(setpoint + step);
 
         // Path check on the new setpoint: as soon as setpoint enters the
         // band, every subsequent step must also stay in band.
         if setpoint >= limits.min_rad && setpoint <= limits.max_rad {
             let measured_principal = wrap_to_pi(last_measured);
-            if measured_principal >= limits.min_rad
-                && measured_principal <= limits.max_rad
-            {
+            if measured_principal >= limits.min_rad && measured_principal <= limits.max_rad {
                 // Both endpoints in band; any further sweep is fine.
             }
         }
@@ -269,7 +272,11 @@ async fn drive_to_target(
             ));
         }
 
-        boot_state::update_auto_recovery_progress(state, role, (start.elapsed().as_millis() as f32) / 1000.0);
+        boot_state::update_auto_recovery_progress(
+            state,
+            role,
+            (start.elapsed().as_millis() as f32) / 1000.0,
+        );
 
         if shortest_signed_delta(measured, target).abs() < cfg.target_tolerance_rad {
             stop_motor(state, motor);

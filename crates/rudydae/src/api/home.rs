@@ -128,7 +128,9 @@ pub async fn home(
             return Err(err(
                 StatusCode::CONFLICT,
                 "auto_recovery_in_progress",
-                Some(format!("auto-recovery is driving {role}; wait for completion")),
+                Some(format!(
+                    "auto-recovery is driving {role}; wait for completion"
+                )),
             ));
         }
         BootState::Homed => {

@@ -1156,7 +1156,9 @@ async fn home_target_outside_band_is_forbidden() {
                 .method(Method::POST)
                 .uri("/api/motors/shoulder_actuator_a/home")
                 .header("content-type", "application/json")
-                .body(Body::from(serde_json::to_vec(&json!({"target_rad": 5.0})).unwrap()))
+                .body(Body::from(
+                    serde_json::to_vec(&json!({"target_rad": 5.0})).unwrap(),
+                ))
                 .unwrap(),
         )
         .await

@@ -9,7 +9,7 @@ use chrono::Utc;
 use tokio::time::interval;
 use tracing::info;
 
-use crate::boot_state::{self, ClassifyOutcome, BootState};
+use crate::boot_state::{self, BootState, ClassifyOutcome};
 use crate::can::auto_recovery;
 use crate::state::SharedState;
 use crate::types::MotorFeedback;
@@ -61,11 +61,7 @@ pub fn spawn(state: SharedState) -> Result<()> {
                     ..
                 } = boot_state::classify(&state, &motor.role, fb.mech_pos_rad)
                 {
-                    auto_recovery::maybe_spawn_recovery(
-                        &state,
-                        &motor.role,
-                        mech_pos_rad,
-                    );
+                    auto_recovery::maybe_spawn_recovery(&state, &motor.role, mech_pos_rad);
                 }
 
                 // Ignore errors: no WebTransport subscribers yet is fine.

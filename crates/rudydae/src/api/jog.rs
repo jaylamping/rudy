@@ -130,7 +130,9 @@ pub async fn jog(
         return Err(err(
             StatusCode::CONFLICT,
             "auto_recovery_in_progress",
-            Some(format!("auto-recovery is driving {role}; wait for completion")),
+            Some(format!(
+                "auto-recovery is driving {role}; wait for completion"
+            )),
         ));
     }
     if matches!(bs, BootState::Unknown) {
@@ -163,8 +165,8 @@ pub async fn jog(
         // refuse if that lands outside the band. Path-aware: also rejects
         // any jog that would sweep across the band boundary.
         let projected = fb.mech_pos_rad + clamped * (ttl_ms as f32 / 1000.0);
-        let check = enforce_position_with_path(&state, &role, fb.mech_pos_rad, projected)
-            .map_err(|e| {
+        let check =
+            enforce_position_with_path(&state, &role, fb.mech_pos_rad, projected).map_err(|e| {
                 err(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "internal",

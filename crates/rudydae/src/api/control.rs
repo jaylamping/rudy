@@ -112,14 +112,13 @@ pub async fn enable(
             .get(&role)
             .map(|f| f.mech_pos_rad);
         if let Some(pos) = cached {
-            let check = enforce_position_with_path(&state, &role, pos, pos)
-                .map_err(|e| {
-                    err(
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        "internal",
-                        Some(format!("{e:#}")),
-                    )
-                })?;
+            let check = enforce_position_with_path(&state, &role, pos, pos).map_err(|e| {
+                err(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "internal",
+                    Some(format!("{e:#}")),
+                )
+            })?;
             if let BandCheck::OutOfBand {
                 min_rad,
                 max_rad,
