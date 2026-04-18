@@ -227,9 +227,13 @@ async fn run_real(
 
     let role_owned = role.to_string();
     let run_id_owned = run_id.to_string();
+    // Clone the cheap bits the blocking closure needs so `state` itself
+    // (Arc<AppState>) remains usable below for the post-routine audit log
+    // + harness-error broadcast.
+    let state_for_closure = state.clone();
     let outcome = tokio::task::spawn_blocking(move || {
         let mut reporter = WtReporter {
-            tx: state.test_progress_tx.clone(),
+            tx: state_for_closure.test_progress_tx.clone(),
             run_id: run_id_owned,
             role: role_owned,
             seq,
@@ -244,7 +248,10 @@ async fn run_real(
         // bench routine doesn't race the telemetry poller for the same
         // socket. This pattern matches `LinuxCanCore::with_bus`; we route
         // through a private helper that exposes the bus to the closure.
-        let core = state.real_can.clone().expect("real_can present");
+        let core = state_for_closure
+            .real_can
+            .clone()
+            .expect("real_can present");
         match test {
             TestName::Read => core.with_bus_for_test(&motor.can_bus, |bus| {
                 bench::run_read(bus, &common, &mut reporter)
@@ -286,31 +293,34 @@ async fn run_real(
 
     // Surface any io::Error from the with_bus_for_test helper itself
     // (e.g. iface not configured). The bench routines themselves emit
-    // `Fail` lines through the reporter for protocol-level failures.
-    if let Err(e) = outcome {
-        let p = TestProgress {
-            run_id: run_id.to_string(),
-            role: role.to_string(),
-            seq: 0,
-            t_ms: Utc::now().timestamp_millis(),
-            step: "spawn".to_string(),
-            level: TestLevel::Fail,
-            message: format!("bench harness error: {e:#}"),
-        };
-        let _ = state.test_progress_tx.send(p);
-    } else if let Ok(RoutineOutcome::Fail(rc)) = outcome {
-        // Outcome already emitted its own Fail line via the reporter, but
-        // pin the rc on the audit log so post-mortem JSON queries can find
-        // it without parsing free-form messages.
-        state.audit.write(AuditEntry {
-            timestamp: Utc::now(),
-            session_id: None,
-            remote: None,
-            action: format!("test_{}_fail", test.as_str()),
-            target: Some(role.to_string()),
-            details: serde_json::json!({"run_id": run_id, "rc": rc}),
-            result: AuditResult::Error,
-        });
+    // `Fail` lines through the reporter for protocol-level failures —
+    // we just pin the failure rc on the audit log so post-mortem JSON
+    // queries can find it without parsing free-form messages.
+    match outcome {
+        Err(e) => {
+            let p = TestProgress {
+                run_id: run_id.to_string(),
+                role: role.to_string(),
+                seq: 0,
+                t_ms: Utc::now().timestamp_millis(),
+                step: "spawn".to_string(),
+                level: TestLevel::Fail,
+                message: format!("bench harness error: {e:#}"),
+            };
+            let _ = state.test_progress_tx.send(p);
+        }
+        Ok(RoutineOutcome::Fail(rc)) => {
+            state.audit.write(AuditEntry {
+                timestamp: Utc::now(),
+                session_id: None,
+                remote: None,
+                action: format!("test_{}_fail", test.as_str()),
+                target: Some(role.to_string()),
+                details: serde_json::json!({"run_id": run_id, "rc": rc}),
+                result: AuditResult::Error,
+            });
+        }
+        Ok(RoutineOutcome::Pass) => {}
     }
 }
 
