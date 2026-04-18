@@ -12,6 +12,7 @@ use driver::rs03::feedback::MotorFeedback as DriverFeedback;
 use driver::rs03::session;
 use driver::CanBus;
 
+use crate::can::backoff::MotorBackoff;
 use crate::config::Config;
 use crate::inventory::{Inventory, Motor};
 use crate::spec::ParamDescriptor;
@@ -26,6 +27,7 @@ const FEEDBACK_DRAIN_TIMEOUT: Duration = Duration::from_millis(2);
 pub struct LinuxCanCore {
     inner: Mutex<LinuxCanInner>,
     host_id: u8,
+    backoff: MotorBackoff,
 }
 
 struct LinuxCanInner {
@@ -60,6 +62,7 @@ impl LinuxCanCore {
         Ok(Self {
             inner: Mutex::new(LinuxCanInner { buses }),
             host_id: DEFAULT_HOST_ID,
+            backoff: MotorBackoff::new(),
         })
     }
 
@@ -149,27 +152,58 @@ impl LinuxCanCore {
         })
     }
 
+    /// Refresh the full parameter snapshot for every present motor.
+    ///
+    /// Per-motor failures are isolated: a motor that errors out logs
+    /// once via the backoff state and is skipped on subsequent polls
+    /// for an exponentially-increasing window (capped at 30 s). Other
+    /// motors keep being refreshed normally. The function therefore
+    /// always returns `Ok(())` to its caller — there's nothing left at
+    /// the call site that can usefully fail-the-batch on.
     pub fn refresh_all_params(&self, state: &SharedState) -> Result<()> {
         for motor in state.inventory.motors.iter().filter(|m| m.present) {
-            let snapshot = self.read_full_snapshot(state, motor)?;
-            state
-                .params
-                .write()
-                .expect("params poisoned")
-                .insert(motor.role.clone(), snapshot);
+            if !self.backoff.should_poll(&motor.role) {
+                continue;
+            }
+            match self.read_full_snapshot(state, motor) {
+                Ok(snapshot) => {
+                    self.backoff.record_success(&motor.role);
+                    state
+                        .params
+                        .write()
+                        .expect("params poisoned")
+                        .insert(motor.role.clone(), snapshot);
+                }
+                Err(e) => {
+                    self.backoff.record_failure(&motor.role, &e);
+                }
+            }
         }
         Ok(())
     }
 
+    /// Poll live feedback for every present motor.
+    ///
+    /// Same isolation guarantees as [`Self::refresh_all_params`].
     pub fn poll_once(&self, state: &SharedState) -> Result<()> {
         for motor in state.inventory.motors.iter().filter(|m| m.present) {
-            let latest = self.read_live_feedback(state, motor)?;
-            state
-                .latest
-                .write()
-                .expect("latest poisoned")
-                .insert(motor.role.clone(), latest.clone());
-            let _ = state.feedback_tx.send(latest);
+            if !self.backoff.should_poll(&motor.role) {
+                continue;
+            }
+            match self.read_live_feedback(state, motor) {
+                Ok(latest) => {
+                    self.backoff.record_success(&motor.role);
+                    state
+                        .latest
+                        .write()
+                        .expect("latest poisoned")
+                        .insert(motor.role.clone(), latest.clone());
+                    let _ = state.feedback_tx.send(latest);
+                }
+                Err(e) => {
+                    self.backoff.record_failure(&motor.role, &e);
+                }
+            }
         }
         Ok(())
     }

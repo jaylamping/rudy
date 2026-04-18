@@ -46,6 +46,14 @@ pub fn spawn(state: SharedState) {
 
     // Mock CAN drives its own feedback + parameter shadow; only the real
     // Linux CAN core needs the periodic type-17 poller.
+    //
+    // Per-motor errors are isolated and rate-limited inside
+    // `LinuxCanCore` via `can::backoff::MotorBackoff`, so the loop here
+    // does not need to handle individual flaky motors. The remaining
+    // `warn!` arms are defensive: today `refresh_all_params` and
+    // `poll_once` always return `Ok(())`, but if a future refactor makes
+    // them fallible at the batch level (e.g. losing the SocketCAN handle
+    // entirely) we still want a journal entry rather than a silent loop.
     if !state.cfg.can.mock {
         #[cfg(target_os = "linux")]
         if let Some(core) = state.real_can.clone() {
@@ -74,7 +82,7 @@ pub fn spawn(state: SharedState) {
                     .await
                     .expect("real CAN poll task panicked")
                     {
-                        tracing::warn!(error = ?e, "real-CAN telemetry poll failed");
+                        tracing::warn!(error = ?e, "real-CAN telemetry poll batch failed");
                     }
                 }
             });

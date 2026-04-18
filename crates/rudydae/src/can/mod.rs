@@ -23,6 +23,7 @@ use crate::inventory::Motor;
 use crate::spec::ParamDescriptor;
 use crate::state::SharedState;
 
+pub mod backoff;
 pub mod mock;
 
 #[cfg(target_os = "linux")]
