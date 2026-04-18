@@ -33,7 +33,9 @@ NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
-PrivateDevices=false              # needs /dev/can* if kernel CAN is exposed
+# PrivateDevices stays false because rudydae may need /dev/can* if the kernel
+# exposes CAN as a chardev. SocketCAN itself uses AF_CAN sockets, not /dev nodes.
+PrivateDevices=false
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true
