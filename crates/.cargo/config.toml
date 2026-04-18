@@ -1,4 +1,19 @@
 ﻿# Ensures ts-rs writes TypeScript bindings next to the operator-console SPA
 # (`link/src/lib/types/`) when running `cargo test` from the `crates/` workspace.
+#
+# Per the cargo docs (https://doc.rust-lang.org/cargo/reference/config.html#env):
+#
+#   "Setting the `relative` flag evaluates the value as a config-relative path
+#    that is relative to the **parent directory of the `.cargo` directory**
+#    that contains the config.toml file. The value of the environment variable
+#    will be the full absolute path."
+#
+# This config lives at `<repo>/crates/.cargo/config.toml`, so paths are
+# resolved relative to `<repo>/crates/`. The SPA bindings dir is at
+# `<repo>/link/src/lib/types/`, which is `../link/src/lib/types` from
+# `<repo>/crates/` — NOT `../../../link/src/lib/types` (that resolves to
+# `<repo-parent>/link/...`, outside the repo, where ts-rs's writes failed
+# silently and `cargo test export_bindings` looked like it was working but
+# wasn't actually regenerating any files).
 [env]
-TS_RS_EXPORT_DIR = { value = "../../../link/src/lib/types", force = true, relative = true }
+TS_RS_EXPORT_DIR = { value = "../link/src/lib/types", force = true, relative = true }
