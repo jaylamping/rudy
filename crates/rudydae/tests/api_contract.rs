@@ -1181,11 +1181,14 @@ async fn set_zero_resets_boot_state_to_unknown() {
     assert!(matches!(bs, BootState::Unknown));
 }
 
-/// Rename refuses while motor is Homed (i.e. ready for motion).
+/// Rename refuses while the motor is currently enabled (driving) on the
+/// bus. The gate is `state.enabled`, which `enable` sets and `stop` clears
+/// — NOT `BootState::Homed`, which is a sticky per-power-cycle attestation
+/// that previously caused operators to get stuck after a single home.
 #[tokio::test]
 async fn rename_active_motor_is_forbidden() {
     let (state, _dir) = common::make_state();
-    common::set_boot_state(&state, "shoulder_actuator_a", BootState::Homed);
+    state.mark_enabled("shoulder_actuator_a");
     let app = rudydae::build_app(state);
 
     let body = serde_json::to_vec(&json!({"new_role": "left_arm.shoulder_pitch"})).unwrap();
@@ -1203,6 +1206,140 @@ async fn rename_active_motor_is_forbidden() {
     assert_eq!(resp.status(), StatusCode::CONFLICT);
     let err: ApiError = body_json(resp).await;
     assert_eq!(err.error, "motor_active");
+}
+
+/// Once the operator clicks Stop the rename gate must clear immediately.
+/// Regression test for the bug where the gate keyed off `BootState::Homed`,
+/// which Stop does not clear, so operators got `motor_active` forever.
+#[tokio::test]
+async fn rename_allowed_after_stop_even_if_previously_homed() {
+    let (state, _dir) = common::make_state();
+    // Simulate the operator's full session: home -> enable -> stop. After
+    // stop the rename gate must release even though boot_state is still
+    // `Homed` (which is a per-power-cycle attestation, not an enable bit).
+    common::set_boot_state(&state, "shoulder_actuator_a", BootState::Homed);
+    state.mark_enabled("shoulder_actuator_a");
+    state.mark_stopped("shoulder_actuator_a");
+    assert!(matches!(
+        rudydae::boot_state::current(&state, "shoulder_actuator_a"),
+        BootState::Homed
+    ));
+    assert!(!state.is_enabled("shoulder_actuator_a"));
+
+    let app = rudydae::build_app(state);
+    let body = serde_json::to_vec(&json!({"new_role": "left_arm.shoulder_pitch"})).unwrap();
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/motors/shoulder_actuator_a/rename")
+                .header("content-type", "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+/// First-time `assign` (motor has no limb / joint_kind on file yet) is a
+/// pure labeling operation and must not be blocked by the
+/// motion-safety gate. Without this exemption the operator would have to
+/// reboot the daemon (or `set_zero`) to unstick the assignment any time
+/// they had homed the motor in the same session.
+#[tokio::test]
+async fn assign_first_time_bypasses_motor_active_gate() {
+    let (state, _dir) = common::make_state();
+    // Worst case: motor is currently enabled. First-time assign should
+    // STILL go through, because changing a role string doesn't move the
+    // motor and the in-memory state migrates atomically below.
+    state.mark_enabled("shoulder_actuator_a");
+
+    let app = rudydae::build_app(state.clone());
+    let body =
+        serde_json::to_vec(&json!({"limb": "left_arm", "joint_kind": "shoulder_pitch"})).unwrap();
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/motors/shoulder_actuator_a/assign")
+                .header("content-type", "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    // The enabled bit must follow the role across the rename so the next
+    // operator action (e.g. another rename) sees a consistent gate.
+    assert!(state.is_enabled("left_arm.shoulder_pitch"));
+    assert!(!state.is_enabled("shoulder_actuator_a"));
+}
+
+/// Re-assigning an already-assigned motor IS gated on enabled — that path
+/// is effectively a `rename` and downstream caches drop on MotorRenamed,
+/// which is mildly disruptive while motion is in flight.
+#[tokio::test]
+async fn assign_already_assigned_motor_respects_motor_active_gate() {
+    let (state, _dir) = common::make_state();
+    // Promote `shoulder_actuator_b` to a canonical role first so we can
+    // try to re-assign it.
+    let app = rudydae::build_app(state.clone());
+    let body =
+        serde_json::to_vec(&json!({"limb": "left_arm", "joint_kind": "shoulder_roll"})).unwrap();
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/motors/shoulder_actuator_b/assign")
+                .header("content-type", "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // Now mark it enabled and try to re-assign — must be refused.
+    state.mark_enabled("left_arm.shoulder_roll");
+    let body =
+        serde_json::to_vec(&json!({"limb": "left_arm", "joint_kind": "shoulder_pitch"})).unwrap();
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/motors/left_arm.shoulder_roll/assign")
+                .header("content-type", "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CONFLICT);
+    let err: ApiError = body_json(resp).await;
+    assert_eq!(err.error, "motor_active");
+}
+
+/// `POST /stop` clears the in-memory enabled bit so the rename gate
+/// unsticks immediately on the next request from the same operator.
+#[tokio::test]
+async fn stop_endpoint_clears_enabled_bit() {
+    let (state, _dir) = common::make_state();
+    state.mark_enabled("shoulder_actuator_a");
+    let app = rudydae::build_app(state.clone());
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/motors/shoulder_actuator_a/stop")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert!(!state.is_enabled("shoulder_actuator_a"));
 }
 
 /// Rename rejects malformed (non-canonical) target roles.

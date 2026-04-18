@@ -241,6 +241,20 @@ function LimbAssignmentCard({ motor }: { motor: MotorSummary }) {
     },
   });
 
+  // Convenience: when the daemon refuses with `motor_active` we offer a
+  // one-click Stop right inside the error banner so the operator doesn't
+  // have to context-switch to the Controls tab. Retries the original
+  // assign automatically once the stop lands.
+  const stopAndRetry = useMutation({
+    mutationFn: async () => {
+      await api.stop(motor.role);
+    },
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["motors"] });
+      assign.mutate();
+    },
+  });
+
   const allowedJoints = limb && LIMB_JOINTS[limb] ? LIMB_JOINTS[limb] : [];
 
   return (
@@ -312,9 +326,41 @@ function LimbAssignmentCard({ motor }: { motor: MotorSummary }) {
                 : "Assign"}
           </Button>
         </div>
-        {assign.isError && (
+        {assign.isError && (() => {
+          const e = assign.error as ApiError;
+          const detail =
+            e.body && typeof e.body === "object" && "detail" in e.body
+              ? String((e.body as { detail?: unknown }).detail ?? "")
+              : "";
+          // The daemon returns `motor_active` when the motor is currently
+          // enabled on the bus. Surface a one-click recovery instead of
+          // making the operator hunt for the Controls tab.
+          if (e.message === "motor_active") {
+            return (
+              <div className="flex items-center justify-between gap-3 rounded-md border border-destructive/40 bg-destructive/10 p-2">
+                <p className="text-xs text-destructive">
+                  {detail || "Motor is currently enabled. Stop it before assigning."}
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={stopAndRetry.isPending}
+                  onClick={() => stopAndRetry.mutate()}
+                >
+                  {stopAndRetry.isPending ? "Stopping..." : "Stop and retry"}
+                </Button>
+              </div>
+            );
+          }
+          return (
+            <p className="text-xs text-destructive">
+              {detail || e.message}
+            </p>
+          );
+        })()}
+        {stopAndRetry.isError && (
           <p className="text-xs text-destructive">
-            {(assign.error as ApiError).message}
+            stop failed: {(stopAndRetry.error as ApiError).message}
           </p>
         )}
       </CardContent>

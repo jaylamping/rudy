@@ -1,6 +1,6 @@
 //! Shared application state injected into every axum handler.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::{Arc, Mutex, RwLock};
 
 use tokio::sync::broadcast;
@@ -81,6 +81,22 @@ pub struct AppState {
     /// yesterday is back to Unknown after a power cycle, by design.
     pub boot_state: RwLock<HashMap<String, BootState>>,
 
+    /// Set of motor roles currently believed to be `enabled` on the bus
+    /// (i.e. driving — torque allowed). Inserted on a successful `enable`
+    /// CAN frame; cleared on a successful `stop` (per-motor stop, e-stop,
+    /// jog watchdog, or auto-recovery cleanup). Consulted by `rename` /
+    /// `assign` so we refuse role mutations while the motor is live, but
+    /// admit them as soon as the operator clicks STOP.
+    ///
+    /// Best-effort: this tracks what rudydae *commanded*, not what the
+    /// motor is actually doing on the wire. If a frame is dropped between
+    /// the success return and the actual stop landing on the bus, we'll
+    /// briefly think the motor is stopped while it isn't. The downstream
+    /// gates that this protects (rename, assign) are non-motion operations,
+    /// so the worst case is a slightly racy role-string change — not a
+    /// motion-safety hazard.
+    pub enabled: RwLock<BTreeSet<String>>,
+
     /// Per-motor mutex guarding the auto-recovery routine (Layer 6). The
     /// routine acquires this for the entire duration so two telemetry ticks
     /// can't both spawn recovery for the same motor, and so manual commands
@@ -119,8 +135,35 @@ impl AppState {
             system: Mutex::new(SystemPoller::new()),
             reminders,
             boot_state: RwLock::new(HashMap::new()),
+            enabled: RwLock::new(BTreeSet::new()),
             auto_recovery_attempted: Mutex::new(std::collections::HashSet::new()),
         }
+    }
+
+    /// Mark a motor as currently enabled on the bus. Idempotent.
+    pub fn mark_enabled(&self, role: &str) {
+        self.enabled
+            .write()
+            .expect("enabled poisoned")
+            .insert(role.to_string());
+    }
+
+    /// Clear a motor's enabled bit. Idempotent. Called from every code path
+    /// that successfully sends a `stop` frame (per-motor stop, e-stop, jog
+    /// watchdog timeout, auto-recovery cleanup).
+    pub fn mark_stopped(&self, role: &str) {
+        self.enabled
+            .write()
+            .expect("enabled poisoned")
+            .remove(role);
+    }
+
+    /// Cheap predicate for the `rename` / `assign` gates.
+    pub fn is_enabled(&self, role: &str) -> bool {
+        self.enabled
+            .read()
+            .expect("enabled poisoned")
+            .contains(role)
     }
 
     /// Cooperative single-operator gate. Called by every mutating handler

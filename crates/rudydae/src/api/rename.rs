@@ -20,7 +20,6 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
 use crate::audit::{AuditEntry, AuditResult};
-use crate::boot_state::{self, BootState};
 use crate::inventory::{self, validate_canonical_role, Motor};
 use crate::limb::JointKind;
 use crate::state::SharedState;
@@ -112,15 +111,23 @@ async fn do_rename(
         ));
     }
 
-    {
+    // Snapshot whether the motor was previously assigned. A first-time
+    // `assign` (motor has no limb/joint_kind on file) is a pure labeling
+    // operation: it does not move the motor, doesn't change CAN IDs, and
+    // the in-memory boot_state migrates under the new key below. There is
+    // no motion-safety reason to gate it on `enabled`, and gating it
+    // creates a confusing dead-end for operators ("I clicked STOP, why
+    // does it still say motor_active?"). So we only enforce the
+    // enabled-gate on `rename` and on `assign`-of-already-assigned.
+    let was_unassigned = {
         let inv = state.inventory.read().expect("inventory poisoned");
-        if inv.by_role(&role).is_none() {
+        let Some(motor) = inv.by_role(&role) else {
             return Err(err(
                 StatusCode::NOT_FOUND,
                 "unknown_motor",
                 Some(format!("no motor with role={role}")),
             ));
-        }
+        };
         if inv.by_role(&new_role).is_some() {
             return Err(err(
                 StatusCode::CONFLICT,
@@ -128,17 +135,19 @@ async fn do_rename(
                 Some(format!("another motor already has role={new_role}")),
             ));
         }
-        if matches!(boot_state::current(&state, &role), BootState::Homed) {
-            // The plan calls for refusing rename while the motor is
-            // active. We approximate "active" with "Homed" — an enabled
-            // motor must be Homed first, so this catches the dangerous
-            // case and admits the safe one.
-            return Err(err(
-                StatusCode::CONFLICT,
-                "motor_active",
-                Some("disable the motor (POST /stop) before renaming".into()),
-            ));
-        }
+        motor.limb.is_none() && motor.joint_kind.is_none()
+    };
+
+    let is_first_time_assign = assignment.is_some() && was_unassigned;
+    if !is_first_time_assign && state.is_enabled(&role) {
+        return Err(err(
+            StatusCode::CONFLICT,
+            "motor_active",
+            Some(
+                "motor is currently enabled; click Stop in the Controls tab before renaming"
+                    .into(),
+            ),
+        ));
     }
 
     let inv_path = state.cfg.paths.inventory.clone();
@@ -195,6 +204,12 @@ async fn do_rename(
         let mut bs = state.boot_state.write().expect("boot_state poisoned");
         if let Some(s) = bs.remove(&role) {
             bs.insert(new_role.clone(), s);
+        }
+    }
+    {
+        let mut en = state.enabled.write().expect("enabled poisoned");
+        if en.remove(&role) {
+            en.insert(new_role.clone());
         }
     }
 

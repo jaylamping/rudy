@@ -319,6 +319,7 @@ fn stop_motor(state: &SharedState, motor: &Motor) {
         })
         .join();
     }
+    state.mark_stopped(&motor.role);
 }
 
 fn finalize_success(state: &SharedState, role: &str, final_pos_rad: f32, ticks: u32) {

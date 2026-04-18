@@ -183,6 +183,10 @@ pub async fn enable(
         })?;
     }
 
+    // Bookkeeping for the rename / assign gates. See `AppState::enabled`
+    // for the "tracks intent, not wire state" caveat.
+    state.mark_enabled(&role);
+
     audit(&state, "enable", &role, AuditResult::Ok);
     Ok(Json(serde_json::json!({ "ok": true, "role": role })))
 }
@@ -205,6 +209,8 @@ pub async fn stop(
             can_err("stop", &role, &e)
         })?;
     }
+
+    state.mark_stopped(&role);
 
     audit(&state, "stop", &role, AuditResult::Ok);
     Ok(Json(serde_json::json!({ "ok": true, "role": role })))

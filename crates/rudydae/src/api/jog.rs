@@ -324,6 +324,10 @@ async fn watchdog_loop(state: SharedState) {
             if let Some(core) = state.real_can.clone() {
                 let _ = tokio::task::spawn_blocking(move || core.stop(&motor)).await;
             }
+            // Watchdog timeout means rudydae just commanded a stop; clear
+            // the rename / assign gate so the operator can edit role
+            // metadata immediately afterward without first clicking STOP.
+            state.mark_stopped(&role);
             state.audit.write(AuditEntry {
                 timestamp: Utc::now(),
                 session_id: None,

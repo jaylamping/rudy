@@ -36,28 +36,33 @@ pub async fn estop(
         .cloned()
         .collect();
 
-    let stopped = if let Some(core) = state.real_can.clone() {
+    let stopped: Vec<String> = if let Some(core) = state.real_can.clone() {
         let motors_for_blocking = motors.clone();
         tokio::task::spawn_blocking(move || {
-            let mut count = 0usize;
+            let mut stopped: Vec<String> = Vec::new();
             for motor in &motors_for_blocking {
                 // Per-motor stop failures don't abort the e-stop — we want
                 // every other motor to still receive its stop frame even if
                 // one CAN bus glitched. The error is already audit-logged
                 // via the broadcast.
                 if core.stop(motor).is_ok() {
-                    count += 1;
+                    stopped.push(motor.role.clone());
                 }
             }
-            count
+            stopped
         })
         .await
         .expect("estop task panicked")
     } else {
         // Mock mode: there's nothing to stop, but the audit + broadcast still
         // happen so test harnesses can pin the wire shape.
-        motors.len()
+        motors.iter().map(|m| m.role.clone()).collect()
     };
+
+    for role in &stopped {
+        state.mark_stopped(role);
+    }
+    let stopped = stopped.len();
 
     let _ = state.safety_event_tx.send(SafetyEvent::Estop {
         t_ms: Utc::now().timestamp_millis(),
