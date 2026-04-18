@@ -77,3 +77,4 @@ src/
     hooks/useWebTransport.ts  WebTransport client hook
   lib/types/               ts-rs-generated wire types (see above)
 ```
+
