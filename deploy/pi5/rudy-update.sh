@@ -59,13 +59,19 @@ STAGE_DIR="${WORK_DIR}/stage"
 mkdir -p "${STAGE_DIR}"
 tar -xzf "${ASSET_PATH}" -C "${STAGE_DIR}"
 
-if [[ ! -x "${STAGE_DIR}/deploy/pi5/apply-release.sh" ]]; then
+APPLY_SCRIPT="${STAGE_DIR}/deploy/pi5/apply-release.sh"
+if [[ ! -f "${APPLY_SCRIPT}" ]]; then
   log "tarball missing apply-release.sh; aborting"
   exit 1
 fi
+# Don't require +x: older release tarballs (built before release.yaml
+# learned to chmod the staged scripts) ship apply-release.sh as 0644.
+# `bash <path>` runs fine regardless. We `chmod` it to be tidy and so
+# downstream tooling that does want -x is happy.
+chmod 0755 "${APPLY_SCRIPT}" || true
 
 log "applying release ${REMOTE_SHA}"
-sudo bash "${STAGE_DIR}/deploy/pi5/apply-release.sh" "${STAGE_DIR}"
+sudo bash "${APPLY_SCRIPT}" "${STAGE_DIR}"
 
 echo "${REMOTE_SHA}" | sudo tee "${SHA_FILE}" >/dev/null
 log "done; running ${REMOTE_SHA}"

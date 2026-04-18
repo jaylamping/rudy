@@ -91,6 +91,14 @@ jobs:
           cp deploy/pi5/apply-release.sh "${STAGE}/deploy/pi5/apply-release.sh"
           cp docs/runbooks/operator-console.md "${STAGE}/docs/runbooks/operator-console.md"
 
+          # The shell scripts in the tarball must be executable. Git on
+          # Windows checkouts (and GitHub Actions checkouts of repos whose
+          # files were initially committed without +x) store them as 0644,
+          # which trips `[[ -x ... ]]` in rudy-update.sh on the Pi.
+          chmod 0755 \
+            "${STAGE}/deploy/pi5/render-rudyd-toml.sh" \
+            "${STAGE}/deploy/pi5/apply-release.sh"
+
           echo "${GITHUB_SHA}" > "${STAGE}/COMMIT_SHA"
           date -u +%Y-%m-%dT%H:%M:%SZ > "${STAGE}/BUILT_AT"
 
