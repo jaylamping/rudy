@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { ConfirmDialog } from "@/components/params";
+import { MotionTestsCard } from "./motion-tests-card";
 import type { MotorSummary } from "@/lib/types/MotorSummary";
 import type { TravelLimits } from "@/lib/types/TravelLimits";
 
@@ -191,6 +192,8 @@ export function ActuatorTravelTab({ motor }: { motor: MotorSummary }) {
           )}
         </CardContent>
       </Card>
+
+      <MotionTestsCard motor={motor} />
 
       {confirm && (
         <ConfirmDialog
