@@ -40,6 +40,14 @@ mime_guess = "2"
 # wtransport pins its own rustls/quinn versions; we follow it.
 wtransport = "0.6"
 
+# rustls 0.23 requires the process to pick a CryptoProvider before any TLS
+# object is constructed (otherwise both axum-server and wtransport panic on
+# startup with "Could not automatically determine the process-level
+# CryptoProvider"). We depend on rustls directly so we can call
+# `aws_lc_rs::default_provider().install_default()` from main(); aws-lc-rs is
+# what wtransport already pulls in, so this adds no new transitive deps.
+rustls = { version = "0.23", default-features = false, features = ["aws-lc-rs", "logging", "std", "tls12"] }
+
 # Shared type codegen: see crates/.cargo/config.toml (TS_RS_EXPORT_DIR) + link/package.json gen:types
 ts-rs = { version = "10", features = ["serde-json-impl", "chrono-impl"] }
 
