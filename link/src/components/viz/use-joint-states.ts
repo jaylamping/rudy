@@ -12,6 +12,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { api } from "@/lib/api";
+import { useLiveInterval } from "@/lib/hooks/useLiveInterval";
 import type { MotorSummary } from "@/lib/types/MotorSummary";
 
 export type JointStateMap = Record<string, number>;
@@ -24,10 +25,13 @@ export interface UseJointStatesResult {
 }
 
 export function useJointStates(): UseJointStatesResult {
+  // Shares the ["motors"] cache with ActuatorStatusCard and TelemetryGrid;
+  // live updates arrive via the WebTransport bridge. See useLiveInterval for
+  // the cadence rationale.
   const motorsQ = useQuery({
     queryKey: ["motors"],
     queryFn: () => api.listMotors(),
-    refetchInterval: 1_000,
+    refetchInterval: useLiveInterval({ live: 30_000, fallback: 2_000 }),
   });
 
   return useMemo(() => {

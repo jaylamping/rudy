@@ -8,7 +8,9 @@ use anyhow::{Context, Result};
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
-use rudydae::{audit, can, config, inventory, reminders, server, spec, state, telemetry, wt};
+use rudydae::{
+    audit, can, config, inventory, reminders, server, spec, state, system, telemetry, wt,
+};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -72,6 +74,7 @@ async fn main() -> Result<()> {
 
     can::spawn(app_state.clone())?;
     telemetry::spawn(app_state.clone());
+    system::spawn(app_state.clone());
 
     let mut http_handle = tokio::spawn(server::run(app_state.clone()));
     let mut wt_handle = tokio::spawn(wt::run(app_state.clone()));

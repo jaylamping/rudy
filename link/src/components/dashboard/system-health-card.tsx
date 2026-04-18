@@ -2,14 +2,18 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { useLiveInterval } from "@/lib/hooks/useLiveInterval";
 import { cn } from "@/lib/utils";
 import { DashboardCard } from "./dashboard-card";
 
 export function SystemHealthCard({ className }: { className?: string }) {
+  // Live updates push in via the WebTransport bridge (system snapshots are
+  // broadcast at ~2 s on the daemon side). REST stays as the bootstrap +
+  // disconnected fallback.
   const q = useQuery({
     queryKey: ["system"],
     queryFn: () => api.system(),
-    refetchInterval: 2_000,
+    refetchInterval: useLiveInterval({ live: 30_000, fallback: 5_000 }),
   });
 
   const snap = q.data;

@@ -16,9 +16,49 @@
 //! dashboard animates without hardware. Same pattern motor telemetry uses
 //! (see `crates/rudydae/src/can/mock.rs`).
 
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use tracing::{debug, info};
+
+use crate::state::SharedState;
 use crate::types::{SystemSnapshot, SystemTemps, SystemThrottled};
+
+/// Cadence for the periodic system-snapshot broadcaster. Two seconds matches
+/// the SPA's previous REST poll cadence and keeps the dashboard-side render
+/// load negligible (one render every 2 s × handful of widgets). Cheap to
+/// adjust — the wire shape doesn't care.
+const BROADCAST_PERIOD: Duration = Duration::from_secs(2);
+
+/// Spawn the periodic system-snapshot broadcaster.
+///
+/// Reads `state.system` (the existing poller used by `GET /api/system`) on a
+/// fixed cadence and publishes each snapshot to `state.system_tx` so the WT
+/// listener can fan it out as `WtFrame::SystemSnapshot` datagrams. We hold the
+/// poller mutex only while sampling — never across the broadcast — so the
+/// REST endpoint can still serve concurrent reads without contention.
+pub fn spawn(state: SharedState) {
+    info!(
+        period_ms = BROADCAST_PERIOD.as_millis() as u64,
+        "system-snapshot broadcaster spawned"
+    );
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(BROADCAST_PERIOD);
+        // Don't burst-fire if a tick gets missed under load — a stalled host
+        // doesn't benefit from a thundering herd of catch-up snapshots.
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            tick.tick().await;
+            let snap = {
+                let mut poller = state.system.lock().expect("system poller poisoned");
+                poller.snapshot(state.cfg.can.mock)
+            };
+            if let Err(e) = state.system_tx.send(snap) {
+                // SendError just means there are no subscribers — fine.
+                debug!("system_tx send (no subscribers): {e}");
+            }
+        }
+    });
+}
 
 /// Maintains state needed to compute deltas (CPU pct).
 #[derive(Debug, Default)]

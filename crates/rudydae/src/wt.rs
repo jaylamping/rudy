@@ -1,28 +1,33 @@
 //! WebTransport listener.
 //!
-//! Phase 1: accepts sessions and broadcasts per-motor feedback as CBOR
-//! datagrams. No auth — rudydae is tailnet/localhost-only. The client-side
-//! subscription protocol (bidi stream, `WtSubscribe` messages) is specified
-//! in `types::WtSubscribe` and will be parsed here in Phase 2 to selectively
-//! enable faults + logs streams.
+//! Accepts QUIC sessions and hands each one off to `wt_router::run_session`,
+//! which is where all the per-session state (subscription filter, sequence
+//! counters, reliable-stream handle) lives. This module's only jobs:
+//!
+//! 1. Honor `cfg.webtransport.enabled` + cert/key configuration. If TLS
+//!    materials are missing, log and return cleanly so the daemon stays up.
+//! 2. Bind the QUIC endpoint and accept loop.
+//! 3. Spawn one `run_session` per accepted connection.
+//!
+//! Wire format reference: see `types::WtEnvelope`. Every datagram and every
+//! reliable-stream frame is `WtEnvelope<Payload>` encoded as CBOR. Reliable
+//! frames are length-prefixed (u32 BE) inside the QUIC stream.
+//!
+//! Adding a new stream type does NOT require editing this file. See
+//! `types::declare_wt_streams!` for the recipe.
 //!
 //! Unlike the REST listener (which is plaintext fronted by `tailscale serve`),
 //! WebTransport terminates TLS itself: `tailscale serve` is HTTP/1.1+HTTP/2
 //! only, so it cannot proxy HTTP/3 / QUIC. The WT endpoint therefore loads the
 //! same Tailscale Let's Encrypt cert directly. See ADR-0004 addendum.
-//!
-//! When `cfg.webtransport.enabled = false` or no cert is configured, this
-//! function logs a note and returns `Ok(())` so it's safe to `tokio::spawn`
-//! unconditionally from main.
 
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use tokio::sync::broadcast::error::RecvError;
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
 use crate::state::SharedState;
-use crate::types::MotorFeedback;
+use crate::wt_router;
 
 pub async fn run(state: SharedState) -> Result<()> {
     if !state.cfg.webtransport.enabled {
@@ -86,28 +91,5 @@ async fn handle_session(
         connection.remote_address()
     );
 
-    let mut rx = state.feedback_tx.subscribe();
-    loop {
-        match rx.recv().await {
-            Ok(fb) => {
-                let mut buf = Vec::with_capacity(128);
-                if ciborium::into_writer(&fb, &mut buf).is_ok() {
-                    if let Err(e) = connection.send_datagram(buf) {
-                        debug!("wt: datagram send failed: {e}; closing session");
-                        break;
-                    }
-                }
-            }
-            Err(RecvError::Lagged(n)) => {
-                debug!("wt: feedback receiver lagged {n}");
-                continue;
-            }
-            Err(RecvError::Closed) => break,
-        }
-    }
-
-    // Silence unused-type warning until Phase 2 wires the subscribe protocol.
-    let _: Option<MotorFeedback> = None;
-
-    Ok(())
+    wt_router::run_session(connection, state).await
 }

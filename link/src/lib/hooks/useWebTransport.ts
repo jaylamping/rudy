@@ -1,15 +1,44 @@
 // WebTransport client hook.
 //
 // Opens a WebTransport session to the URL advertised by `GET /api/config`
-// (falls back to disabled + returns an empty stream when the server reports
-// `webtransport.enabled = false`).
+// and decodes inbound CBOR `WtEnvelope`s into typed frames. Two transports
+// are read concurrently:
 //
-// Messages arrive as CBOR datagrams; we ship a minimal decoder rather than
-// pulling in a full CBOR library for the first pass. This handles only the
-// shapes rudydae emits from `types::MotorFeedback`.
+//   - QUIC datagrams (unreliable, low-latency): for high-rate "latest wins"
+//     telemetry like motor feedback and system snapshots.
+//   - QUIC unidirectional streams (reliable, ordered): for events that must
+//     not be dropped, framed as `u32 BE length | cbor body`. The daemon
+//     opens at most one reliable uni-stream per session, on demand.
+//
+// Both decoders feed the same per-kind dispatch table so consumers don't
+// have to care which transport a stream rides. Sequence-gap detection runs
+// per kind and surfaces via the `onGap` callback.
+//
+// IMPORTANT: this hook opens ONE QUIC session per call. The SPA mounts it
+// exactly once via `<WebTransportBridge>`. Component code reads cached data
+// from TanStack Query rather than subscribing here directly, so re-renders
+// are throttled and the QUIC session is shared.
+//
+// Adding a new stream is a frontend-side one-liner: register a kind in the
+// bridge's reducer registry. This file does NOT need editing.
 
+import { decode as cborDecode } from "cbor-x/decode";
 import { useEffect, useRef, useState } from "react";
-import type { MotorFeedback } from "@/lib/types/MotorFeedback";
+
+/**
+ * Envelope schema version this client speaks. Must match the daemon's
+ * `WT_PROTOCOL_VERSION`. A mismatch surfaces as `wt.status.error`.
+ */
+export const WT_PROTOCOL_VERSION = 1;
+
+/** A decoded envelope. `data` is `unknown` because the kind universe is open. */
+export interface WtEnvelope<T = unknown> {
+  v: number;
+  kind: string;
+  seq: number;
+  t_ms: number | bigint;
+  data: T;
+}
 
 export interface WtStatus {
   enabled: boolean;
@@ -17,18 +46,58 @@ export interface WtStatus {
   error: string | null;
 }
 
-type Listener = (fb: MotorFeedback) => void;
+export type WtFrameListener = (frame: WtEnvelope) => void;
 
-export function useWebTransport(url: string | null | undefined): {
+/**
+ * Fired when the per-stream sequence counter jumps by more than 1.
+ * For datagram streams this means the network or the broadcast channel
+ * dropped frames; the bridge logs and continues. For reliable streams this
+ * shouldn't happen; if it does it indicates a daemon bug worth reporting.
+ */
+export type GapListener = (gap: {
+  kind: string;
+  expected: number;
+  got: number;
+  /** How many frames were skipped (`got - expected`). */
+  missed: number;
+}) => void;
+
+export interface UseWebTransportResult {
   status: WtStatus;
-  subscribe: (listener: Listener) => () => void;
-} {
+  /** Subscribe to every decoded envelope, regardless of kind. */
+  subscribe: (listener: WtFrameListener) => () => void;
+  /** Subscribe to envelopes of a specific kind. The payload type is the caller's responsibility (see WtKind). */
+  onKind: <T = unknown>(
+    kind: string,
+    listener: (env: WtEnvelope<T>) => void,
+  ) => () => void;
+  /** Subscribe to per-stream sequence-gap notifications. */
+  onGap: (listener: GapListener) => () => void;
+}
+
+export interface UseWebTransportOptions {
+  /**
+   * Override the CBOR decoder. Tests use this to feed pre-built JS objects
+   * through the dispatch path without exercising `cbor-x`.
+   */
+  decode?: (bytes: Uint8Array) => unknown;
+}
+
+export function useWebTransport(
+  url: string | null | undefined,
+  opts: UseWebTransportOptions = {},
+): UseWebTransportResult {
   const [status, setStatus] = useState<WtStatus>({
     enabled: !!url,
     connected: false,
     error: null,
   });
-  const listenersRef = useRef<Set<Listener>>(new Set());
+  const listenersRef = useRef<Set<WtFrameListener>>(new Set());
+  const gapListenersRef = useRef<Set<GapListener>>(new Set());
+  // Per-kind expected next sequence. Lazily populated on first frame.
+  const seqRef = useRef<Map<string, number>>(new Map());
+  const decodeRef = useRef(opts.decode ?? defaultDecode);
+  decodeRef.current = opts.decode ?? defaultDecode;
 
   useEffect(() => {
     if (!url) {
@@ -61,19 +130,31 @@ export function useWebTransport(url: string | null | undefined): {
         }
         setStatus({ enabled: true, connected: true, error: null });
 
-        const reader = transport.datagrams.readable.getReader();
-        try {
-          while (!cancelled) {
-            const { value, done } = await reader.read();
-            if (done || !value) break;
-            const fb = decodeFeedback(value);
-            if (fb) {
-              for (const l of listenersRef.current) l(fb);
-            }
-          }
-        } finally {
-          reader.releaseLock();
-        }
+        // Reset gap-detection state at the start of each session.
+        seqRef.current = new Map();
+
+        // Drive the datagram path and the reliable-stream acceptor in
+        // parallel. Both use the same dispatch helper.
+        const datagramLoop = pumpDatagrams(
+          transport,
+          () => cancelled,
+          decodeRef,
+          listenersRef,
+          gapListenersRef,
+          seqRef,
+        );
+        const streamLoop = pumpReliableStreams(
+          transport,
+          () => cancelled,
+          decodeRef,
+          listenersRef,
+          gapListenersRef,
+          seqRef,
+        );
+
+        // If either loop throws, surface it; the other will be cancelled
+        // on session close anyway.
+        await Promise.race([datagramLoop, streamLoop]);
       } catch (e: unknown) {
         if (!cancelled) {
           const msg = e instanceof Error ? e.message : String(e);
@@ -100,13 +181,209 @@ export function useWebTransport(url: string | null | undefined): {
         listenersRef.current.delete(listener);
       };
     },
+    onKind<T>(kind: string, listener: (env: WtEnvelope<T>) => void) {
+      const wrapped: WtFrameListener = (env) => {
+        if (env.kind === kind) listener(env as WtEnvelope<T>);
+      };
+      listenersRef.current.add(wrapped);
+      return () => {
+        listenersRef.current.delete(wrapped);
+      };
+    },
+    onGap(listener) {
+      gapListenersRef.current.add(listener);
+      return () => {
+        gapListenersRef.current.delete(listener);
+      };
+    },
   };
 }
 
-// Intentionally left for Phase 2: a proper CBOR decoder (via `cbor-x` or
-// hand-rolled) producing MotorFeedback. Until real hardware + TLS are wired,
-// the UI falls back to the REST `GET /api/motors/:role/feedback` poll, so
-// this helper is a stub.
-function decodeFeedback(_bytes: Uint8Array): MotorFeedback | null {
-  return null;
+// ---------- internals ----------
+
+type DecodeFn = (b: Uint8Array) => unknown;
+type DecodeRef = { current: DecodeFn };
+type ListenersRef = { current: Set<WtFrameListener> };
+type GapListenersRef = { current: Set<GapListener> };
+type SeqRef = { current: Map<string, number> };
+
+async function pumpDatagrams(
+  transport: WebTransport,
+  isCancelled: () => boolean,
+  decodeRef: DecodeRef,
+  listenersRef: ListenersRef,
+  gapListenersRef: GapListenersRef,
+  seqRef: SeqRef,
+): Promise<void> {
+  const reader = transport.datagrams.readable.getReader();
+  try {
+    while (!isCancelled()) {
+      const { value, done } = await reader.read();
+      if (done || !value) break;
+      const env = decodeEnvelope(value, decodeRef.current);
+      if (env) dispatch(env, listenersRef, gapListenersRef, seqRef);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+async function pumpReliableStreams(
+  transport: WebTransport,
+  isCancelled: () => boolean,
+  decodeRef: DecodeRef,
+  listenersRef: ListenersRef,
+  gapListenersRef: GapListenersRef,
+  seqRef: SeqRef,
+): Promise<void> {
+  // The daemon opens at most one reliable uni-stream per session, lazily.
+  // We loop in case the daemon ever rotates the stream (current behavior:
+  // it doesn't; future: it might cap stream lifetime to bound flow-control
+  // window growth). One incoming stream at a time is fine because every
+  // stream is fully length-prefixed.
+  const incoming = transport.incomingUnidirectionalStreams.getReader();
+  try {
+    while (!isCancelled()) {
+      const { value: stream, done } = await incoming.read();
+      if (done || !stream) break;
+      try {
+        await readLengthPrefixedFrames(
+          stream as ReadableStream<Uint8Array>,
+          isCancelled,
+          decodeRef,
+          listenersRef,
+          gapListenersRef,
+          seqRef,
+        );
+      } catch {
+        // A misbehaving stream shouldn't kill the session; the next frame
+        // will arrive on either the datagram path or a fresh stream.
+      }
+    }
+  } finally {
+    incoming.releaseLock();
+  }
+}
+
+/**
+ * Read `u32 BE length | bytes` frames out of a QUIC stream until it ends.
+ * Maintains a small internal buffer so a frame split across multiple
+ * `read()` chunks reassembles cleanly.
+ */
+async function readLengthPrefixedFrames(
+  stream: ReadableStream<Uint8Array>,
+  isCancelled: () => boolean,
+  decodeRef: DecodeRef,
+  listenersRef: ListenersRef,
+  gapListenersRef: GapListenersRef,
+  seqRef: SeqRef,
+): Promise<void> {
+  const reader = stream.getReader();
+  let buffered: Uint8Array<ArrayBuffer> = new Uint8Array(0);
+
+  try {
+    while (!isCancelled()) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      if (value && value.byteLength > 0) {
+        buffered = concat(buffered, value);
+      }
+
+      // Drain as many complete frames as we can.
+      while (buffered.byteLength >= 4) {
+        const len =
+          (buffered[0] << 24) |
+          (buffered[1] << 16) |
+          (buffered[2] << 8) |
+          buffered[3];
+        const total = 4 + (len >>> 0);
+        if (buffered.byteLength < total) break;
+
+        const body = buffered.subarray(4, total);
+        const env = decodeEnvelope(body, decodeRef.current);
+        if (env) dispatch(env, listenersRef, gapListenersRef, seqRef);
+        buffered = buffered.subarray(total);
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+function concat(a: Uint8Array, b: Uint8Array): Uint8Array<ArrayBuffer> {
+  // Always allocate a fresh ArrayBuffer (vs. returning `b` when `a` is
+  // empty) so the type narrows to `Uint8Array<ArrayBuffer>` rather than
+  // `Uint8Array<ArrayBufferLike>`. The early-exit was a micro-opt that
+  // tripped TS 5.7's stricter buffer-tracking typings.
+  const out = new Uint8Array(a.byteLength + b.byteLength);
+  out.set(a, 0);
+  out.set(b, a.byteLength);
+  return out;
+}
+
+/**
+ * Decode + validate one envelope. Returns null on:
+ * - malformed CBOR,
+ * - missing/wrong protocol version,
+ * - missing `kind` (any string is accepted; the dispatch layer drops
+ *   unknown kinds by virtue of having no listener for them).
+ *
+ * We deliberately do NOT enforce a kind allowlist here. The daemon's
+ * `declare_wt_streams!` macro is the source of truth; if a future
+ * stream lands on the wire and the SPA hasn't been redeployed yet, the
+ * envelope still decodes — it just has no listener and is dropped at
+ * `dispatch`. That's strictly better than silently logging "unknown
+ * kind" warnings every frame for a stream the user opted into.
+ */
+function decodeEnvelope(
+  bytes: Uint8Array,
+  decode: (b: Uint8Array) => unknown,
+): WtEnvelope | null {
+  let value: unknown;
+  try {
+    value = decode(bytes);
+  } catch {
+    return null;
+  }
+  if (!value || typeof value !== "object") return null;
+  const v = (value as { v?: unknown }).v;
+  const kind = (value as { kind?: unknown }).kind;
+  const seq = (value as { seq?: unknown }).seq;
+  if (typeof v !== "number" || v !== WT_PROTOCOL_VERSION) return null;
+  if (typeof kind !== "string") return null;
+  if (typeof seq !== "number" && typeof seq !== "bigint") return null;
+  // The shape matches; trust the rest of the fields. The codec test on
+  // the Rust side guarantees them; if the daemon is sending garbage
+  // payloads, downstream consumers will surface NaN/undefined and the
+  // codec test would have caught it in CI.
+  return value as WtEnvelope;
+}
+
+function dispatch(
+  env: WtEnvelope,
+  listenersRef: ListenersRef,
+  gapListenersRef: GapListenersRef,
+  seqRef: SeqRef,
+): void {
+  // Per-kind gap detection. Sequence is monotonic per kind; the first
+  // frame seeds the counter (any starting seq is fine).
+  const seq = Number(env.seq);
+  const expected = seqRef.current.get(env.kind);
+  if (expected !== undefined && seq !== expected) {
+    if (seq > expected) {
+      const missed = seq - expected;
+      for (const g of gapListenersRef.current) {
+        g({ kind: env.kind, expected, got: seq, missed });
+      }
+    }
+    // For seq < expected (reorder or wrap): silently accept and re-anchor.
+    // Datagrams can reorder; we don't want to bin those frames.
+  }
+  seqRef.current.set(env.kind, seq + 1);
+
+  for (const l of listenersRef.current) l(env);
+}
+
+function defaultDecode(bytes: Uint8Array): unknown {
+  return cborDecode(bytes);
 }

@@ -12,7 +12,7 @@ use crate::inventory::Inventory;
 use crate::reminders::ReminderStore;
 use crate::spec::ActuatorSpec;
 use crate::system::SystemPoller;
-use crate::types::{MotorFeedback, ParamSnapshot};
+use crate::types::{MotorFeedback, ParamSnapshot, SystemSnapshot};
 
 pub struct AppState {
     pub cfg: Config,
@@ -30,6 +30,13 @@ pub struct AppState {
 
     /// Broadcast channels for live fan-out to the WebTransport sessions.
     pub feedback_tx: broadcast::Sender<MotorFeedback>,
+
+    /// Periodic host-metrics broadcast (CPU / mem / temps). One sender; the
+    /// WT listener subscribes per-session and forwards each snapshot as a
+    /// `WtFrame::SystemSnapshot` datagram. Capacity is small because the
+    /// producer cadence is ~1-2 s — even a stalled subscriber lagging by a
+    /// few seconds is acceptable.
+    pub system_tx: broadcast::Sender<SystemSnapshot>,
 
     /// Control-lock state: which session id (if any) is allowed to issue
     /// mutating commands (enable / jog / param write / save).
@@ -54,6 +61,7 @@ impl AppState {
         reminders: ReminderStore,
     ) -> Self {
         let (feedback_tx, _) = broadcast::channel::<MotorFeedback>(512);
+        let (system_tx, _) = broadcast::channel::<SystemSnapshot>(8);
         Self {
             cfg,
             spec,
@@ -63,6 +71,7 @@ impl AppState {
             latest: RwLock::new(BTreeMap::new()),
             params: RwLock::new(BTreeMap::new()),
             feedback_tx,
+            system_tx,
             control_lock: RwLock::new(None),
             system: Mutex::new(SystemPoller::new()),
             reminders,

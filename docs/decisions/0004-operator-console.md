@@ -242,3 +242,117 @@ The WT cert is still the same `tailscale cert`-issued pair.
 - If `tailscale serve` configuration drifts (e.g. a tailnet rejoin), the
   next `apply-release.sh` re-asserts the mapping. Manual recovery:
   `sudo tailscale serve --bg --https=443 http://127.0.0.1:8443`.
+
+## Addendum 2026-04-18: WebTransport wire format + stream registry
+
+This addendum supersedes the brief D4 description of the WT side. The REST
+side (D4 first paragraph) is unchanged.
+
+### Wire format
+
+Every WT message — datagram or reliable-stream frame — is a CBOR-encoded
+`WtEnvelope`:
+
+```cbor
+{
+  "v":     1,                     # protocol version (WT_PROTOCOL_VERSION)
+  "kind":  "motor_feedback",      # snake_case stream discriminator
+  "seq":   12345,                 # per-stream monotonic sequence
+  "t_ms":  1700000123456,         # daemon wallclock at emit, ms since epoch
+  "data":  { ...payload... }      # nested, fully opaque to the envelope
+}
+```
+
+Three properties matter:
+
+1. **`data` is nested, not flattened.** Payload field names can never
+   collide with envelope field names. A future payload that defines its
+   own `kind` or `seq` field cannot silently corrupt the envelope.
+2. **`v` is checked on every decode.** A daemon ↔ SPA version skew is a
+   loud failure (`status.error`) instead of a silent decode-as-garbage.
+3. **`seq` enables gap detection on the client.** The bridge logs (and
+   exposes via `onGap`) when a kind's sequence skips ahead; this gives
+   us a real signal when datagrams are being dropped on the network or
+   dropped by an overloaded `broadcast` channel.
+
+The wire shape is pinned by `crates/rudydae/tests/wt_codec.rs`. Any
+breaking change trips the test + breaks the SPA decoder.
+
+### Reliability tiers
+
+QUIC offers two delivery primitives; we use both:
+
+| Tier      | QUIC mechanism            | Use for                                 |
+| --------- | ------------------------- | --------------------------------------- |
+| Datagram  | `connection.send_datagram`| latest-wins telemetry (motor, system)   |
+| Stream    | one uni-stream per session| events that must not be dropped         |
+
+Reliable frames are written into a single per-session uni-stream as
+`u32 BE length | cbor body`. Length-prefixing is necessary because QUIC
+streams are byte streams, not message streams. The TS reader buffers
+across `read()` chunks so a frame split mid-header reassembles cleanly.
+
+### Stream registry
+
+Adding a new "near-realtime" stream (Phase 2 candidates: faults, joint
+state, log tail) is now a fixed-shape change:
+
+1. Define the payload struct in `types.rs` with the usual derives:
+   `Serialize, Deserialize, Clone, TS`.
+2. Add a one-line entry to `declare_wt_streams!`:
+   ```rust
+   declare_wt_streams! {
+       MotorFeedback   => MotorFeedback   { kind: "motor_feedback",   transport: Datagram, },
+       SystemSnapshot  => SystemSnapshot  { kind: "system_snapshot",  transport: Datagram, },
+       Fault           => Fault           { kind: "fault",            transport: Stream,   },
+       //                ^^^^^                                        ^^^^^^^^^^^^^^^^^^^^
+       //                payload type                                 reliability tier
+   }
+   ```
+   The macro emits `impl WtPayload for Fault`, the `WtKind::Fault`
+   discriminator, and a runtime metadata table.
+3. Add a `broadcast::Sender<Fault>` field to `AppState` and a producer
+   task somewhere (driver, telemetry loop, ...).
+4. Add one `recv()` arm to `wt_router::run_session`. This is the only
+   per-stream code in `wt_router.rs`; everything else (encoding,
+   sequence numbering, transport dispatch, filtering) is generic.
+5. (Optional, frontend) register a reducer in `wt-reducers.ts`:
+   ```ts
+   const faultReducer: WtReducer<Fault, Fault[]> = {
+     kind: "fault",
+     initBucket: () => [],
+     merge(bucket, env) { bucket.push(env.data); return true; },
+     flush(bucket, queryClient) {
+       queryClient.setQueryData<Fault[]>(["faults"], (prev) => [...(prev ?? []), ...bucket]);
+     },
+   };
+   ```
+
+What you do NOT need to touch: `useWebTransport.ts`, the bridge
+component, `wt.rs`, the codec test (unless the new payload's CBOR
+size is large enough to test specifically).
+
+### Subscription protocol
+
+A client may open a bidi stream right after session establishment and
+send one CBOR `WtSubscribe`:
+
+```cbor
+{
+  "kinds":   ["motor_feedback"],         # empty == "all kinds"
+  "filters": { "motor_roles": ["arm_a"] } # per-kind narrowing
+}
+```
+
+The server applies the new filter immediately. A session that **never**
+sends a `WtSubscribe` gets every registered stream — this keeps dumb
+clients (curl, future Python tooling) trivially functional and lets the
+SPA evolve its filter without coordinating server-side rollouts.
+
+### Observability
+
+- `WT_STREAMS` is a public `&[WtStreamMeta]` slice — exposed for
+  future runtime introspection by an `/api/wt/streams` endpoint or the
+  dashboard's debug pane.
+- The bridge logs a `console.warn` per detected sequence gap; consumers
+  can override via the `onGap` prop for richer telemetry.

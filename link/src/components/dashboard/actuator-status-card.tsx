@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { ArrowRight } from "lucide-react";
 import { api } from "@/lib/api";
+import { useLiveInterval } from "@/lib/hooks/useLiveInterval";
 import { cn } from "@/lib/utils";
 import type { MotorSummary } from "@/lib/types/MotorSummary";
 import { DashboardCard } from "./dashboard-card";
@@ -16,10 +17,15 @@ const HOT_DEGC = 65;
 type Tone = "ok" | "warn" | "crit" | "stale" | "missing";
 
 export function ActuatorStatusCard({ className }: { className?: string }) {
+  // Live data flows in via the WebTransport bridge (see
+  // `lib/hooks/WebTransportBridge.tsx`), which writes freshest-per-role
+  // MotorFeedback into this query's cache every animation frame. The REST
+  // poll is a slow safety net for dropped datagrams and the disconnected
+  // fallback for environments without WebTransport (Vite dev, non-Chromium).
   const q = useQuery({
     queryKey: ["motors"],
     queryFn: () => api.listMotors(),
-    refetchInterval: 1_000,
+    refetchInterval: useLiveInterval({ live: 30_000, fallback: 2_000 }),
   });
 
   const motors = q.data ?? [];
