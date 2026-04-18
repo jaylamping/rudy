@@ -8,4 +8,5 @@ src/routeTree.gen.ts
 
 # Env files
 .env
+.env.local
 .env.*.local

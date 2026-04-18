@@ -36,6 +36,28 @@ gated entirely by Tailscale ACLs / being on the local network. If we ever need
 real auth back, see the deleted `auth.rs` module in git history for the
 shared-bearer-token starting point.
 
+## Local UI development against the Pi
+
+You can iterate on the React UI in `link/` without running `rudydae` locally
+by pointing the Vite dev server at the Pi over Tailscale:
+
+```bash
+cd link
+cp .env.example .env.local
+# edit .env.local — set:
+#   VITE_RUDYD_URL=https://rudy.your-tailnet.ts.net:8443
+npm run dev
+```
+
+`/api/*` requests from the dev server (http://localhost:5173) are proxied to
+that URL. WebTransport is negotiated separately via `GET /api/config`, so the
+telemetry firehose connects directly browser → Pi:4433. Both require that you
+are on the tailnet.
+
+If `VITE_RUDYD_URL` is unset the proxy falls back to `http://127.0.0.1:8443`,
+which is the right choice when you _are_ running `rudydae` locally
+(`cargo run -p rudydae` from `crates/`).
+
 ## Audit log
 
 Every mutating action (parameter write, enable, stop, set_zero, save) writes a
