@@ -174,7 +174,12 @@ async fn list_motors_matches_motor_summary() {
     let motors: Vec<MotorSummary> = body_json(resp).await;
     assert_eq!(
         motors.len(),
-        state.inventory.read().expect("inventory poisoned").motors.len()
+        state
+            .inventory
+            .read()
+            .expect("inventory poisoned")
+            .motors
+            .len()
     );
 
     let by_role: std::collections::BTreeMap<&str, &MotorSummary> =
@@ -715,7 +720,10 @@ async fn get_inventory_returns_motor_record() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
     let v: serde_json::Value = body_json(resp).await;
-    assert_eq!(v.get("role").and_then(|v| v.as_str()), Some("shoulder_actuator_a"));
+    assert_eq!(
+        v.get("role").and_then(|v| v.as_str()),
+        Some("shoulder_actuator_a")
+    );
     assert_eq!(v.get("can_id").and_then(|v| v.as_u64()), Some(0x08));
 }
 

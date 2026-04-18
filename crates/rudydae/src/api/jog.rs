@@ -117,9 +117,7 @@ pub async fn jog(
             Some("vel_rad_s must be finite".into()),
         ));
     }
-    let clamped = body
-        .vel_rad_s
-        .clamp(-MAX_JOG_VEL_RAD_S, MAX_JOG_VEL_RAD_S);
+    let clamped = body.vel_rad_s.clamp(-MAX_JOG_VEL_RAD_S, MAX_JOG_VEL_RAD_S);
     let ttl_ms = body.ttl_ms.clamp(50, MAX_TTL_MS);
 
     // Use the latest cached position to bound the next setpoint. The check

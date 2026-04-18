@@ -46,10 +46,7 @@ pub fn router(state: SharedState) -> Router<SharedState> {
             "/motors/:role/inventory",
             get(inventory_route::get_inventory),
         )
-        .route(
-            "/motors/:role/verified",
-            put(inventory_route::put_verified),
-        )
+        .route("/motors/:role/verified", put(inventory_route::put_verified))
         .route("/estop", post(estop::estop))
         .route(
             "/lock",

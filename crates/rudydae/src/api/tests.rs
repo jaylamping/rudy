@@ -153,11 +153,7 @@ fn spawn_runner(
         emit(
             TestLevel::Info,
             "spawn",
-            &format!(
-                "starting {} on {} (run_id={run_id})",
-                test.as_str(),
-                role
-            ),
+            &format!("starting {} on {} (run_id={run_id})", test.as_str(), role),
         );
 
         if state.real_can.is_none() {
@@ -275,16 +271,7 @@ async fn run_real(
                 )
             }),
             TestName::JogOverlimit => core.with_bus_for_test(&motor.can_bus, |bus| {
-                bench::run_jog(
-                    bus,
-                    &common,
-                    0.0,
-                    1.0,
-                    true,
-                    true,
-                    &stop,
-                    &mut reporter,
-                )
+                bench::run_jog(bus, &common, 0.0, 1.0, true, true, &stop, &mut reporter)
             }),
         }
     })

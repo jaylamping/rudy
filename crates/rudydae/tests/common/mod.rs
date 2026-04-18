@@ -123,11 +123,7 @@ pub fn make_state_with_wt_advert() -> (SharedState, tempfile::TempDir) {
     let mut cfg = state.cfg.clone();
     cfg.webtransport.enabled = true;
     cfg.webtransport.bind = "127.0.0.1:4433".into();
-    let inv = state
-        .inventory
-        .read()
-        .expect("inventory poisoned")
-        .clone();
+    let inv = state.inventory.read().expect("inventory poisoned").clone();
     let new_state = Arc::new(AppState::new(
         cfg,
         state.spec.clone(),

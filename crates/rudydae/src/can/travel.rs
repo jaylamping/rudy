@@ -75,13 +75,15 @@ pub fn enforce_position(state: &SharedState, role: &str, target_rad: f32) -> Res
         return Ok(BandCheck::NoLimit);
     };
     if target_rad < limits.min_rad || target_rad > limits.max_rad {
-        let _ = state.safety_event_tx.send(SafetyEvent::TravelLimitViolation {
-            t_ms: chrono::Utc::now().timestamp_millis(),
-            role: role.to_string(),
-            attempted_rad: target_rad,
-            min_rad: limits.min_rad,
-            max_rad: limits.max_rad,
-        });
+        let _ = state
+            .safety_event_tx
+            .send(SafetyEvent::TravelLimitViolation {
+                t_ms: chrono::Utc::now().timestamp_millis(),
+                role: role.to_string(),
+                attempted_rad: target_rad,
+                min_rad: limits.min_rad,
+                max_rad: limits.max_rad,
+            });
         return Ok(BandCheck::OutOfBand {
             min_rad: limits.min_rad,
             max_rad: limits.max_rad,

@@ -43,14 +43,13 @@ pub async fn get_inventory(
 
     // serde_json round-trip: this picks up `#[serde(flatten)] extra` so the
     // SPA sees every field the YAML defines, not just the typed ones.
-    let value =
-        serde_json::to_value(motor).map_err(|e| {
-            err(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "serialize_failed",
-                Some(format!("{e:#}")),
-            )
-        })?;
+    let value = serde_json::to_value(motor).map_err(|e| {
+        err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "serialize_failed",
+            Some(format!("{e:#}")),
+        )
+    })?;
     Ok(Json(value))
 }
 

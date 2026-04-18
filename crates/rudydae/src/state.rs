@@ -127,7 +127,11 @@ impl AppState {
     /// Release the lock if `session_id` currently holds it. No-op otherwise.
     pub fn release_control(&self, session_id: &str) -> bool {
         let mut guard = self.control_lock.write().expect("control_lock poisoned");
-        if guard.as_ref().map(|h| h.session_id == session_id).unwrap_or(false) {
+        if guard
+            .as_ref()
+            .map(|h| h.session_id == session_id)
+            .unwrap_or(false)
+        {
             *guard = None;
             true
         } else {

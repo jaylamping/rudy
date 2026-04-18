@@ -122,7 +122,11 @@ pub fn run_set_zero(
 
     let t = Duration::from_millis(500);
     if read_param_f32(bus, c.host_id, c.motor_id, params::VBUS, t)?.is_none() {
-        r.report("sanity", Level::Fail, "no reply from motor on 0x70xx reads.");
+        r.report(
+            "sanity",
+            Level::Fail,
+            "no reply from motor on 0x70xx reads.",
+        );
         return Ok(RoutineOutcome::Fail(2));
     }
     let mech_vel = read_param_f32(bus, c.host_id, c.motor_id, params::MECH_VEL, t)?;
@@ -184,7 +188,11 @@ pub fn run_smoke(
     }
     if let Some(v) = vbus {
         if v < MIN_VBUS_V {
-            r.report("sanity", Level::Fail, &format!("VBUS {v} V < {MIN_VBUS_V} V"));
+            r.report(
+                "sanity",
+                Level::Fail,
+                &format!("VBUS {v} V < {MIN_VBUS_V} V"),
+            );
             return Ok(RoutineOutcome::Fail(2));
         }
     }
@@ -234,9 +242,13 @@ pub fn run_smoke(
         let now = Instant::now();
         if now >= next_type17 {
             bus.set_read_timeout(Duration::from_millis(200))?;
-            if let Some(v) =
-                read_param_f32(bus, c.host_id, c.motor_id, params::MECH_VEL, Duration::from_millis(200))?
-            {
+            if let Some(v) = read_param_f32(
+                bus,
+                c.host_id,
+                c.motor_id,
+                params::MECH_VEL,
+                Duration::from_millis(200),
+            )? {
                 peak_vel = peak_vel.max(v.abs());
                 if v.abs() > MAX_MECH_VEL_DURING_SMOKE_RAD_S {
                     r.report(
@@ -346,7 +358,9 @@ pub fn run_jog(
             r.report(
                 "dry_run",
                 Level::Info,
-                &format!("would run OVERLIMIT: spd_ref={OVERLIMIT_SPD_REF} for {OVERLIMIT_HOLD_S}s"),
+                &format!(
+                    "would run OVERLIMIT: spd_ref={OVERLIMIT_SPD_REF} for {OVERLIMIT_HOLD_S}s"
+                ),
             );
         } else {
             r.report(
@@ -406,9 +420,21 @@ fn dump_state(
     r.report(label, Level::Info, &format!("mechVel       = {mech_vel:?}"));
     r.report(label, Level::Info, &format!("iqf           = {iqf:?}"));
     r.report(label, Level::Info, &format!("vbus          = {vbus:?}"));
-    r.report(label, Level::Info, &format!("limit_spd     = {limit_spd:?}"));
-    r.report(label, Level::Info, &format!("limit_cur     = {limit_cur:?}"));
-    r.report(label, Level::Info, &format!("limit_torque  = {limit_torque:?}"));
+    r.report(
+        label,
+        Level::Info,
+        &format!("limit_spd     = {limit_spd:?}"),
+    );
+    r.report(
+        label,
+        Level::Info,
+        &format!("limit_cur     = {limit_cur:?}"),
+    );
+    r.report(
+        label,
+        Level::Info,
+        &format!("limit_torque  = {limit_torque:?}"),
+    );
     r.report(label, Level::Info, &format!("can_timeout   = {can_to:?}"));
     r.report(label, Level::Info, &format!("zero_sta      = {zero_sta:?}"));
     r.report(label, Level::Info, &format!("damper        = {damper:?}"));
@@ -429,8 +455,16 @@ fn dump_minimal(
     let limit_spd = read_param_f32(bus, host, motor, params::LIMIT_SPD, t)?;
     let run_mode = read_param_u8(bus, host, motor, params::RUN_MODE, t)?;
     r.report(label, Level::Info, &format!("vbus      = {vbus:?} V"));
-    r.report(label, Level::Info, &format!("mechVel   = {mech_vel:?} rad/s"));
-    r.report(label, Level::Info, &format!("limit_spd = {limit_spd:?} rad/s"));
+    r.report(
+        label,
+        Level::Info,
+        &format!("mechVel   = {mech_vel:?} rad/s"),
+    );
+    r.report(
+        label,
+        Level::Info,
+        &format!("limit_spd = {limit_spd:?} rad/s"),
+    );
     r.report(label, Level::Info, &format!("run_mode  = {run_mode:?}"));
     Ok(())
 }
@@ -468,12 +502,7 @@ fn read_mech_vel_prefer_fb(
     )
 }
 
-fn sanity_pre_jog(
-    bus: &CanBus,
-    host: u8,
-    motor: u8,
-    r: &mut dyn Reporter,
-) -> io::Result<i32> {
+fn sanity_pre_jog(bus: &CanBus, host: u8, motor: u8, r: &mut dyn Reporter) -> io::Result<i32> {
     let t = Duration::from_millis(500);
     let vbus = read_param_f32(bus, host, motor, params::VBUS, t)?;
     if vbus.is_none() {
@@ -488,7 +517,11 @@ fn sanity_pre_jog(
     }
     if let Some(mv) = read_param_f32(bus, host, motor, params::MECH_VEL, t)? {
         if mv.abs() > STILL_VEL_GATE_RAD_S {
-            r.report("sanity", Level::Fail, &format!("shaft moving: mechVel = {mv}"));
+            r.report(
+                "sanity",
+                Level::Fail,
+                &format!("shaft moving: mechVel = {mv}"),
+            );
             return Ok(2);
         }
     }
@@ -501,9 +534,7 @@ fn sanity_pre_jog(
         r.report(
             "sanity",
             Level::Fail,
-            &format!(
-                "limit_spd = {lim} rad/s (expected {LIMIT_SPD_EXPECTED} ± {LIMIT_SPD_TOL})"
-            ),
+            &format!("limit_spd = {lim} rad/s (expected {LIMIT_SPD_EXPECTED} ± {LIMIT_SPD_TOL})"),
         );
         return Ok(2);
     }
@@ -556,7 +587,11 @@ fn run_overlimit(
         std::thread::sleep(Duration::from_secs_f64(f64::from(TICK_S)));
     }
 
-    r.report("overlimit", Level::Info, &format!("peak |mechVel| = {peak:.4} rad/s"));
+    r.report(
+        "overlimit",
+        Level::Info,
+        &format!("peak |mechVel| = {peak:.4} rad/s"),
+    );
     if !(OVERLIMIT_OK_LO..=OVERLIMIT_OK_HI).contains(&peak) {
         r.report(
             "overlimit",
@@ -648,7 +683,11 @@ fn run_jog_ramp(
     }
 
     write_param_f32(bus, host, motor, params::SPD_REF, 0.0)?;
-    r.report("ramp", Level::Info, "ramp complete; holding zero setpoint briefly");
+    r.report(
+        "ramp",
+        Level::Info,
+        "ramp complete; holding zero setpoint briefly",
+    );
     std::thread::sleep(Duration::from_millis(200));
     r.report("ramp", Level::Pass, "jog ramp finished");
     Ok(0)

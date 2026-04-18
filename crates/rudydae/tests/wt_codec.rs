@@ -206,7 +206,8 @@ fn envelope_roundtrips_safety_event() {
 /// rename trips a contract failure rather than a silent dropped frame.
 #[test]
 fn wt_subscribe_round_trips_run_ids() {
-    let json = r#"{"kinds":["test_progress"],"filters":{"motor_roles":[],"run_ids":["r-1","r-2"]}}"#;
+    let json =
+        r#"{"kinds":["test_progress"],"filters":{"motor_roles":[],"run_ids":["r-1","r-2"]}}"#;
     let sub: WtSubscribe = serde_json::from_str(json).expect("decode WtSubscribe");
     assert_eq!(sub.filters.run_ids, vec!["r-1", "r-2"]);
 }
