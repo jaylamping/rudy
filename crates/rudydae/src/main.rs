@@ -73,37 +73,32 @@ async fn main() -> Result<()> {
     // `link/scripts/smoke-contract.mjs`). So we treat a *clean* exit on
     // either side as "this surface is no longer needed" and only shut down
     // when the HTTP listener stops, an error surfaces, or Ctrl-C arrives.
-    loop {
-        tokio::select! {
-            res = &mut http_handle => {
-                res??;
-                info!("http listener stopped; shutting down");
-                break;
+    tokio::select! {
+        res = &mut http_handle => {
+            res??;
+            info!("http listener stopped; shutting down");
+        }
+        res = &mut wt_handle => {
+            match res? {
+                Ok(()) => info!("webtransport task finished; http listener still serving"),
+                Err(e) => return Err(e),
             }
-            res = &mut wt_handle => {
-                match res? {
-                    Ok(()) => info!("webtransport task finished; http listener still serving"),
-                    Err(e) => return Err(e),
+            // Don't poll wt_handle again; await the rest from a smaller
+            // select.
+            tokio::select! {
+                res = &mut http_handle => {
+                    res??;
+                    info!("http listener stopped; shutting down");
                 }
-                // Don't poll wt_handle again; await the rest from a smaller
-                // select.
-                tokio::select! {
-                    res = &mut http_handle => {
-                        res??;
-                        info!("http listener stopped; shutting down");
-                    }
-                    res = tokio::signal::ctrl_c() => {
-                        res?;
-                        info!("shutdown signal received");
-                    }
+                res = tokio::signal::ctrl_c() => {
+                    res?;
+                    info!("shutdown signal received");
                 }
-                break;
             }
-            res = tokio::signal::ctrl_c() => {
-                res?;
-                info!("shutdown signal received");
-                break;
-            }
+        }
+        res = tokio::signal::ctrl_c() => {
+            res?;
+            info!("shutdown signal received");
         }
     }
 

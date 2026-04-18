@@ -22,12 +22,11 @@ pub mod socketcan_bus;
 pub mod state_machine;
 
 pub use robstride::{RsActuator, RsModel};
-pub use rs03::{
-    arb_id, comm_type_from_id, strip_eff_flag, with_eff_flag, CAN_EFF_FLAG, CommType,
-    DecodedCommand, MitCommand, MotorFeedback, ProtocolError, RobstrideCodec, Rs03,
-    decode_motor_feedback,
-};
 pub use rs03::params;
 pub use rs03::session;
+pub use rs03::{
+    arb_id, comm_type_from_id, decode_motor_feedback, strip_eff_flag, with_eff_flag, CommType,
+    DecodedCommand, MitCommand, MotorFeedback, ProtocolError, RobstrideCodec, Rs03, CAN_EFF_FLAG,
+};
 pub use socketcan_bus::CanBus;
 pub use state_machine::{ActuatorEvent, ActuatorState, ActuatorStateMachine};

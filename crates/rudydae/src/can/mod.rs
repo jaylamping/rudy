@@ -73,6 +73,9 @@ impl RealCanHandle {
     }
 }
 
+// `inventory` is only consumed by the linux branch below; keep the parameter
+// name for non-linux dev builds so the docs read naturally.
+#[cfg_attr(not(target_os = "linux"), allow(unused_variables))]
 pub fn build_handle(cfg: &Config, inventory: &Inventory) -> Result<Option<Arc<RealCanHandle>>> {
     #[cfg(target_os = "linux")]
     {

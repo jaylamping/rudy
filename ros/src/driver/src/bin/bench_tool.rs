@@ -13,9 +13,7 @@ use driver::rs03::session::{
     self, cmd_enable, cmd_save_params, cmd_set_zero as motor_set_zero, cmd_stop, defang_motor,
     drain_motor_feedback, read_param_f32, read_param_u8, write_param_f32, write_param_u8,
 };
-use driver::rs03::{
-    comm_type_from_id, decode_motor_feedback, strip_eff_flag, CommType,
-};
+use driver::rs03::{comm_type_from_id, decode_motor_feedback, strip_eff_flag, CommType};
 use driver::socketcan_bus::CanBus;
 use tracing::{debug, warn};
 use tracing_subscriber::EnvFilter;
@@ -49,7 +47,11 @@ const LIMIT_SPD_TOL: f32 = 0.05;
 // ----------------------------------------------------------------------------
 
 #[derive(Parser, Debug)]
-#[command(name = "bench_tool", version, about = "RS03 bench / commissioning CLI (Rust)")]
+#[command(
+    name = "bench_tool",
+    version,
+    about = "RS03 bench / commissioning CLI (Rust)"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -115,9 +117,7 @@ fn init_tracing(verbose: bool) {
     } else {
         EnvFilter::new("info")
     };
-    let _ = tracing_subscriber::fmt()
-        .with_env_filter(filter)
-        .try_init();
+    let _ = tracing_subscriber::fmt().with_env_filter(filter).try_init();
 }
 
 fn open_bus(iface: &str) -> io::Result<CanBus> {
@@ -173,20 +173,14 @@ fn run_set_zero(common: Common, save: bool) -> io::Result<i32> {
         "bound {}, motor 0x{:02X}, host 0x{:02X}",
         common.iface, common.motor_id, common.host_id
     );
-    dump_state(
-        &bus,
-        common.host_id,
-        common.motor_id,
-        "initial",
-    )?;
+    dump_state(&bus, common.host_id, common.motor_id, "initial")?;
 
     let t = Duration::from_millis(500);
     if read_param_f32(&bus, common.host_id, common.motor_id, params::VBUS, t)?.is_none() {
         eprintln!("ABORT: no reply from motor on 0x70xx reads.");
         return Ok(2);
     }
-    let mech_vel =
-        read_param_f32(&bus, common.host_id, common.motor_id, params::MECH_VEL, t)?;
+    let mech_vel = read_param_f32(&bus, common.host_id, common.motor_id, params::MECH_VEL, t)?;
     if let Some(v) = mech_vel {
         if v.abs() > POWER_SANITY_MAX_VEL_RAD_S {
             eprintln!("ABORT: mechVel = {v} rad/s (shaft spinning).");
@@ -213,12 +207,7 @@ fn run_set_zero(common: Common, save: bool) -> io::Result<i32> {
         println!("\n>>> Save Parameters (type 22)");
         cmd_save_params(&bus, common.host_id, common.motor_id)?;
         std::thread::sleep(Duration::from_secs_f32(SAVE_SETTLE_S));
-        dump_state(
-            &bus,
-            common.host_id,
-            common.motor_id,
-            "after Save to Flash",
-        )?;
+        dump_state(&bus, common.host_id, common.motor_id, "after Save to Flash")?;
         println!("\nNext: power-cycle motor and re-run `read` to confirm persistence.");
     }
 
@@ -305,7 +294,13 @@ fn sanity_pre_jog(bus: &CanBus, host: u8, motor: u8) -> io::Result<i32> {
     Ok(0)
 }
 
-fn run_overlimit(bus: &CanBus, host: u8, motor: u8, verbose: bool, stop: &AtomicBool) -> io::Result<i32> {
+fn run_overlimit(
+    bus: &CanBus,
+    host: u8,
+    motor: u8,
+    verbose: bool,
+    stop: &AtomicBool,
+) -> io::Result<i32> {
     println!(
         "\n>>> OVERLIMIT TEST: spd_ref = {OVERLIMIT_SPD_REF} rad/s for {OVERLIMIT_HOLD_S:.1}s"
     );
@@ -343,7 +338,7 @@ fn run_overlimit(bus: &CanBus, host: u8, motor: u8, verbose: bool, stop: &Atomic
     }
 
     println!("  peak |mechVel| = {peak:.4} rad/s");
-    if peak < OVERLIMIT_OK_LO || peak > OVERLIMIT_OK_HI {
+    if !(OVERLIMIT_OK_LO..=OVERLIMIT_OK_HI).contains(&peak) {
         eprintln!("FAIL: expected peak in [{OVERLIMIT_OK_LO}, {OVERLIMIT_OK_HI}] rad/s.");
         return Ok(5);
     }
@@ -414,7 +409,10 @@ fn run_jog_ramp(
         let mv = read_mech_vel_prefer_fb(bus, host, motor, &mut last_v, &mut last_fb_t)?;
         if let Some(m) = mv {
             if m.abs() > WATCHDOG_VEL_RAD_S {
-                eprintln!("\nFAIL: watchdog: |mechVel|={} > {WATCHDOG_VEL_RAD_S}", m.abs());
+                eprintln!(
+                    "\nFAIL: watchdog: |mechVel|={} > {WATCHDOG_VEL_RAD_S}",
+                    m.abs()
+                );
                 return Ok(3);
             }
         }
@@ -439,12 +437,9 @@ fn cmd_jog(
     test_overlimit: bool,
     stop: &AtomicBool,
 ) -> io::Result<i32> {
-    let target = target_vel
-        .clamp(-MAX_TARGET_VEL_RAD_S, MAX_TARGET_VEL_RAD_S);
+    let target = target_vel.clamp(-MAX_TARGET_VEL_RAD_S, MAX_TARGET_VEL_RAD_S);
     if target_vel.abs() > MAX_TARGET_VEL_RAD_S {
-        println!(
-            "NOTE: clamped |target-vel| to ±{MAX_TARGET_VEL_RAD_S} rad/s (was {target_vel})"
-        );
+        println!("NOTE: clamped |target-vel| to ±{MAX_TARGET_VEL_RAD_S} rad/s (was {target_vel})");
     }
 
     if duration.is_nan() || target_vel.is_nan() {
@@ -476,13 +471,7 @@ fn cmd_jog(
     }
 
     let rc = if test_overlimit {
-        run_overlimit(
-            &bus,
-            common.host_id,
-            common.motor_id,
-            common.verbose,
-            stop,
-        )?
+        run_overlimit(&bus, common.host_id, common.motor_id, common.verbose, stop)?
     } else {
         run_jog_ramp(
             &bus,
@@ -572,7 +561,9 @@ fn cmd_smoke(common: Common, go: bool, stop: &AtomicBool) -> io::Result<i32> {
             )? {
                 peak_vel = peak_vel.max(v.abs());
                 if v.abs() > MAX_MECH_VEL_DURING_SMOKE_RAD_S {
-                    eprintln!("FAIL: mechVel |{v}| > {MAX_MECH_VEL_DURING_SMOKE_RAD_S} during enable.");
+                    eprintln!(
+                        "FAIL: mechVel |{v}| > {MAX_MECH_VEL_DURING_SMOKE_RAD_S} during enable."
+                    );
                     rc = 3;
                     break;
                 }
@@ -613,8 +604,7 @@ fn cmd_smoke(common: Common, go: bool, stop: &AtomicBool) -> io::Result<i32> {
                 }
             }
             Err(e)
-                if e.kind() == io::ErrorKind::TimedOut
-                    || e.kind() == io::ErrorKind::WouldBlock =>
+                if e.kind() == io::ErrorKind::TimedOut || e.kind() == io::ErrorKind::WouldBlock =>
             {
                 continue;
             }

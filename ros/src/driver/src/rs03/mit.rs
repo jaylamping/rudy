@@ -36,7 +36,7 @@ fn u16_to_float(raw: u16, x_min: f32, x_max: f32) -> f32 {
 /// Map torque feed-forward (Nm) into the ID byte at bits 23..16 (ADR-0002).
 #[inline]
 fn torque_ff_to_id_byte(t: f32) -> Result<u8, ProtocolError> {
-    if t < T_MIN || t > T_MAX {
+    if !(T_MIN..=T_MAX).contains(&t) {
         return Err(ProtocolError::OutOfRange);
     }
     let norm = (t - T_MIN) / (T_MAX - T_MIN);
@@ -159,10 +159,7 @@ mod tests {
             kd: 0.1,
             torque_ff_nm: 0.0,
         };
-        assert_eq!(
-            codec.encode_mit(1, 1, cmd),
-            Err(ProtocolError::OutOfRange)
-        );
+        assert_eq!(codec.encode_mit(1, 1, cmd), Err(ProtocolError::OutOfRange));
     }
 
     /// Vendor manual section 4.4 style neutral command: zero vel, zero gains, mid position.
@@ -178,7 +175,10 @@ mod tests {
         };
         let (_id, payload) = codec.encode_mit(0xFD, 0x08, cmd).unwrap();
         // Mid-scale position/velocity maps to 0x8000 (0 rad, 0 rad/s); kp/kd min -> 0x0000
-        assert_eq!(&payload[..], &[0x80, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00]);
+        assert_eq!(
+            &payload[..],
+            &[0x80, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00]
+        );
     }
 
     #[test]

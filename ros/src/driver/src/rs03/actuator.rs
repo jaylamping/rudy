@@ -19,10 +19,7 @@ pub struct Rs03 {
 impl Rs03 {
     #[must_use]
     pub const fn new(host_id: u8, motor_id: u8) -> Self {
-        Self {
-            host_id,
-            motor_id,
-        }
+        Self { host_id, motor_id }
     }
 
     #[must_use]

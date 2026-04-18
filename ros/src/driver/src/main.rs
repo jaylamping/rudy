@@ -49,9 +49,7 @@ fn main() {
                 kd: 0.0,
                 torque_ff_nm: 0.0,
             };
-            let (id, data) = codec
-                .encode_mit(host_id, motor_id, cmd)
-                .expect("encode");
+            let (id, data) = codec.encode_mit(host_id, motor_id, cmd).expect("encode");
             println!("id=0x{:08X} data={:02X?}", id, data);
         }
         _ => {

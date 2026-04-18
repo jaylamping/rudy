@@ -153,8 +153,7 @@ pub fn read_param_raw(
         let (can_id, data, dlc) = match bus.recv() {
             Ok(x) => x,
             Err(e)
-                if e.kind() == io::ErrorKind::TimedOut
-                    || e.kind() == io::ErrorKind::WouldBlock =>
+                if e.kind() == io::ErrorKind::TimedOut || e.kind() == io::ErrorKind::WouldBlock =>
             {
                 continue;
             }
@@ -177,7 +176,7 @@ pub fn read_param_f32(
     index: u16,
     timeout: Duration,
 ) -> io::Result<Option<f32>> {
-    Ok(read_param_raw(bus, host_id, motor_id, index, timeout)?.map(|b| f32::from_le_bytes(b)))
+    Ok(read_param_raw(bus, host_id, motor_id, index, timeout)?.map(f32::from_le_bytes))
 }
 
 pub fn read_param_u8(
@@ -197,7 +196,7 @@ pub fn read_param_u32(
     index: u16,
     timeout: Duration,
 ) -> io::Result<Option<u32>> {
-    Ok(read_param_raw(bus, host_id, motor_id, index, timeout)?.map(|b| u32::from_le_bytes(b)))
+    Ok(read_param_raw(bus, host_id, motor_id, index, timeout)?.map(u32::from_le_bytes))
 }
 
 pub fn defang_motor(bus: &CanBus, host_id: u8, motor_id: u8) -> io::Result<()> {
@@ -220,8 +219,7 @@ pub fn drain_motor_feedback(
         let (can_id, data, dlc) = match bus.recv() {
             Ok(x) => x,
             Err(e)
-                if e.kind() == io::ErrorKind::TimedOut
-                    || e.kind() == io::ErrorKind::WouldBlock =>
+                if e.kind() == io::ErrorKind::TimedOut || e.kind() == io::ErrorKind::WouldBlock =>
             {
                 break;
             }
@@ -248,8 +246,8 @@ pub fn drain_motor_feedback(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::frame::arb_id;
+    use super::*;
 
     #[test]
     fn read_param_reply_status_fail_yields_some_none() {

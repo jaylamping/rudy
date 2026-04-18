@@ -3,8 +3,11 @@
 use super::errors::ProtocolError;
 use super::frame::strip_eff_flag;
 
-const POS_LO: f32 = -12.566_370_614; // -4*pi rad
-const POS_HI: f32 = 12.566_370_614;
+// Match the vendor's 4*pi rad position range. We compute from PI rather
+// than a literal so we don't trip the f32 `excessive_precision` lint
+// (12.566_370_614 has more digits than f32 can faithfully represent).
+const POS_LO: f32 = -4.0 * std::f32::consts::PI;
+const POS_HI: f32 = 4.0 * std::f32::consts::PI;
 const VEL_LO: f32 = -20.0;
 const VEL_HI: f32 = 20.0;
 const TORQUE_LO: f32 = -60.0;
@@ -72,7 +75,7 @@ mod tests {
     fn decode_type2_midscale() {
         // All0x8000 -> mid of linear maps for pos/vel/torque; temp raw 250 -> 25C
         let can_id = 0x0208_FD08u32; // type 2, src0x08, status 0xFD, host 0x08 - illustrative
-        // MOS temp: uint16 BE, degC = raw / 10 → 25 C => raw = 250 = 0x00FA
+                                     // MOS temp: uint16 BE, degC = raw / 10 → 25 C => raw = 250 = 0x00FA
         let data = [0x80, 0x00, 0x80, 0x00, 0x80, 0x00, 0x00, 0xFA];
         let fb = decode_motor_feedback(can_id, &data).unwrap();
         assert!((fb.pos_rad - 0.0).abs() < 1e-3);
@@ -84,12 +87,6 @@ mod tests {
     #[test]
     fn decode_type2_too_short_errors() {
         let err = decode_motor_feedback(0, &[0u8; 4]).unwrap_err();
-        assert_eq!(
-            err,
-            ProtocolError::ShortFrame {
-                got: 4,
-                need: 8
-            }
-        );
+        assert_eq!(err, ProtocolError::ShortFrame { got: 4, need: 8 });
     }
 }

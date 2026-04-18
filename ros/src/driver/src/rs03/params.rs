@@ -31,12 +31,7 @@ mod tests {
         let mut payload = [0u8; 8];
         payload[0..2].copy_from_slice(&index.to_le_bytes());
         payload[4..8].copy_from_slice(&value.to_le_bytes());
-        assert_eq!(
-            payload,
-            [
-                0x0A, 0x70, 0x00, 0x00, 0x00, 0x00, 0xC0, 0x3F
-            ]
-        );
+        assert_eq!(payload, [0x0A, 0x70, 0x00, 0x00, 0x00, 0x00, 0xC0, 0x3F]);
     }
 
     #[test]

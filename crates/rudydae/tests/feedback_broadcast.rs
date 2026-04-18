@@ -20,8 +20,12 @@ mod common;
 #[tokio::test]
 async fn mock_can_publishes_feedback_for_every_inventoried_motor() {
     let (state, _dir) = common::make_state();
-    let expected_roles: HashSet<String> =
-        state.inventory.motors.iter().map(|m| m.role.clone()).collect();
+    let expected_roles: HashSet<String> = state
+        .inventory
+        .motors
+        .iter()
+        .map(|m| m.role.clone())
+        .collect();
 
     // Subscribe BEFORE spawning the producer to guarantee no missed messages
     // (broadcast::Sender drops messages when no receiver exists).
