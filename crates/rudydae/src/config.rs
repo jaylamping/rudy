@@ -17,23 +17,30 @@ pub struct Config {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HttpConfig {
+    /// Address rudydae binds for the REST + SPA listener.
+    ///
+    /// Always plaintext HTTP. On the Pi this is `127.0.0.1:8443`, fronted by
+    /// `tailscale serve` which terminates TLS using the auto-managed Tailscale
+    /// Let's Encrypt cert. See `deploy/pi5/tailscale-cert.md` and ADR-0004
+    /// addendum for the rationale (shrinks rudydae, kills the manual cert
+    /// renewal dance).
     pub bind: String,
-    pub tls: TlsConfig,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TlsConfig {
-    pub enabled: bool,
-    #[serde(default)]
-    pub cert_path: Option<PathBuf>,
-    #[serde(default)]
-    pub key_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WebTransportConfig {
     pub bind: String,
     pub enabled: bool,
+    /// PEM cert for the WebTransport (HTTP/3) listener.
+    ///
+    /// `tailscale serve` does not proxy HTTP/3, so the WebTransport endpoint
+    /// continues to terminate TLS itself with the same Tailscale-issued cert.
+    /// Required when `enabled = true`.
+    #[serde(default)]
+    pub cert_path: Option<PathBuf>,
+    /// PEM private key paired with `cert_path`.
+    #[serde(default)]
+    pub key_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

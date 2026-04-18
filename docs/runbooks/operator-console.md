@@ -19,22 +19,37 @@ Expected healthy startup log lines:
 - `loaded config from /etc/rudy/rudyd.toml`
 - `loaded inventory` with `motors=...`
 - `rudydae: starting mock CAN core` (Phase 1) or real CAN core (Phase 1.5+)
-- `rudydae https listener up`
+- `rudydae http listener up (plaintext; TLS terminated upstream by ...)`
 - `webtransport listener up` (when enabled)
 - `rudydae is up`
 
 ## Reach the UI
 
-From any Tailscale-connected machine:
+From any Tailscale-connected machine, open the short MagicDNS name with no
+port and no `.ts.net` suffix:
 
 ```
-https://rudy.your-tailnet.ts.net:8443/
+https://rudy-pi/
 ```
+
+`tailscale serve` on the Pi terminates TLS at `:443` using an auto-renewing
+Let's Encrypt cert and proxies decrypted requests to `rudyd` on
+`127.0.0.1:8443`. WebTransport (telemetry firehose) lands directly on
+`<host>:4433` because Tailscale Serve cannot proxy HTTP/3 — the cert for
+that listener is provisioned manually (see
+[deploy/pi5/tailscale-cert.md](../../deploy/pi5/tailscale-cert.md)).
 
 No login screen — `rudydae` does not authenticate requests. Reachability is
-gated entirely by Tailscale ACLs / being on the local network. If we ever need
-real auth back, see the deleted `auth.rs` module in git history for the
-shared-bearer-token starting point.
+gated entirely by Tailscale ACLs. If we ever need real auth back, see the
+deleted `auth.rs` module in git history for the shared-bearer-token
+starting point.
+
+To inspect the proxy mapping on the Pi:
+
+```bash
+tailscale serve status   # what is being proxied where
+ss -tlnp | grep 8443     # rudyd listens on 127.0.0.1 only
+```
 
 ## Local UI development against the Pi
 
@@ -45,14 +60,14 @@ by pointing the Vite dev server at the Pi over Tailscale:
 cd link
 cp .env.example .env.local
 # edit .env.local — set:
-#   VITE_RUDYD_URL=https://rudy.your-tailnet.ts.net:8443
+#   VITE_RUDYD_URL=https://rudy-pi/
 npm run dev
 ```
 
 `/api/*` requests from the dev server (http://localhost:5173) are proxied to
 that URL. WebTransport is negotiated separately via `GET /api/config`, so the
-telemetry firehose connects directly browser → Pi:4433. Both require that you
-are on the tailnet.
+telemetry firehose connects directly browser → `<host>:4433`. Both require
+that you are on the tailnet.
 
 If `VITE_RUDYD_URL` is unset the proxy falls back to `http://127.0.0.1:8443`,
 which is the right choice when you _are_ running `rudydae` locally
@@ -133,20 +148,31 @@ WebTransport surfaces still work (handy for backend-only testing).
 ### Browser cannot connect
 
 - Confirm you are on the tailnet (`tailscale status` on your laptop).
-- Confirm the Pi listens only on the Tailscale-local address (`ss -tlnp` on
-the Pi).
-- Try `curl -k https://rudy.*.ts.net:8443/api/config`.
+- Confirm `tailscale serve` is up on the Pi (`tailscale serve status`).
+  Expected: `https://<host>` -> `http://127.0.0.1:8443`.
+- Confirm `rudyd` is listening on the loopback address (`ss -tlnp | grep 8443`
+  on the Pi — should bind `127.0.0.1`, never `0.0.0.0`).
+- Try `curl https://rudy-pi/api/config` from a tailnet device.
+
+### Operator console returns 502 / "service unavailable"
+
+That's `tailscale serve` reporting that `rudyd` on `127.0.0.1:8443` is not
+answering. Either `rudyd` crashed (`journalctl -u rudyd -n 50`) or it's
+listening on a different port. `bootstrap.sh` and `apply-release.sh` always
+configure the proxy at `127.0.0.1:8443` — if you changed `[http] bind` in
+`/etc/rudy/rudyd.toml` for some reason, change it back or update the
+`tailscale serve` mapping to match.
 
 ### WebTransport not connecting but HTTPS works
 
 - `GET /api/config` should return `webtransport.enabled = true` and a non-null
-`url`. If it does not, check `[webtransport] enabled = true` in
-`/etc/rudy/rudyd.toml`.
-- The cert used for WT must match the cert used for HTTPS (Tailscale cert
-covers both).
+  `url`. If it does not, check `[webtransport] enabled = true` and that
+  `cert_path` / `key_path` are set in `/etc/rudy/rudyd.toml`.
+- The WT cert files must exist and be readable by the `rudy` user
+  (`ls -la /var/lib/rudyd/tailscale/`).
 - Chrome DevTools -> Network -> protocol column shows "webtransport". If it
-shows an error, the console tab usually has a more detailed message
-("certificate verification failed", "connection refused", etc.).
+  shows an error, the console tab usually has a more detailed message
+  ("certificate verification failed", "connection refused", etc.).
 
 ### `rudydae` refuses to enable a motor
 

@@ -4,31 +4,28 @@
 # See docs/runbooks/operator-console.md for start/stop.
 
 [http]
-# Address to bind the HTTPS + SPA listener.
-# On the Pi this should be the Tailscale-local address, e.g. "100.x.y.z:8443".
-# "0.0.0.0:8443" is fine on dev machines but DO NOT use it on the Pi — the
-# daemon must only be reachable via Tailscale.
+# Address rudydae binds for the REST + SPA listener (always plaintext).
+#
+# On the Pi: `127.0.0.1:8443`. The Pi's `tailscale serve` (configured by
+# deploy/pi5/bootstrap.sh) terminates TLS on the tailnet IP at :443 with the
+# auto-managed Tailscale Let's Encrypt cert and proxies decrypted requests
+# here. Operators browse `https://rudy-pi/` from any tailnet device.
+#
+# On dev machines: `127.0.0.1:8443` is fine; Vite proxies `/api/*` to it.
 bind = "127.0.0.1:8443"
-
-[http.tls]
-# When enabled, rudydae serves HTTPS. On the Pi, point cert_path / key_path at
-# the files produced by `tailscale cert <hostname>`; see
-# deploy/pi5/tailscale-cert.md.
-# During local development you can set enabled = false (plain HTTP). The SPA
-# will then be served at http://<bind>/ and WebTransport will NOT work (the
-# browser requires HTTP/3+TLS for WebTransport — so dev-streaming against a
-# non-TLS rudydae requires `npm run dev` with the Vite proxy pointed at a
-# real rudydae elsewhere).
-enabled = false
-# cert_path = "/var/lib/rudyd/tailscale/fullchain.pem"
-# key_path  = "/var/lib/rudyd/tailscale/privkey.pem"
 
 [webtransport]
 # HTTP/3 / QUIC listener for the telemetry + log firehose.
-# Must reuse the same cert as [http.tls] when TLS is enabled.
+#
+# `tailscale serve` does NOT proxy HTTP/3, so WebTransport keeps doing its own
+# TLS using the same Tailscale-issued cert. Bind to the tailnet IP on the Pi
+# (`render-rudyd-toml.sh` substitutes it at install time); leave on
+# `127.0.0.1` for dev (where WT is typically disabled anyway since browsers
+# require HTTP/3+TLS).
 bind = "127.0.0.1:4433"
-# Disable entirely when running against Vite dev server, which has no HTTP/3.
 enabled = false
+# cert_path = "/var/lib/rudyd/tailscale/<host>.<tailnet>.ts.net.crt"
+# key_path  = "/var/lib/rudyd/tailscale/<host>.<tailnet>.ts.net.key"
 
 [paths]
 # All relative paths are resolved against the working directory rudydae was

@@ -12,8 +12,7 @@ use std::sync::Arc;
 use rudydae::audit::AuditLog;
 use rudydae::can;
 use rudydae::config::{
-    CanConfig, Config, HttpConfig, PathsConfig, SafetyConfig, TelemetryConfig, TlsConfig,
-    WebTransportConfig,
+    CanConfig, Config, HttpConfig, PathsConfig, SafetyConfig, TelemetryConfig, WebTransportConfig,
 };
 use rudydae::inventory::Inventory;
 use rudydae::spec::ActuatorSpec;
@@ -80,16 +79,13 @@ pub fn make_state() -> (SharedState, tempfile::TempDir) {
     let cfg = Config {
         http: HttpConfig {
             bind: "127.0.0.1:0".into(),
-            tls: TlsConfig {
-                enabled: false,
-                cert_path: None,
-                key_path: None,
-            },
         },
         webtransport: WebTransportConfig {
             // disabled in most tests so we don't need to load a cert
             bind: "127.0.0.1:0".into(),
             enabled: false,
+            cert_path: None,
+            key_path: None,
         },
         paths: PathsConfig {
             actuator_spec: spec_path.clone(),

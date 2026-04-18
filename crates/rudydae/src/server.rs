@@ -1,6 +1,18 @@
-//! Axum HTTPS listener: REST API router + embedded-SPA middleware layer.
+//! Axum plaintext-HTTP listener: REST API router + embedded-SPA middleware.
 //!
-//! No auth: rudydae is only reachable via tailnet / localhost.
+//! No TLS, no auth. Two reasons that's safe:
+//!
+//! 1. On the Pi the listener binds `127.0.0.1` only, so the only client that
+//!    can reach it is a process on the same host — namely `tailscale serve`,
+//!    which terminates TLS with the auto-managed Tailscale Let's Encrypt cert
+//!    and proxies decrypted requests in. The tailnet (and only the tailnet)
+//!    sees `https://rudy-pi/`; nothing on the LAN can reach `:8443` directly.
+//! 2. In dev, Vite proxies `/api/*` to `http://127.0.0.1:8443` from
+//!    `http://localhost:5173`, same machine, no TLS in either hop.
+//!
+//! This used to terminate TLS itself with rustls; see ADR-0004 addendum for
+//! why we moved cert handling into Tailscale.
+//!
 //! Everything under `/api/*` is the JSON REST surface; everything else falls
 //! through to a `rust-embed`-backed handler that serves
 //! `crates/rudydae/static/` (copied from `link/dist/` at build time) with
@@ -18,7 +30,7 @@ use axum::{
 };
 use rust_embed::RustEmbed;
 use tower_http::trace::TraceLayer;
-use tracing::{info, warn};
+use tracing::info;
 
 use crate::api;
 use crate::state::SharedState;
@@ -44,38 +56,11 @@ pub async fn run(state: SharedState) -> Result<()> {
         .with_state(state.clone())
         .layer(TraceLayer::new_for_http());
 
-    if state.cfg.http.tls.enabled {
-        let (cert, key) = (
-            state
-                .cfg
-                .http
-                .tls
-                .cert_path
-                .clone()
-                .context("http.tls.enabled=true but http.tls.cert_path not set")?,
-            state
-                .cfg
-                .http
-                .tls
-                .key_path
-                .clone()
-                .context("http.tls.enabled=true but http.tls.key_path not set")?,
-        );
-        let tls_cfg = axum_server::tls_rustls::RustlsConfig::from_pem_file(cert, key)
-            .await
-            .context("loading TLS cert/key for axum")?;
-        info!(%bind, "rudydae https listener up");
-        axum_server::bind_rustls(bind, tls_cfg)
-            .serve(app.into_make_service())
-            .await
-            .context("axum_server serve")?;
-    } else {
-        warn!(%bind, "rudydae http listener up (TLS disabled - dev only)");
-        axum_server::bind(bind)
-            .serve(app.into_make_service())
-            .await
-            .context("axum_server serve")?;
-    }
+    info!(%bind, "rudydae http listener up (plaintext; TLS terminated upstream by `tailscale serve` on the Pi)");
+    axum_server::bind(bind)
+        .serve(app.into_make_service())
+        .await
+        .context("axum_server serve")?;
     Ok(())
 }
 

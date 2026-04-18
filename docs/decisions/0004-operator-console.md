@@ -205,3 +205,46 @@ is the moment to revisit; the split becomes ADR-0005 then.
 - ADR-0005 (future): splitting `driver` when `driver_node` is written.
 - Runbook: [docs/runbooks/operator-console.md](../runbooks/operator-console.md).
 - Runbook: [deploy/pi5/tailscale-cert.md](../../deploy/pi5/tailscale-cert.md).
+
+## Addendum 2026-04-18: TLS via `tailscale serve`
+
+The original D3 had `rudydae` terminating TLS itself for both surfaces (REST
+on `:8443`, WebTransport on `:4433`) using `tailscale cert`-issued PEM
+files. We are amending: the REST + SPA surface now runs **plaintext on
+`127.0.0.1:8443`** and is fronted by `tailscale serve --bg --https=443
+http://127.0.0.1:8443`. The HTTPS URL becomes the short MagicDNS form,
+`https://<host>/` (no port, no `.ts.net` suffix).
+
+WebTransport keeps doing its own TLS on `<tailnet-ip>:4433` because
+`tailscale serve` is HTTP/1.1+HTTP/2 only — it cannot proxy HTTP/3 / QUIC.
+The WT cert is still the same `tailscale cert`-issued pair.
+
+### Why
+
+- Auto-renewing cert for the main UI: `tailscale serve` reuses the
+  Tailscale daemon's continuously-rotated Let's Encrypt cert. We deleted
+  the manual `tailscale cert` step from the REST/SPA bring-up, and a
+  follow-up `rudyd-cert-renew.timer` only needs to handle the WT cert.
+- Shorter URL: `https://rudy-pi/` is materially nicer to type and bookmark
+  than `https://rudy-pi.tail-abc123.ts.net:8443/`.
+- Smaller `rudydae`: removed the `axum-server tls-rustls` feature and the
+  `[http.tls]` config block + branch in `server.rs`. One less dep, one
+  less crash surface (rustls `CryptoProvider`-init panics still apply for
+  the WT path; we keep the `install_default()` call for that).
+- Firewall simplification: `tailscale serve` already binds tailnet-only,
+  so we no longer need the nftables drop rule on `:8443`. The rule on
+  `:4433/udp` (for WT) stays.
+
+### Known limitations / follow-ups
+
+- `GET /api/config` still returns a `webtransport.url` template containing
+  literal `HOSTPLACEHOLDER:<port>/wt`. Not introduced by this addendum;
+  pre-existing gap. Frontend currently substitutes nothing; until that's
+  fixed, the link telemetry firehose connection will fail. File a separate
+  fix to either substitute `Host:` server-side or have the SPA construct
+  the URL from `window.location.hostname`.
+- No HSTS / HPKP / cert pinning at the SPA layer. We rely on Tailscale
+  trust + browser-native LE chain validation, same as before.
+- If `tailscale serve` configuration drifts (e.g. a tailnet rejoin), the
+  next `apply-release.sh` re-asserts the mapping. Manual recovery:
+  `sudo tailscale serve --bg --https=443 http://127.0.0.1:8443`.

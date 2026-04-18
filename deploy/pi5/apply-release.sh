@@ -34,8 +34,27 @@ rsync -a --delete "${STAGE}/config/" /opt/rudy/config/
 install -m 0644 "${STAGE}/docs/runbooks/operator-console.md" /etc/rudy/docs/runbooks/operator-console.md
 install -m 0644 "${STAGE}/deploy/pi5/rudyd.service" /etc/systemd/system/rudyd.service
 
-if [[ ! -f /etc/rudy/rudyd.toml ]]; then
-  bash "${STAGE}/deploy/pi5/render-rudyd-toml.sh" /etc/rudy/rudyd.toml
+# Always re-render rudyd.toml so config-schema changes ship in releases land
+# on the Pi. A timestamped backup of the previous file is kept alongside.
+bash "${STAGE}/deploy/pi5/render-rudyd-toml.sh" /etc/rudy/rudyd.toml
+
+# Ensure `tailscale serve` is fronting rudyd on https://<host>/. Idempotent.
+# `tailscale serve` state is persistent across reboots; we re-assert on every
+# release so a Tailscale config drift (or a fresh tailnet identity) heals
+# itself the next time we ship.
+if command -v tailscale >/dev/null; then
+  if tailscale status >/dev/null 2>&1; then
+    # `tailscale serve --bg --https=443 http://127.0.0.1:8443` is the modern
+    # form; older Tailscale versions used `tailscale serve https / proxy ...`.
+    # Both end up writing to the same serve config; the modern form is a no-op
+    # if the same mapping is already active.
+    tailscale serve --bg --https=443 http://127.0.0.1:8443 \
+      || echo "apply-release: tailscale serve setup failed (rudyd is still up on 127.0.0.1:8443; rerun bootstrap.sh)" >&2
+  else
+    echo "apply-release: tailscale not logged in; skipping tailscale serve setup" >&2
+  fi
+else
+  echo "apply-release: tailscale CLI not found; skipping tailscale serve setup" >&2
 fi
 
 systemctl daemon-reload

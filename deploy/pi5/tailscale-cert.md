@@ -1,36 +1,119 @@
-# Tailscale HTTPS for rudyd paths
+# Tailscale TLS for the Rudy operator console
 
-`rudydae` (systemd `rudyd.service`) serves HTTPS (for the REST API + SPA) and WebTransport over HTTP/3
-(for the telemetry firehose). Both listeners require a trusted TLS
-certificate; we use Tailscale's built-in HTTPS to provision a real Let's
-Encrypt cert, avoiding self-signed cert glue.
+`rudydae` is reachable over the tailnet at **`https://<host>/`** (e.g.
+`https://rudy-pi/`) — short MagicDNS name, no port, no `.ts.net` suffix.
 
-See [ADR-0004 section D3](../../docs/decisions/0004-operator-console.md) for
-why.
+There are two TLS surfaces; Tailscale handles both certs, but in different
+ways:
 
-## One-time setup
+| Surface                             | Listener           | TLS terminated by                     |
+| ----------------------------------- | ------------------ | ------------------------------------- |
+| REST API + SPA (`https://<host>/`)  | `127.0.0.1:8443`   | `tailscale serve` on `:443`           |
+| Telemetry firehose (WebTransport)   | `<tailnet-ip>:4433`| `rudydae` itself, via `wtransport`    |
 
-```bash # On the Pi, as root:  # 1. Confirm Tailscale is up and the Pi has a stable MagicDNS name. tailscale status tailscale cert --help     # must not error  # 2. Enable HTTPS for the tailnet if you have not already: #    https://login.tailscale.com/admin/dns -> "HTTPS Certificates" #    (Toggle it on. One-time, per tailnet.)  # 3. Create the cert directory owned by the `rudy` user. install -d -o rudy -g rudy -m 0750 /var/lib/rudyd/tailscale  # 4. Provision the cert. TAILNAME is your MagicDNS name (lowercase), e.g. #    rudy.tail-scale.ts.net. TAILNAME="rudy.$(tailscale status --json | jq -r '.MagicDNSSuffix')" cd /var/lib/rudyd/tailscale sudo tailscale cert "${TAILNAME}" # Produces ${TAILNAME}.crt and ${TAILNAME}.key in CWD. chown rudy:rudy ${TAILNAME}.* chmod 0640 ${TAILNAME}.key  # 5. Point rudyd.toml at them. #    [http.tls] #    enabled = true #    cert_path = "/var/lib/rudyd/tailscale/rudy.tail-scale.ts.net.crt" #    key_path  = "/var/lib/rudyd/tailscale/rudy.tail-scale.ts.net.key" # #    [http] #    bind = "100.x.y.z:8443"    # Tailscale address ONLY # #    [webtransport] #    enabled = true #    bind    = "100.x.y.z:4433"  sudo systemctl restart rudyd.service ```
+`tailscale serve` is HTTP/1.1+HTTP/2 only — it cannot proxy HTTP/3 / QUIC,
+which is what WebTransport uses. So WT keeps doing its own TLS with the same
+Let's Encrypt cert that Tailscale issues.
+
+See [ADR-0004 §D3](../../docs/decisions/0004-operator-console.md) and the
+"Tailscale Serve" addendum for the rationale.
+
+## What `bootstrap.sh` does for you
+
+A fresh `bootstrap.sh` run, with Tailscale already up:
+
+1. Issues a Let's Encrypt cert (via `tailscale cert`) into
+   `/var/lib/rudyd/tailscale/<host>.<tailnet>.ts.net.{crt,key}`. This is
+   the cert the WebTransport listener loads.
+2. Configures `tailscale serve --bg --https=443 http://127.0.0.1:8443`.
+   Tailscale auto-renews the cert it uses for `:443` — you do nothing.
+3. Renders `/etc/rudy/rudyd.toml` with WT pointed at the cert files from
+   step 1, and the HTTP listener bound to `127.0.0.1:8443` plaintext.
+4. Starts `rudyd.service`.
+
+`apply-release.sh` re-runs steps 2 and 3 on every release so any cert-path
+or Tailscale-identity drift heals itself.
+
+## One-time prerequisites (only if `bootstrap.sh` warns)
+
+```bash
+# 1. Tailscale must be installed and logged in:
+tailscale status
+
+# 2. HTTPS Certificates must be enabled for the tailnet (one-time per tailnet):
+#      https://login.tailscale.com/admin/dns -> "HTTPS Certificates" -> Enable
+
+# 3. The cert directory must exist and be owned by the `rudy` user:
+sudo install -d -o rudy -g rudy -m 0750 /var/lib/rudyd/tailscale
+
+# 4. Issue the cert (auto-renew handled later by a follow-up timer):
+TAILNAME="$(hostname -s).$(tailscale status --json | jq -r '.MagicDNSSuffix')"
+sudo tailscale cert \
+  --cert-file "/var/lib/rudyd/tailscale/${TAILNAME}.crt" \
+  --key-file  "/var/lib/rudyd/tailscale/${TAILNAME}.key" \
+  "${TAILNAME}"
+sudo chown rudy:rudy "/var/lib/rudyd/tailscale/${TAILNAME}".*
+sudo chmod 0640 "/var/lib/rudyd/tailscale/${TAILNAME}.key"
+
+# 5. Wire `tailscale serve` for the REST/SPA surface:
+sudo tailscale serve --bg --https=443 http://127.0.0.1:8443
+
+# 6. Re-render the daemon config and restart:
+sudo bash /opt/rudy/deploy/pi5/render-rudyd-toml.sh /etc/rudy/rudyd.toml
+sudo systemctl restart rudyd
+```
+
+## Inspect / debug
+
+```bash
+tailscale serve status              # what is being proxied where
+tailscale cert --help               # cert provisioning help
+ls -la /var/lib/rudyd/tailscale/    # cert files for WebTransport
+ss -tlnp | grep -E '8443|4433|443'  # who is listening on what
+journalctl -u rudyd -f              # daemon logs
+journalctl -u tailscaled -f         # Tailscale agent (incl. Serve activity)
+```
 
 ## Renewal
 
-Tailscale certs expire after 90 days. Renew in the same spot:
+- **REST/SPA cert (used by `tailscale serve`):** Tailscale renews this
+  automatically on the daemon's schedule. No action.
+- **WebTransport cert (`/var/lib/rudyd/tailscale/<host>...`):** issued
+  manually by step 4 above; expires after 90 days. To renew:
 
-```bash cd /var/lib/rudyd/tailscale sudo tailscale cert "${TAILNAME}" sudo systemctl reload-or-restart rudyd.service ```
+  ```bash
+  TAILNAME="$(hostname -s).$(tailscale status --json | jq -r '.MagicDNSSuffix')"
+  cd /var/lib/rudyd/tailscale
+  sudo tailscale cert \
+    --cert-file "${TAILNAME}.crt" \
+    --key-file  "${TAILNAME}.key" \
+    "${TAILNAME}"
+  sudo systemctl reload-or-restart rudyd
+  ```
 
-A systemd timer (`rudyd-cert-renew.timer`) automates this in a future phase.
-Phase 1 does it by hand.
+  A systemd timer (`rudyd-cert-renew.timer`) automates this in a future
+  phase. Phase 1 does it by hand.
 
 ## Firewall
 
-Traffic to the operator console must be reachable ONLY over Tailscale. The Pi's firewall should block
-`:8443` and `:4433/udp` on every interface other than `tailscale0`. A
-working `nftables` fragment:
+`tailscale serve` exposes `:443` only on `tailscale0`, so no firewall rule
+is needed for the REST/SPA surface — Tailscale enforces tailnet-only on
+your behalf.
 
-``` table inet rudyd {   chain input {     type filter hook input priority 0;     iif != "tailscale0" tcp dport 8443 drop     iif != "tailscale0" udp dport 4433 drop   } } ```
+WebTransport on `:4433/udp` *is* a regular UDP listener and must be
+restricted to `tailscale0`. A working `nftables` fragment:
+
+```
+table inet rudyd {
+  chain input {
+    type filter hook input priority 0;
+    iif != "tailscale0" udp dport 4433 drop
+  }
+}
+```
 
 ## Browser trust
 
-Because the cert is a real Let's Encrypt cert, Chrome/Edge accept HTTPS and
-WebTransport without any developer-mode flag or cert-fingerprint pinning.
-No `chrome://flags` changes.
+Both surfaces use a real Let's Encrypt cert, so Chrome/Edge accept HTTPS
+and WebTransport without any developer-mode flag or cert-fingerprint
+pinning. No `chrome://flags` changes.

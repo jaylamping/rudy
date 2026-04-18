@@ -30,20 +30,20 @@ async fn wt_run_returns_ok_immediately_when_disabled() {
     inner.expect("wt::run should return Ok(()) when disabled, not bubble an error");
 }
 
-/// Sister to the above: when WT is enabled but `http.tls.enabled = false`,
+/// Sister to the above: when WT is enabled but no cert is configured,
 /// `wt::run` should also bail cleanly (it logs a warning), not panic. The
 /// SPA's `useWebTransport` then sees `enabled: false` from `/api/config` and
 /// stays on the REST polling fallback.
 #[tokio::test]
-async fn wt_run_returns_ok_when_enabled_but_no_tls() {
+async fn wt_run_returns_ok_when_enabled_but_no_cert() {
     let (state, _dir) = common::make_state_with_wt_advert();
     assert!(state.cfg.webtransport.enabled);
     assert!(
-        !state.cfg.http.tls.enabled,
-        "fixture should leave TLS off so wt::run hits the no-tls branch"
+        state.cfg.webtransport.cert_path.is_none() && state.cfg.webtransport.key_path.is_none(),
+        "fixture should leave cert paths unset so wt::run hits the no-cert branch"
     );
 
     let res = tokio::time::timeout(Duration::from_secs(2), wt::run(state.clone())).await;
-    let inner = res.expect("wt::run should return well within 2s when TLS is off");
-    inner.expect("wt::run should bail cleanly when TLS is off, not bubble an error");
+    let inner = res.expect("wt::run should return well within 2s when no cert is set");
+    inner.expect("wt::run should bail cleanly when no cert is set, not bubble an error");
 }

@@ -16,12 +16,28 @@ git push to main
     ↓
 Pi: rudy-update.timer fires every 60s
     rudy-update.sh checks latest.json, downloads tarball, verifies sha256
-    apply-release.sh installs into /opt/rudy and restarts rudyd
+    apply-release.sh installs into /opt/rudy, re-renders /etc/rudy/rudyd.toml,
+        re-asserts `tailscale serve`, restarts rudyd
     ↓
 new build live in ~60–90s, no SSH required
 ```
 
 The Pi never compiles anything. After the one-time bootstrap, you can leave it alone — every `git push` to `main` rolls out automatically.
+
+## How the operator console is reached
+
+`rudyd` does **not** terminate TLS itself for the REST/SPA surface. It binds
+plaintext on `127.0.0.1:8443`, and `tailscale serve` fronts it with HTTPS
+on `:443` of the Pi's tailnet IP using an auto-renewing Tailscale Let's
+Encrypt cert. Operators browse:
+
+```
+https://rudy-pi/        # short MagicDNS name, no port, no .ts.net suffix
+```
+
+…from any device on the same tailnet. WebTransport (telemetry firehose)
+keeps doing its own TLS on `:4433/udp` because `tailscale serve` does not
+proxy HTTP/3. See `tailscale-cert.md` for both certs.
 
 ## One-time Pi bootstrap
 
@@ -32,9 +48,11 @@ On a fresh Pi (Ubuntu LTS aarch64, Waveshare 2-CH CAN HAT seated):
 curl -fsSL https://tailscale.com/install.sh | sh
 sudo tailscale up --ssh --hostname rudy-pi
 
-# 2. Provision a Tailscale cert (one-time per host; auto-renew handled later)
+# 2. Provision the WebTransport cert (one-time per host; auto-renew handled
+#    later by a follow-up timer). Tailscale Serve handles the REST/SPA cert
+#    automatically — no manual provisioning needed for the main UI.
 TAILNAME=$(tailscale status --json | jq -r '.Self.DNSName' | sed 's/\.$//')
-sudo install -d -o rudy -g rudy -m 0750 /var/lib/rudyd/tailscale  # rudy user is created in step 3 below if not present; safe to skip and re-run
+sudo install -d -o rudy -g rudy -m 0750 /var/lib/rudyd/tailscale
 sudo tailscale cert \
   --cert-file "/var/lib/rudyd/tailscale/${TAILNAME}.crt" \
   --key-file  "/var/lib/rudyd/tailscale/${TAILNAME}.key" \
@@ -53,8 +71,9 @@ sudo bash ~/rudy/deploy/pi5/bootstrap.sh
 2. Append the MCP2515 device-tree overlays to `/boot/firmware/config.txt` if missing (and ask you to reboot if it had to add them).
 3. Install the `robot-can` service so `can0`/`can1` come up at boot.
 4. Install `rudy-update.timer` and trigger the first update.
+5. Configure `tailscale serve` to front `rudyd` on `https://<host>/`.
 
-After it finishes, `journalctl -u rudy-update -f` will show the Pi pull the latest GitHub Release and start `rudyd`.
+After it finishes, `journalctl -u rudy-update -f` will show the Pi pull the latest GitHub Release and start `rudyd`. Open `https://rudy-pi/` from any device on the same tailnet.
 
 ## Day-to-day
 

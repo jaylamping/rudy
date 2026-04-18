@@ -8,7 +8,8 @@
 #   2. Ensures CAN HAT overlays are in /boot/firmware/config.txt.
 #   3. Installs robot-can.service so can0/can1 come up at boot.
 #   4. Installs the rudy-update updater + 1-minute systemd timer.
-#   5. Triggers an immediate update so the daemon comes up now.
+#   5. Configures `tailscale serve` to front rudyd at https://<host>/.
+#   6. Triggers an immediate update so the daemon comes up now.
 #
 # After this, the Pi will auto-update on every push to main:
 #   git push -> CI builds aarch64 release -> Pi pulls within ~60s.
@@ -79,15 +80,35 @@ install -m 0644 "${SCRIPT_DIR}/rudy-update.timer" /etc/systemd/system/rudy-updat
 systemctl daemon-reload
 systemctl enable --now rudy-update.timer
 
+# Wire `tailscale serve` to terminate TLS at the tailnet IP and proxy to the
+# rudyd plaintext loopback listener. `tailscale serve` config is persistent
+# across reboots; it re-applies itself after `tailscaled` restarts. We also
+# re-assert this from `apply-release.sh` on every release in case it drifted.
+if command -v tailscale >/dev/null && tailscale status >/dev/null 2>&1; then
+  echo "Configuring tailscale serve (https://\$(hostname)/ -> 127.0.0.1:8443)..."
+  tailscale serve --bg --https=443 http://127.0.0.1:8443 || \
+    echo "WARN: tailscale serve setup failed; rerun once the daemon is up."
+else
+  echo "WARN: tailscale not up; skipping \`tailscale serve\` setup."
+  echo "      Once tailscale is logged in, run:"
+  echo "        sudo tailscale serve --bg --https=443 http://127.0.0.1:8443"
+fi
+
 echo
 echo "Triggering first update (this builds nothing locally; just downloads the latest release):"
 systemctl start rudy-update.service || true
+
+HOST_SHORT="$(hostname -s)"
+TAILNET_URL="https://${HOST_SHORT}/"
 
 echo
 echo "== Bootstrap complete =="
 echo
 echo "Next steps:"
-echo "  - Verify daemon:  systemctl status rudyd --no-pager"
-echo "  - Tail logs:      journalctl -u rudyd -f"
-echo "  - Tail updater:   journalctl -u rudy-update -f"
-echo "  - Open UI at:     https://\$(hostname).\$(tailscale status --json | jq -r .MagicDNSSuffix):8443/"
+echo "  - Verify daemon:    systemctl status rudyd --no-pager"
+echo "  - Tail logs:        journalctl -u rudyd -f"
+echo "  - Tail updater:     journalctl -u rudy-update -f"
+echo "  - Inspect serve:    tailscale serve status"
+echo "  - Open UI at:       ${TAILNET_URL}"
+echo "                      (from any device on this tailnet — MagicDNS"
+echo "                       resolves \`${HOST_SHORT}\` to the Pi's 100.x IP)"

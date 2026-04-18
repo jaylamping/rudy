@@ -6,7 +6,12 @@
 //! in `types::WtSubscribe` and will be parsed here in Phase 2 to selectively
 //! enable faults + logs streams.
 //!
-//! When `cfg.webtransport.enabled = false` or TLS is not configured, this
+//! Unlike the REST listener (which is plaintext fronted by `tailscale serve`),
+//! WebTransport terminates TLS itself: `tailscale serve` is HTTP/1.1+HTTP/2
+//! only, so it cannot proxy HTTP/3 / QUIC. The WT endpoint therefore loads the
+//! same Tailscale Let's Encrypt cert directly. See ADR-0004 addendum.
+//!
+//! When `cfg.webtransport.enabled = false` or no cert is configured, this
 //! function logs a note and returns `Ok(())` so it's safe to `tokio::spawn`
 //! unconditionally from main.
 
@@ -25,25 +30,16 @@ pub async fn run(state: SharedState) -> Result<()> {
         return Ok(());
     }
 
-    if !state.cfg.http.tls.enabled {
-        warn!("webtransport.enabled=true but http.tls.enabled=false; WebTransport requires TLS. Disabling WT listener.");
+    let (Some(cert_path), Some(key_path)) = (
+        state.cfg.webtransport.cert_path.clone(),
+        state.cfg.webtransport.key_path.clone(),
+    ) else {
+        warn!(
+            "webtransport.enabled=true but webtransport.cert_path / webtransport.key_path \
+             not set; WebTransport requires TLS. Disabling WT listener."
+        );
         return Ok(());
-    }
-
-    let cert_path = state
-        .cfg
-        .http
-        .tls
-        .cert_path
-        .clone()
-        .context("http.tls.cert_path required for WebTransport")?;
-    let key_path = state
-        .cfg
-        .http
-        .tls
-        .key_path
-        .clone()
-        .context("http.tls.key_path required for WebTransport")?;
+    };
 
     let bind: std::net::SocketAddr = state.cfg.webtransport.bind.parse().with_context(|| {
         format!(
