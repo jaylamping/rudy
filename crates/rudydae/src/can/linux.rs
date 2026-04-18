@@ -78,7 +78,7 @@ impl LinuxCanCore {
                         .ok_or_else(|| anyhow!("expected numeric JSON value for {}", desc.ty))?
                         as f32;
                     session::write_param_f32(bus, self.host_id, motor.can_id, desc.index, v)?;
-                    Ok(serde_json::json!(v))
+                    serde_json::json!(v)
                 }
                 "uint8" | "u8" => {
                     let v = value
@@ -86,7 +86,7 @@ impl LinuxCanCore {
                         .ok_or_else(|| anyhow!("expected unsigned integer JSON value"))?;
                     let v = u8::try_from(v).context("u8 parameter out of range")?;
                     session::write_param_u8(bus, self.host_id, motor.can_id, desc.index, v)?;
-                    Ok(serde_json::json!(v))
+                    serde_json::json!(v)
                 }
                 "uint16" | "u16" => {
                     let v = value
@@ -100,7 +100,7 @@ impl LinuxCanCore {
                         desc.index,
                         v as u32,
                     )?;
-                    Ok(serde_json::json!(v))
+                    serde_json::json!(v)
                 }
                 "uint32" | "u32" => {
                     let v = value
@@ -108,10 +108,10 @@ impl LinuxCanCore {
                         .ok_or_else(|| anyhow!("expected unsigned integer JSON value"))?;
                     let v = u32::try_from(v).context("u32 parameter out of range")?;
                     session::write_param_u32(bus, self.host_id, motor.can_id, desc.index, v)?;
-                    Ok(serde_json::json!(v))
+                    serde_json::json!(v)
                 }
                 other => bail!("writes for parameter type {other} are not supported"),
-            }?;
+            };
 
             if save_after {
                 session::cmd_save_params(bus, self.host_id, motor.can_id)?;
