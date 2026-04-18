@@ -212,6 +212,15 @@ function LimbAssignmentCard({ motor }: { motor: MotorSummary }) {
     limb && joint ? `${limb}.${joint}` : motor.role;
   const isAssigned = motor.limb && motor.joint_kind;
 
+  // We hold the auto-stop / auto-reenable flags from the last successful
+  // rename so the operator gets one notice on the new-role page after the
+  // navigate lands. Cleared the next time they touch the form.
+  const [lastAutoFlags, setLastAutoFlags] = useState<{
+    auto_stopped: boolean;
+    auto_reenabled: boolean;
+    auto_reenable_error?: string;
+  } | null>(null);
+
   const assign = useMutation({
     mutationFn: async () => {
       if (!limb || !joint) throw new Error("limb and joint_kind required");
@@ -232,26 +241,21 @@ function LimbAssignmentCard({ motor }: { motor: MotorSummary }) {
       // role the daemon no longer knows about.
       qc.removeQueries({ queryKey: ["inventory", motor.role], exact: true });
       await qc.refetchQueries({ queryKey: ["motors"], exact: true });
+      if (resp.auto_stopped) {
+        setLastAutoFlags({
+          auto_stopped: true,
+          auto_reenabled: !!resp.auto_reenabled,
+          auto_reenable_error: resp.auto_reenable_error,
+        });
+      } else {
+        setLastAutoFlags(null);
+      }
       navigate({
         to: "/actuators/$role",
         params: { role: resp.new_role },
         search: { tab: "inventory" },
         replace: true,
       });
-    },
-  });
-
-  // Convenience: when the daemon refuses with `motor_active` we offer a
-  // one-click Stop right inside the error banner so the operator doesn't
-  // have to context-switch to the Controls tab. Retries the original
-  // assign automatically once the stop lands.
-  const stopAndRetry = useMutation({
-    mutationFn: async () => {
-      await api.stop(motor.role);
-    },
-    onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: ["motors"] });
-      assign.mutate();
     },
   });
 
@@ -332,35 +336,30 @@ function LimbAssignmentCard({ motor }: { motor: MotorSummary }) {
             e.body && typeof e.body === "object" && "detail" in e.body
               ? String((e.body as { detail?: unknown }).detail ?? "")
               : "";
-          // The daemon returns `motor_active` when the motor is currently
-          // enabled on the bus. Surface a one-click recovery instead of
-          // making the operator hunt for the Controls tab.
-          if (e.message === "motor_active") {
-            return (
-              <div className="flex items-center justify-between gap-3 rounded-md border border-destructive/40 bg-destructive/10 p-2">
-                <p className="text-xs text-destructive">
-                  {detail || "Motor is currently enabled. Stop it before assigning."}
-                </p>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={stopAndRetry.isPending}
-                  onClick={() => stopAndRetry.mutate()}
-                >
-                  {stopAndRetry.isPending ? "Stopping..." : "Stop and retry"}
-                </Button>
-              </div>
-            );
-          }
           return (
             <p className="text-xs text-destructive">
               {detail || e.message}
             </p>
           );
         })()}
-        {stopAndRetry.isError && (
-          <p className="text-xs text-destructive">
-            stop failed: {(stopAndRetry.error as ApiError).message}
+        {/* Post-rename notice: the daemon transparently dropped torque on
+            the bus before performing the rename. If it managed to restore
+            the enable state under the new role we say so; if not, point
+            the operator at the Controls tab to re-enable manually. */}
+        {lastAutoFlags?.auto_stopped && lastAutoFlags.auto_reenabled && (
+          <p className="rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-400">
+            Motor was active during the rename. Torque was briefly dropped and
+            the motor was re-enabled under the new role.
+          </p>
+        )}
+        {lastAutoFlags?.auto_stopped && !lastAutoFlags.auto_reenabled && (
+          <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive">
+            Motor was active during the rename. Auto-stop succeeded but
+            re-enable failed
+            {lastAutoFlags.auto_reenable_error
+              ? `: ${lastAutoFlags.auto_reenable_error}`
+              : ""}
+            . Use the Controls tab to re-enable when ready.
           </p>
         )}
       </CardContent>

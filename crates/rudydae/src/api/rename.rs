@@ -1,10 +1,14 @@
 //! POST /api/motors/:role/rename and POST /api/motors/:role/assign.
 //!
 //! `rename` changes a motor's primary key. Validates new_role canonical
-//! form, refuses duplicates, refuses while motor is enabled. Atomically
-//! rewrites inventory.yaml, migrates the in-memory `state.latest` /
-//! `state.params` / `state.boot_state` maps, audit-logs the change, and
-//! emits a `MotorRenamed` safety event so subscribers drop per-role caches.
+//! form, refuses duplicates. If the motor is currently enabled the daemon
+//! transparently issues `cmd_stop` on the bus, performs the rename, then
+//! re-issues `cmd_enable` under the new role — the response carries
+//! `auto_stopped` / `auto_reenabled` flags so the SPA can surface what
+//! happened. Atomically rewrites inventory.yaml, migrates the in-memory
+//! `state.latest` / `state.params` / `state.boot_state` maps, audit-logs
+//! the change, and emits a `MotorRenamed` safety event so subscribers
+//! drop per-role caches.
 //!
 //! `assign` is a convenience wrapper for "this motor is currently
 //! unassigned (no limb / joint_kind); set them and recompute the role to
@@ -41,6 +45,25 @@ pub struct AssignBody {
 pub struct RenameResp {
     pub ok: bool,
     pub new_role: String,
+    /// True when the motor was enabled at request time and the daemon
+    /// auto-issued a stop on the bus before performing the rename. The
+    /// SPA surfaces this so the operator sees that torque was briefly
+    /// dropped instead of having to figure it out from a 409.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub auto_stopped: bool,
+    /// True when the daemon successfully re-enabled the motor on its
+    /// new role after the rename. Only meaningful when `auto_stopped`
+    /// is also true. False (with `auto_stopped: true`) means the
+    /// rename succeeded but the motor is currently disabled — the
+    /// operator must re-enable manually. Failure detail is in
+    /// `auto_reenable_error`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub auto_reenabled: bool,
+    /// Populated only when `auto_stopped` is true and the subsequent
+    /// re-enable failed. Lets the SPA show "rename succeeded but
+    /// re-enable failed: <reason>" in one banner.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto_reenable_error: Option<String>,
 }
 
 fn err(status: StatusCode, error: &str, detail: Option<String>) -> (StatusCode, Json<ApiError>) {
@@ -111,15 +134,15 @@ async fn do_rename(
         ));
     }
 
-    // Snapshot whether the motor was previously assigned. A first-time
-    // `assign` (motor has no limb/joint_kind on file) is a pure labeling
-    // operation: it does not move the motor, doesn't change CAN IDs, and
-    // the in-memory boot_state migrates under the new key below. There is
-    // no motion-safety reason to gate it on `enabled`, and gating it
-    // creates a confusing dead-end for operators ("I clicked STOP, why
-    // does it still say motor_active?"). So we only enforce the
-    // enabled-gate on `rename` and on `assign`-of-already-assigned.
-    let was_unassigned = {
+    // Snapshot whether the motor was previously assigned, plus a clone of
+    // the motor record we'll need below for any auto-stop / auto-reenable
+    // CAN calls. A first-time `assign` (motor has no limb/joint_kind on
+    // file) is a pure labeling operation: it does not move the motor,
+    // doesn't change CAN IDs, and the in-memory boot_state migrates under
+    // the new key below. There is no motion-safety reason to gate it on
+    // `enabled`. So we only consider the auto-stop/auto-reenable cycle on
+    // `rename` and on `assign`-of-already-assigned.
+    let (was_unassigned, motor_snapshot) = {
         let inv = state.inventory.read().expect("inventory poisoned");
         let Some(motor) = inv.by_role(&role) else {
             return Err(err(
@@ -135,19 +158,60 @@ async fn do_rename(
                 Some(format!("another motor already has role={new_role}")),
             ));
         }
-        motor.limb.is_none() && motor.joint_kind.is_none()
+        (
+            motor.limb.is_none() && motor.joint_kind.is_none(),
+            motor.clone(),
+        )
     };
 
     let is_first_time_assign = assignment.is_some() && was_unassigned;
-    if !is_first_time_assign && state.is_enabled(&role) {
-        return Err(err(
-            StatusCode::CONFLICT,
-            "motor_active",
-            Some(
-                "motor is currently enabled; click Stop in the Controls tab before renaming"
-                    .into(),
-            ),
-        ));
+
+    // Was the motor driving when this request landed? If yes, we transparently
+    // drop torque on the bus, perform the rename, then restore the enabled
+    // state under the new role. Operators were hitting a confusing 409
+    // `motor_active` and had to context-switch to the Controls tab to click
+    // Stop before retrying — the daemon does that round-trip itself now and
+    // surfaces what happened in the response (`auto_stopped`,
+    // `auto_reenabled`). First-time assign is exempt: it never engaged the
+    // gate to begin with, so there's nothing to stop.
+    let needs_auto_stop = !is_first_time_assign && state.is_enabled(&role);
+    if needs_auto_stop {
+        if let Some(core) = state.real_can.clone() {
+            let motor_for_stop = motor_snapshot.clone();
+            let stop_result =
+                tokio::task::spawn_blocking(move || core.stop(&motor_for_stop))
+                    .await
+                    .expect("rename auto-stop task panicked");
+            if let Err(e) = stop_result {
+                state.audit.write(AuditEntry {
+                    timestamp: Utc::now(),
+                    session_id: session.clone(),
+                    remote: None,
+                    action: "rename_auto_stop".into(),
+                    target: Some(role.clone()),
+                    details: serde_json::json!({ "error": format!("{e:#}") }),
+                    result: AuditResult::Denied,
+                });
+                return Err(err(
+                    StatusCode::BAD_GATEWAY,
+                    "can_command_failed",
+                    Some(format!("auto-stop before rename failed for {role}: {e:#}")),
+                ));
+            }
+        }
+        // Clear the gate immediately so the migration below sees a clean
+        // (no enabled bit on either old or new role) state. We re-set it
+        // after the rename + successful re-enable.
+        state.mark_stopped(&role);
+        state.audit.write(AuditEntry {
+            timestamp: Utc::now(),
+            session_id: session.clone(),
+            remote: None,
+            action: "rename_auto_stop".into(),
+            target: Some(role.clone()),
+            details: serde_json::Value::Null,
+            result: AuditResult::Ok,
+        });
     }
 
     let inv_path = state.cfg.paths.inventory.clone();
@@ -221,7 +285,7 @@ async fn do_rename(
 
     state.audit.write(AuditEntry {
         timestamp: Utc::now(),
-        session_id: session,
+        session_id: session.clone(),
         remote: None,
         action: "motor_renamed".into(),
         target: Some(role.clone()),
@@ -233,5 +297,81 @@ async fn do_rename(
         result: AuditResult::Ok,
     });
 
-    Ok(Json(RenameResp { ok: true, new_role }))
+    // Restore torque under the new role if we auto-stopped. We deliberately
+    // call `core.enable()` directly rather than re-routing through the
+    // `enable` HTTP handler: the motor was already enabled an instant ago,
+    // so by definition it had already passed the band / boot-state /
+    // verified gates. Re-running them on a possibly-stale telemetry frame
+    // would risk a spurious denial. `cmd_enable` is idempotent on the
+    // firmware side, so the worst case is one redundant frame.
+    let mut auto_reenabled = false;
+    let mut auto_reenable_error: Option<String> = None;
+    if needs_auto_stop {
+        // Pull a fresh motor record under the new role: the rename rewrote
+        // inventory and we want the post-rename copy in case anything else
+        // races to mutate it later.
+        let motor_for_enable = state
+            .inventory
+            .read()
+            .expect("inventory poisoned")
+            .by_role(&new_role)
+            .cloned();
+        match motor_for_enable {
+            Some(motor) => {
+                if let Some(core) = state.real_can.clone() {
+                    let motor_for_blocking = motor.clone();
+                    match tokio::task::spawn_blocking(move || core.enable(&motor_for_blocking))
+                        .await
+                        .expect("rename auto-reenable task panicked")
+                    {
+                        Ok(()) => {
+                            state.mark_enabled(&new_role);
+                            auto_reenabled = true;
+                            state.audit.write(AuditEntry {
+                                timestamp: Utc::now(),
+                                session_id: session.clone(),
+                                remote: None,
+                                action: "rename_auto_reenable".into(),
+                                target: Some(new_role.clone()),
+                                details: serde_json::Value::Null,
+                                result: AuditResult::Ok,
+                            });
+                        }
+                        Err(e) => {
+                            auto_reenable_error = Some(format!("{e:#}"));
+                            state.audit.write(AuditEntry {
+                                timestamp: Utc::now(),
+                                session_id: session.clone(),
+                                remote: None,
+                                action: "rename_auto_reenable".into(),
+                                target: Some(new_role.clone()),
+                                details: serde_json::json!({
+                                    "error": auto_reenable_error.clone(),
+                                }),
+                                result: AuditResult::Denied,
+                            });
+                        }
+                    }
+                } else {
+                    // Mock mode: there's no bus to talk to, but the
+                    // bookkeeping still needs to follow the role so that
+                    // subsequent gates see a consistent state.
+                    state.mark_enabled(&new_role);
+                    auto_reenabled = true;
+                }
+            }
+            None => {
+                auto_reenable_error =
+                    Some(format!("motor {new_role} disappeared after rename"));
+            }
+        }
+    }
+
+    Ok(Json(RenameResp {
+        ok: true,
+        new_role,
+        auto_stopped: needs_auto_stop,
+        auto_reenabled,
+        auto_reenable_error,
+    }))
 }

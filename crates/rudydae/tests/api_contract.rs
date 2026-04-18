@@ -1181,52 +1181,19 @@ async fn set_zero_resets_boot_state_to_unknown() {
     assert!(matches!(bs, BootState::Unknown));
 }
 
-/// Rename refuses while the motor is currently enabled (driving) on the
-/// bus. The gate is `state.enabled`, which `enable` sets and `stop` clears
-/// — NOT `BootState::Homed`, which is a sticky per-power-cycle attestation
-/// that previously caused operators to get stuck after a single home.
+/// Rename of an enabled motor used to refuse with 409 `motor_active` and
+/// force the operator to context-switch to the Controls tab to click Stop.
+/// The daemon now does that round-trip itself: stop on the bus, perform
+/// the rename, re-enable on the new role. The response surfaces the
+/// transition via `auto_stopped` / `auto_reenabled` so the SPA can show
+/// "torque was briefly dropped" instead of pretending nothing happened.
 #[tokio::test]
-async fn rename_active_motor_is_forbidden() {
+async fn rename_active_motor_auto_stops_and_reenables() {
     let (state, _dir) = common::make_state();
-    state.mark_enabled("shoulder_actuator_a");
-    let app = rudydae::build_app(state);
-
-    let body = serde_json::to_vec(&json!({"new_role": "left_arm.shoulder_pitch"})).unwrap();
-    let resp = app
-        .oneshot(
-            Request::builder()
-                .method(Method::POST)
-                .uri("/api/motors/shoulder_actuator_a/rename")
-                .header("content-type", "application/json")
-                .body(Body::from(body))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::CONFLICT);
-    let err: ApiError = body_json(resp).await;
-    assert_eq!(err.error, "motor_active");
-}
-
-/// Once the operator clicks Stop the rename gate must clear immediately.
-/// Regression test for the bug where the gate keyed off `BootState::Homed`,
-/// which Stop does not clear, so operators got `motor_active` forever.
-#[tokio::test]
-async fn rename_allowed_after_stop_even_if_previously_homed() {
-    let (state, _dir) = common::make_state();
-    // Simulate the operator's full session: home -> enable -> stop. After
-    // stop the rename gate must release even though boot_state is still
-    // `Homed` (which is a per-power-cycle attestation, not an enable bit).
     common::set_boot_state(&state, "shoulder_actuator_a", BootState::Homed);
     state.mark_enabled("shoulder_actuator_a");
-    state.mark_stopped("shoulder_actuator_a");
-    assert!(matches!(
-        rudydae::boot_state::current(&state, "shoulder_actuator_a"),
-        BootState::Homed
-    ));
-    assert!(!state.is_enabled("shoulder_actuator_a"));
+    let app = rudydae::build_app(state.clone());
 
-    let app = rudydae::build_app(state);
     let body = serde_json::to_vec(&json!({"new_role": "left_arm.shoulder_pitch"})).unwrap();
     let resp = app
         .oneshot(
@@ -1240,6 +1207,57 @@ async fn rename_allowed_after_stop_even_if_previously_homed() {
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
+    let resp_json: serde_json::Value = body_json(resp).await;
+    assert_eq!(resp_json["ok"], json!(true));
+    assert_eq!(resp_json["new_role"], json!("left_arm.shoulder_pitch"));
+    assert_eq!(resp_json["auto_stopped"], json!(true));
+    assert_eq!(resp_json["auto_reenabled"], json!(true));
+    // The enabled bit followed the role across the rename: caller can
+    // immediately issue further mutating calls against the new role and
+    // see a consistent gate.
+    assert!(state.is_enabled("left_arm.shoulder_pitch"));
+    assert!(!state.is_enabled("shoulder_actuator_a"));
+}
+
+/// Renaming a stopped motor goes through the no-side-effect path: the
+/// daemon doesn't auto-stop (nothing to stop) and doesn't auto-reenable
+/// (nothing to restore). Both flags should be absent / false. Regression
+/// test for the bug where the gate keyed off `BootState::Homed`, which
+/// Stop does not clear, so operators got `motor_active` forever.
+#[tokio::test]
+async fn rename_stopped_motor_skips_auto_stop_cycle() {
+    let (state, _dir) = common::make_state();
+    common::set_boot_state(&state, "shoulder_actuator_a", BootState::Homed);
+    state.mark_enabled("shoulder_actuator_a");
+    state.mark_stopped("shoulder_actuator_a");
+    assert!(matches!(
+        rudydae::boot_state::current(&state, "shoulder_actuator_a"),
+        BootState::Homed
+    ));
+    assert!(!state.is_enabled("shoulder_actuator_a"));
+
+    let app = rudydae::build_app(state.clone());
+    let body = serde_json::to_vec(&json!({"new_role": "left_arm.shoulder_pitch"})).unwrap();
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/motors/shoulder_actuator_a/rename")
+                .header("content-type", "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let resp_json: serde_json::Value = body_json(resp).await;
+    // skip_serializing_if drops the false flags entirely; assert by
+    // checking the field is absent OR explicitly false.
+    let auto_stopped = resp_json.get("auto_stopped").and_then(|v| v.as_bool()).unwrap_or(false);
+    let auto_reenabled = resp_json.get("auto_reenabled").and_then(|v| v.as_bool()).unwrap_or(false);
+    assert!(!auto_stopped, "stopped motor should not trigger auto-stop");
+    assert!(!auto_reenabled, "stopped motor should not trigger auto-reenable");
+    assert!(!state.is_enabled("left_arm.shoulder_pitch"));
 }
 
 /// First-time `assign` (motor has no limb / joint_kind on file yet) is a
@@ -1276,14 +1294,14 @@ async fn assign_first_time_bypasses_motor_active_gate() {
     assert!(!state.is_enabled("shoulder_actuator_a"));
 }
 
-/// Re-assigning an already-assigned motor IS gated on enabled — that path
-/// is effectively a `rename` and downstream caches drop on MotorRenamed,
-/// which is mildly disruptive while motion is in flight.
+/// Re-assigning an already-assigned, currently-enabled motor goes through
+/// the same auto-stop / auto-reenable path that `rename` does. (First-time
+/// `assign` skips the cycle entirely — there's nothing to gate, see
+/// `assign_first_time_bypasses_motor_active_gate`.)
 #[tokio::test]
-async fn assign_already_assigned_motor_respects_motor_active_gate() {
+async fn assign_already_assigned_motor_auto_stops_and_reenables() {
     let (state, _dir) = common::make_state();
-    // Promote `shoulder_actuator_b` to a canonical role first so we can
-    // try to re-assign it.
+    common::set_boot_state(&state, "shoulder_actuator_b", BootState::Homed);
     let app = rudydae::build_app(state.clone());
     let body =
         serde_json::to_vec(&json!({"limb": "left_arm", "joint_kind": "shoulder_roll"})).unwrap();
@@ -1301,7 +1319,8 @@ async fn assign_already_assigned_motor_respects_motor_active_gate() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 
-    // Now mark it enabled and try to re-assign — must be refused.
+    // Now mark it enabled and re-assign. The daemon should auto-stop,
+    // perform the rename, and auto-reenable under the new role.
     state.mark_enabled("left_arm.shoulder_roll");
     let body =
         serde_json::to_vec(&json!({"limb": "left_arm", "joint_kind": "shoulder_pitch"})).unwrap();
@@ -1316,9 +1335,13 @@ async fn assign_already_assigned_motor_respects_motor_active_gate() {
         )
         .await
         .unwrap();
-    assert_eq!(resp.status(), StatusCode::CONFLICT);
-    let err: ApiError = body_json(resp).await;
-    assert_eq!(err.error, "motor_active");
+    assert_eq!(resp.status(), StatusCode::OK);
+    let resp_json: serde_json::Value = body_json(resp).await;
+    assert_eq!(resp_json["new_role"], json!("left_arm.shoulder_pitch"));
+    assert_eq!(resp_json["auto_stopped"], json!(true));
+    assert_eq!(resp_json["auto_reenabled"], json!(true));
+    assert!(state.is_enabled("left_arm.shoulder_pitch"));
+    assert!(!state.is_enabled("left_arm.shoulder_roll"));
 }
 
 /// `POST /stop` clears the in-memory enabled bit so the rename gate

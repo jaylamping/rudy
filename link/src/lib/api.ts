@@ -57,6 +57,17 @@ function safeJson(s: string): unknown {
   }
 }
 
+// Response shape for /api/motors/:role/rename and /api/motors/:role/assign.
+// `auto_stopped` and `auto_reenabled` are omitted by the daemon when false
+// (skip_serializing_if), so they're optional on the wire.
+export interface RenameResp {
+  ok: boolean;
+  new_role: string;
+  auto_stopped?: boolean;
+  auto_reenabled?: boolean;
+  auto_reenable_error?: string;
+}
+
 export const api = {
   config: () => apiFetch<import("@/lib/types/ServerConfig").ServerConfig>("/api/config"),
   system: () =>
@@ -134,19 +145,24 @@ export const api = {
       >;
     }>(`/api/home_all`, { method: "POST" }),
   // Atomic rename: changes the inventory primary key, migrates in-memory
-  // maps, audit-logs, broadcasts MotorRenamed safety event.
+  // maps, audit-logs, broadcasts MotorRenamed safety event. If the motor
+  // is currently enabled the daemon transparently stops it on the bus
+  // before the rename and re-enables it under the new role afterward —
+  // `auto_stopped` / `auto_reenabled` surface that round-trip so the SPA
+  // can show a small "torque was briefly dropped" notice.
   renameMotor: (role: string, new_role: string) =>
-    apiFetch<{ ok: boolean; new_role: string }>(
+    apiFetch<RenameResp>(
       `/api/motors/${encodeURIComponent(role)}/rename`,
       { method: "POST", body: JSON.stringify({ new_role }) },
     ),
   // Convenience: set limb + joint_kind on an unassigned motor and let
-  // the daemon derive the canonical role.
+  // the daemon derive the canonical role. Same auto-stop/auto-reenable
+  // behavior as `renameMotor` for already-assigned motors.
   assignMotor: (
     role: string,
     body: { limb: string; joint_kind: import("@/lib/types/JointKind").JointKind },
   ) =>
-    apiFetch<{ ok: boolean; new_role: string }>(
+    apiFetch<RenameResp>(
       `/api/motors/${encodeURIComponent(role)}/assign`,
       { method: "POST", body: JSON.stringify(body) },
     ),
