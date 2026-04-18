@@ -56,6 +56,25 @@ pub async fn put_param(
         )
     })?;
 
+    if !motor.present {
+        state.audit.write(AuditEntry {
+            timestamp: Utc::now(),
+            session_id: None,
+            remote: None,
+            action: "param_write".into(),
+            target: Some(format!("{role}.{name}")),
+            details: serde_json::json!({ "value": body.value, "reason": "motor_absent" }),
+            result: AuditResult::Denied,
+        });
+        return Err(err(
+            StatusCode::CONFLICT,
+            "motor_absent",
+            Some(format!(
+                "inventory entry for {role} has present=false; nothing to talk to on the bus"
+            )),
+        ));
+    }
+
     let desc = state
         .spec
         .firmware_limits

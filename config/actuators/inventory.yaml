@@ -282,6 +282,16 @@ motors:
   - role: shoulder_actuator_b
     can_bus: can0
     can_id: 0x09
+    # Not yet on the bus. With present:false rudydae:
+    #   - skips this motor in the real-CAN telemetry poll loop, so we don't
+    #     pile up unanswered request frames on can0 until the kernel txqueue
+    #     overflows (ENOBUFS / errno 105 on every send),
+    #   - rejects /api/motors/shoulder_actuator_b/{enable,stop,save,set_zero}
+    #     with 409 motor_absent before queueing CAN traffic,
+    #   - still surfaces the entry in /api/motors so the UI can show "absent".
+    # Flip to true (or delete the line) once the physical motor is wired,
+    # bench-jog tested, and ready to be polled.
+    present: false
     sourced_from: unknown
     verified: false
     firmware_version: unknown

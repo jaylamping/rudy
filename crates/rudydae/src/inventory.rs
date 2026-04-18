@@ -32,11 +32,31 @@ pub struct Motor {
     pub verified: bool,
     #[serde(default)]
     pub commissioned_at: Option<String>,
+    /// Whether the physical motor is wired into the bus right now.
+    ///
+    /// Defaults to `true` so existing inventory entries keep behaving as before.
+    /// Set to `false` for placeholder entries (motor planned but not yet on the
+    /// bus) or for temporarily-removed motors. Affects:
+    ///
+    ///   * Real-CAN telemetry: rudydae skips polling absent motors so an
+    ///     unanswered iface doesn't fill the SocketCAN txqueue and start
+    ///     returning ENOBUFS (errno 105) on every send.
+    ///   * Control plane: enable / stop / save / set_zero on an absent motor
+    ///     are rejected at the API layer with a clean `409 Conflict` rather
+    ///     than queuing CAN frames that will never get an ACK.
+    ///   * Mock CAN + the REST `/api/motors` listing still include absent
+    ///     motors so the UI can show them with an "absent" badge.
+    #[serde(default = "default_true")]
+    pub present: bool,
     /// Everything else in the YAML entry. Preserved for server-side logic
     /// but opaque to the UI (hence ts(skip)).
     #[serde(flatten)]
     #[ts(skip)]
     pub extra: BTreeMap<String, serde_yaml::Value>,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Inventory {

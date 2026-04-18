@@ -41,17 +41,43 @@ fn can_err(action: &str, role: &str, error: &anyhow::Error) -> (StatusCode, Json
     )
 }
 
-pub async fn enable(
-    State(state): State<SharedState>,
-    Path(role): Path<String>,
-) -> Result<Json<serde_json::Value>, (StatusCode, Json<ApiError>)> {
-    let motor = state.inventory.by_role(&role).cloned().ok_or_else(|| {
+/// Resolve `role` against the inventory and reject if the motor is marked
+/// `present: false`. Used to fail fast on commands aimed at placeholder /
+/// unplugged motors before they queue CAN frames that nothing will ACK
+/// (which on a peer-less bus saturates the SocketCAN txqueue and makes
+/// every subsequent send return ENOBUFS).
+fn require_present(
+    state: &SharedState,
+    action: &str,
+    role: &str,
+) -> Result<crate::inventory::Motor, (StatusCode, Json<ApiError>)> {
+    let motor = state.inventory.by_role(role).cloned().ok_or_else(|| {
         err(
             StatusCode::NOT_FOUND,
             "unknown_motor",
             Some(format!("no motor with role={role}")),
         )
     })?;
+
+    if !motor.present {
+        audit(state, action, role, AuditResult::Denied);
+        return Err(err(
+            StatusCode::CONFLICT,
+            "motor_absent",
+            Some(format!(
+                "inventory entry for {role} has present=false; nothing to talk to on the bus"
+            )),
+        ));
+    }
+
+    Ok(motor)
+}
+
+pub async fn enable(
+    State(state): State<SharedState>,
+    Path(role): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ApiError>)> {
+    let motor = require_present(&state, "enable", &role)?;
 
     if state.cfg.safety.require_verified && !motor.verified {
         audit(&state, "enable", &role, AuditResult::Denied);
@@ -85,13 +111,7 @@ pub async fn stop(
     State(state): State<SharedState>,
     Path(role): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ApiError>)> {
-    let motor = state.inventory.by_role(&role).cloned().ok_or_else(|| {
-        err(
-            StatusCode::NOT_FOUND,
-            "unknown_motor",
-            Some(format!("no motor with role={role}")),
-        )
-    })?;
+    let motor = require_present(&state, "stop", &role)?;
 
     if let Some(core) = state.real_can.clone() {
         tokio::task::spawn_blocking({
@@ -114,13 +134,7 @@ pub async fn save_to_flash(
     State(state): State<SharedState>,
     Path(role): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ApiError>)> {
-    let motor = state.inventory.by_role(&role).cloned().ok_or_else(|| {
-        err(
-            StatusCode::NOT_FOUND,
-            "unknown_motor",
-            Some(format!("no motor with role={role}")),
-        )
-    })?;
+    let motor = require_present(&state, "save_to_flash", &role)?;
 
     if let Some(core) = state.real_can.clone() {
         tokio::task::spawn_blocking({
@@ -145,13 +159,7 @@ pub async fn set_zero(
     State(state): State<SharedState>,
     Path(role): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ApiError>)> {
-    let motor = state.inventory.by_role(&role).cloned().ok_or_else(|| {
-        err(
-            StatusCode::NOT_FOUND,
-            "unknown_motor",
-            Some(format!("no motor with role={role}")),
-        )
-    })?;
+    let motor = require_present(&state, "set_zero", &role)?;
 
     if let Some(core) = state.real_can.clone() {
         tokio::task::spawn_blocking({

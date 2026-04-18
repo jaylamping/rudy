@@ -150,7 +150,7 @@ impl LinuxCanCore {
     }
 
     pub fn refresh_all_params(&self, state: &SharedState) -> Result<()> {
-        for motor in &state.inventory.motors {
+        for motor in state.inventory.motors.iter().filter(|m| m.present) {
             let snapshot = self.read_full_snapshot(state, motor)?;
             state
                 .params
@@ -162,7 +162,7 @@ impl LinuxCanCore {
     }
 
     pub fn poll_once(&self, state: &SharedState) -> Result<()> {
-        for motor in &state.inventory.motors {
+        for motor in state.inventory.motors.iter().filter(|m| m.present) {
             let latest = self.read_live_feedback(state, motor)?;
             state
                 .latest
