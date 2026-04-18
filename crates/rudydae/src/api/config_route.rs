@@ -1,15 +1,33 @@
 //! GET /api/config.
 
-use axum::{extract::State, Json};
+use axum::{
+    extract::State,
+    http::{header, HeaderMap},
+    Json,
+};
 
 use crate::state::SharedState;
 use crate::types::{ServerConfig, ServerFeatures, WebTransportAdvert};
 
-pub async fn get_config(State(state): State<SharedState>) -> Json<ServerConfig> {
+pub async fn get_config(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+) -> Json<ServerConfig> {
     let wt_url = if state.cfg.webtransport.enabled {
-        // Best-effort: assume https://<host>:<port>/wt. The operator's
-        // browser resolves the host via the same hostname they typed for the
-        // SPA; the port comes from config.
+        // The browser already resolved this exact `Host` to reach the SPA, so
+        // reusing its hostname (stripping any `:port` suffix) is the most
+        // reliable way to hand it back a URL it can also resolve. On the Pi
+        // `tailscale serve` forwards the original `Host` header (e.g.
+        // `rudy-pi.tail0b414.ts.net`) into rudydae, so we get the tailnet
+        // name for free; in `npm run dev` we get `localhost:5173`, etc.
+        //
+        // The WT port comes from config because `tailscale serve` cannot
+        // proxy HTTP/3 — WebTransport binds the tailnet IP directly on
+        // `:4433`, separate from the `:443` SPA listener.
+        let host = headers
+            .get(header::HOST)
+            .and_then(|v| v.to_str().ok())
+            .map(|h| h.split(':').next().unwrap_or(h).to_string());
         let port = state
             .cfg
             .webtransport
@@ -17,7 +35,7 @@ pub async fn get_config(State(state): State<SharedState>) -> Json<ServerConfig> 
             .rsplit_once(':')
             .map(|(_, p)| p.to_string())
             .unwrap_or_else(|| "4433".to_string());
-        Some(format!("https://HOSTPLACEHOLDER:{port}/wt"))
+        host.map(|h| format!("https://{h}:{port}/wt"))
     } else {
         None
     };

@@ -70,12 +70,11 @@ async fn get_config_returns_server_config_shape() {
 }
 
 /// When WT is enabled, `/api/config` advertises a URL the browser opens
-/// directly. This test pins the current behaviour AND surfaces the
-/// `HOSTPLACEHOLDER` bug in `config_route.rs`: the literal string never gets
-/// substituted with a real host. Marked `#[ignore]` so it serves as a known
-/// failure ticket — flip to a hard assertion once the placeholder is fixed.
+/// directly. The host is taken from the inbound `Host` header (which is what
+/// the browser already resolved to reach the SPA — on the Pi this is the
+/// tailnet hostname forwarded through `tailscale serve`); the port comes
+/// from `[webtransport].bind`.
 #[tokio::test]
-#[ignore = "documents a known gap: config_route::get_config never substitutes HOSTPLACEHOLDER"]
 async fn get_config_advertises_resolvable_wt_url_when_enabled() {
     let (state, _dir) = common::make_state_with_wt_advert();
     let app = rudydae::build_app(state);
@@ -84,6 +83,7 @@ async fn get_config_advertises_resolvable_wt_url_when_enabled() {
         .oneshot(
             Request::builder()
                 .uri("/api/config")
+                .header("host", "rudy-pi.tail0b414.ts.net")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -101,6 +101,56 @@ async fn get_config_advertises_resolvable_wt_url_when_enabled() {
         url.starts_with("https://"),
         "WT URL must be https for the browser to accept it; got {url}"
     );
+    assert_eq!(
+        url, "https://rudy-pi.tail0b414.ts.net:4433/wt",
+        "WT URL should reuse the inbound Host hostname (sans :port) and the WT bind port",
+    );
+}
+
+/// `Host` headers from the browser often include a `:port` (e.g. dev servers
+/// bound to `:5173`). We must strip it before reattaching the WT port,
+/// otherwise we'd advertise `https://localhost:5173:4433/wt` which the
+/// browser refuses to parse.
+#[tokio::test]
+async fn get_config_strips_port_from_host_header() {
+    let (state, _dir) = common::make_state_with_wt_advert();
+    let app = rudydae::build_app(state);
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/config")
+                .header("host", "localhost:5173")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let cfg: ServerConfig = body_json(resp).await;
+    let url = cfg.webtransport.url.expect("WT URL when enabled");
+    assert_eq!(url, "https://localhost:4433/wt");
+}
+
+/// If no `Host` header is present we cannot synthesise a URL the browser can
+/// resolve, so we omit it. The frontend treats `enabled=true, url=None` the
+/// same as disabled (no WT session opens) rather than crashing on a bad URL.
+#[tokio::test]
+async fn get_config_omits_wt_url_when_host_header_missing() {
+    let (state, _dir) = common::make_state_with_wt_advert();
+    let app = rudydae::build_app(state);
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/config")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let cfg: ServerConfig = body_json(resp).await;
+    assert!(cfg.webtransport.enabled);
+    assert!(cfg.webtransport.url.is_none());
 }
 
 #[tokio::test]

@@ -131,11 +131,13 @@ async function main() {
             throw new Error("webtransport.enabled=true but url is not a string");
           }
           if (r.body.webtransport.url.includes("HOSTPLACEHOLDER")) {
-            // This is the known bug surfaced by `tests/api_contract.rs`'s
-            // ignored test. Soft-warn here so we don't block CI on it, but
-            // make it visible in smoke runs.
-            process.stdout.write(
-              `WARN  /api/config webtransport.url contains HOSTPLACEHOLDER (server-side TODO)\n`,
+            throw new Error(
+              "webtransport.url still contains HOSTPLACEHOLDER — config_route::get_config regressed",
+            );
+          }
+          if (!r.body.webtransport.url.startsWith("https://")) {
+            throw new Error(
+              `webtransport.url must be https://; got ${r.body.webtransport.url}`,
             );
           }
         }

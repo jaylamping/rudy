@@ -237,12 +237,6 @@ The WT cert is still the same `tailscale cert`-issued pair.
 
 ### Known limitations / follow-ups
 
-- `GET /api/config` still returns a `webtransport.url` template containing
-  literal `HOSTPLACEHOLDER:<port>/wt`. Not introduced by this addendum;
-  pre-existing gap. Frontend currently substitutes nothing; until that's
-  fixed, the link telemetry firehose connection will fail. File a separate
-  fix to either substitute `Host:` server-side or have the SPA construct
-  the URL from `window.location.hostname`.
 - No HSTS / HPKP / cert pinning at the SPA layer. We rely on Tailscale
   trust + browser-native LE chain validation, same as before.
 - If `tailscale serve` configuration drifts (e.g. a tailnet rejoin), the
