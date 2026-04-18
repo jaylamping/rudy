@@ -37,10 +37,21 @@ export function ActuatorTravelTab({ motor }: { motor: MotorSummary }) {
     queryFn: () => api.getTravelLimits(motor.role),
     retry: false,
   });
-  const supported = !(
-    limitsQ.isError &&
-    (limitsQ.error as ApiError | undefined)?.status === 404
-  );
+
+  // The daemon returns 404 in two distinct cases, distinguished by the
+  // `error` discriminator in the JSON body:
+  //   - "no_travel_limits": route is live, the motor just has no band on
+  //     disk yet. This is the common case for a freshly-onboarded actuator
+  //     and we want the user to set values right here.
+  //   - anything else (or no body): the route itself is missing, i.e. the
+  //     daemon predates this feature.
+  const apiErr = limitsQ.error as ApiError | undefined;
+  const errCode = errorCode(apiErr);
+  const is404 = apiErr?.status === 404;
+  const needsConfig =
+    (is404 && errCode === "no_travel_limits") ||
+    (!limitsQ.isError && !limitsQ.data && !motor.travel_limits);
+  const endpointMissing = is404 && errCode !== "no_travel_limits" && errCode !== "unknown_motor";
 
   const baseline: TravelLimits | null = limitsQ.data ?? motor.travel_limits ?? null;
   const [minDeg, setMinDeg] = useState<number>(toDeg(baseline?.min_rad ?? -Math.PI / 3));
@@ -76,8 +87,9 @@ export function ActuatorTravelTab({ motor }: { motor: MotorSummary }) {
   // Live position read for the current-position marker on the band display.
   const liveDeg = motor.latest ? motor.latest.mech_pos_rad * RAD_TO_DEG : null;
   const dirty =
-    Math.abs(minDeg - toDeg(baseline?.min_rad ?? 0)) > 1e-6 ||
-    Math.abs(maxDeg - toDeg(baseline?.max_rad ?? 0)) > 1e-6;
+    baseline == null ||
+    Math.abs(minDeg - toDeg(baseline.min_rad)) > 1e-6 ||
+    Math.abs(maxDeg - toDeg(baseline.max_rad)) > 1e-6;
 
   return (
     <div className="space-y-4">
@@ -92,7 +104,16 @@ export function ActuatorTravelTab({ motor }: { motor: MotorSummary }) {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          {!supported && (
+          {needsConfig && (
+            <p className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-400">
+              No travel limits are configured for{" "}
+              <code className="font-mono">{motor.role}</code> yet. Pick a
+              minimum and maximum below and Save to write them to
+              inventory.yaml. Until then the daemon will fall back to the
+              motor's firmware-level envelope.
+            </p>
+          )}
+          {endpointMissing && (
             <p className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-400">
               Travel-limits endpoint is not yet deployed on this rudydae
               build. Deploy a newer daemon to enable saving.
@@ -104,7 +125,7 @@ export function ActuatorTravelTab({ motor }: { motor: MotorSummary }) {
             min={-RAIL_DEG}
             max={RAIL_DEG}
             onChange={setMinDeg}
-            disabled={!supported || save.isPending}
+            disabled={endpointMissing || save.isPending}
           />
           <LimitRow
             label="Maximum"
@@ -112,7 +133,7 @@ export function ActuatorTravelTab({ motor }: { motor: MotorSummary }) {
             min={-RAIL_DEG}
             max={RAIL_DEG}
             onChange={setMaxDeg}
-            disabled={!supported || save.isPending}
+            disabled={endpointMissing || save.isPending}
           />
 
           <div className="rounded-md border border-border bg-background p-3 text-xs">
@@ -150,7 +171,7 @@ export function ActuatorTravelTab({ motor }: { motor: MotorSummary }) {
             </Button>
             <Button
               variant="default"
-              disabled={!supported || !dirty || maxDeg <= minDeg || save.isPending}
+              disabled={endpointMissing || !dirty || maxDeg <= minDeg || save.isPending}
               onClick={() => setConfirm(true)}
             >
               {save.isPending ? "Saving..." : "Save travel limits"}
@@ -289,4 +310,15 @@ function clamp(n: number, lo: number, hi: number) {
   if (n < lo) return lo;
   if (n > hi) return hi;
   return n;
+}
+
+// rudydae's error envelope is `{ error: string, detail?: string }`. Pull the
+// discriminator out so callers can branch on it without re-typing the cast.
+function errorCode(e: ApiError | undefined): string | undefined {
+  const body = e?.body;
+  if (body && typeof body === "object" && "error" in body) {
+    const v = (body as { error?: unknown }).error;
+    if (typeof v === "string") return v;
+  }
+  return undefined;
 }

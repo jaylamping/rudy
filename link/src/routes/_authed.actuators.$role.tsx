@@ -174,6 +174,16 @@ function ActuatorHeader({ motor }: { motor: MotorSummary }) {
           <Badge variant={fb ? (stale ? "warning" : "success") : "outline"}>
             {fb ? (stale ? `stale ${ageS?.toFixed(1)}s` : "live") : "no data"}
           </Badge>
+          {!motor.travel_limits && (
+            <Link
+              to="/actuators/$role"
+              params={{ role: motor.role }}
+              search={{ tab: "travel" }}
+              title="No software travel band has been configured for this actuator."
+            >
+              <Badge variant="warning">needs travel limits</Badge>
+            </Link>
+          )}
         </div>
       </div>
 
