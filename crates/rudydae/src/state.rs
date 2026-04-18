@@ -17,7 +17,6 @@ pub struct AppState {
     pub spec: ActuatorSpec,
     pub inventory: Inventory,
     pub audit: AuditLog,
-    pub auth_token: Option<String>,
     pub real_can: Option<Arc<RealCanHandle>>,
 
     /// In-memory per-motor latest feedback (role -> feedback).
@@ -42,7 +41,6 @@ impl AppState {
         spec: ActuatorSpec,
         inventory: Inventory,
         audit: AuditLog,
-        auth_token: Option<String>,
         real_can: Option<Arc<RealCanHandle>>,
     ) -> Self {
         let (feedback_tx, _) = broadcast::channel::<MotorFeedback>(512);
@@ -51,7 +49,6 @@ impl AppState {
             spec,
             inventory,
             audit,
-            auth_token,
             real_can,
             latest: RwLock::new(BTreeMap::new()),
             params: RwLock::new(BTreeMap::new()),

@@ -2,15 +2,13 @@
 //
 // Opens a WebTransport session to the URL advertised by `GET /api/config`
 // (falls back to disabled + returns an empty stream when the server reports
-// `webtransport.enabled = false`). Bearer token is passed as a `?token=`
-// query param because the browser API does not expose a request-header hook.
+// `webtransport.enabled = false`).
 //
 // Messages arrive as CBOR datagrams; we ship a minimal decoder rather than
 // pulling in a full CBOR library for the first pass. This handles only the
 // shapes rudydae emits from `types::MotorFeedback`.
 
 import { useEffect, useRef, useState } from "react";
-import { getToken } from "./useAuth";
 import type { MotorFeedback } from "@/lib/types/MotorFeedback";
 
 export interface WtStatus {
@@ -55,12 +53,7 @@ export function useWebTransport(url: string | null | undefined): {
           return;
         }
 
-        const token = getToken() ?? "";
-        const full = url.includes("?")
-          ? `${url}&token=${encodeURIComponent(token)}`
-          : `${url}?token=${encodeURIComponent(token)}`;
-
-        transport = new WebTransport(full);
+        transport = new WebTransport(url);
         await transport.ready;
         if (cancelled) {
           transport.close();

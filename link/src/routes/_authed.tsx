@@ -1,14 +1,9 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { AppShell } from "@/components/app-shell";
-import { isAuthed } from "@/lib/hooks/useAuth";
 
-// Layout route that guards the app shell. Any child route (telemetry, params,
-// jog, viz, logs) renders inside `<AppShell />`.
+// Layout route for the app shell. Any child route (telemetry, params, jog,
+// viz, logs) renders inside `<AppShell />`. No auth guard: the console is
+// only reachable over tailnet / localhost, so we trust the network.
 export const Route = createFileRoute("/_authed")({
-  beforeLoad: () => {
-    if (!isAuthed()) {
-      throw redirect({ to: "/login" });
-    }
-  },
   component: AppShell,
 });

@@ -63,10 +63,6 @@ fi
   echo "bind = \"${WT_BIND}\""
   echo "enabled = ${WT_ENABLED}"
   echo
-  echo "[auth]"
-  echo "token_file = \"/etc/rudy/rudyd.token\""
-  echo "dev_allow_no_token = false"
-  echo
   echo "[paths]"
   echo "actuator_spec = \"/opt/rudy/config/actuators/robstride_rs03.yaml\""
   echo "inventory = \"/opt/rudy/config/actuators/inventory.yaml\""

@@ -9,7 +9,6 @@ use serde::{Deserialize, Serialize};
 pub struct Config {
     pub http: HttpConfig,
     pub webtransport: WebTransportConfig,
-    pub auth: AuthConfig,
     pub paths: PathsConfig,
     pub can: CanConfig,
     pub telemetry: TelemetryConfig,
@@ -35,13 +34,6 @@ pub struct TlsConfig {
 pub struct WebTransportConfig {
     pub bind: String,
     pub enabled: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AuthConfig {
-    pub token_file: PathBuf,
-    #[serde(default)]
-    pub dev_allow_no_token: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

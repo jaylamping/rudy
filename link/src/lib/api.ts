@@ -1,8 +1,6 @@
-// Thin fetch wrapper that injects the bearer token on every request. The
-// actual server-state caching lives in TanStack Query (see `./query.ts`).
-// Requests are same-origin (Vite dev proxy or rudydae serving the built SPA).
-
-import { clearToken, getToken } from "./hooks/useAuth";
+// Thin fetch wrapper. Server-state caching lives in TanStack Query (see
+// `./query.ts`). Requests are same-origin (Vite dev proxy or rudydae serving
+// the built SPA). No auth: the console is tailnet/localhost-only.
 
 export class ApiError extends Error {
   status: number;
@@ -18,23 +16,12 @@ export async function apiFetch<T>(
   path: string,
   init: RequestInit = {},
 ): Promise<T> {
-  const token = getToken();
   const headers = new Headers(init.headers);
   if (!headers.has("Content-Type") && init.body) {
     headers.set("Content-Type", "application/json");
   }
-  if (token) {
-    headers.set("Authorization", `Bearer ${token}`);
-  }
 
   const res = await fetch(path, { ...init, headers });
-
-  if (res.status === 401) {
-    // Token is stale or wrong - bounce to login.
-    clearToken();
-    window.location.assign("/login");
-    throw new ApiError("unauthorized", 401, null);
-  }
 
   const text = await res.text();
   const body: unknown = text ? safeJson(text) : null;

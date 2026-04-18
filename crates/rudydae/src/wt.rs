@@ -1,7 +1,7 @@
 //! WebTransport listener.
 //!
-//! Phase 1: accepts sessions, validates the `?token=` query param, and
-//! broadcasts per-motor feedback as CBOR datagrams. The client-side
+//! Phase 1: accepts sessions and broadcasts per-motor feedback as CBOR
+//! datagrams. No auth — rudydae is tailnet/localhost-only. The client-side
 //! subscription protocol (bidi stream, `WtSubscribe` messages) is specified
 //! in `types::WtSubscribe` and will be parsed here in Phase 2 to selectively
 //! enable faults + logs streams.
@@ -16,7 +16,6 @@ use anyhow::{Context, Result};
 use tokio::sync::broadcast::error::RecvError;
 use tracing::{debug, info, warn};
 
-use crate::auth;
 use crate::state::SharedState;
 use crate::types::MotorFeedback;
 
@@ -85,15 +84,6 @@ async fn handle_session(
         .await
         .context("awaiting WebTransport session request")?;
 
-    let path = session_req.path().to_string();
-    let token = extract_query_param(&path, "token");
-
-    if !auth::verify_wt_token(&state, token.as_deref()) {
-        warn!(path = %path, "wt: rejecting session (bad token)");
-        session_req.not_found().await;
-        return Ok(());
-    }
-
     let connection = session_req.accept().await.context("accepting WT session")?;
     info!(
         "wt: session accepted from {:?}",
@@ -124,18 +114,4 @@ async fn handle_session(
     let _: Option<MotorFeedback> = None;
 
     Ok(())
-}
-
-fn extract_query_param(path: &str, key: &str) -> Option<String> {
-    let (_, query) = path.split_once('?')?;
-    for kv in query.split('&') {
-        if let Some((k, v)) = kv.split_once('=') {
-            if k == key {
-                // Raw value - operators should pick token characters that
-                // don't need URL encoding.
-                return Some(v.to_owned());
-            }
-        }
-    }
-    None
 }

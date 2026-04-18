@@ -1,9 +1,10 @@
 //! Axum HTTPS listener: REST API router + embedded-SPA middleware layer.
 //!
-//! Everything under `/api/*` is gated by the shared-token auth middleware.
-//! Everything else falls through to a `rust-embed`-backed handler that
-//! serves `crates/rudydae/static/` (copied from `link/dist/` at build time)
-//! with SPA-style fallback to `index.html` for client-side routing.
+//! No auth: rudydae is only reachable via tailnet / localhost.
+//! Everything under `/api/*` is the JSON REST surface; everything else falls
+//! through to a `rust-embed`-backed handler that serves
+//! `crates/rudydae/static/` (copied from `link/dist/` at build time) with
+//! SPA-style fallback to `index.html` for client-side routing.
 
 use std::net::SocketAddr;
 
@@ -11,7 +12,6 @@ use anyhow::{Context, Result};
 use axum::{
     extract::State,
     http::{header, StatusCode, Uri},
-    middleware,
     response::{IntoResponse, Response},
     routing::get,
     Router,
@@ -21,7 +21,6 @@ use tower_http::trace::TraceLayer;
 use tracing::{info, warn};
 
 use crate::api;
-use crate::auth;
 use crate::state::SharedState;
 
 #[derive(RustEmbed)]
@@ -36,10 +35,7 @@ pub async fn run(state: SharedState) -> Result<()> {
         .parse()
         .with_context(|| format!("parsing http.bind {:?}", state.cfg.http.bind))?;
 
-    let api_routes = api::router(state.clone()).layer(middleware::from_fn_with_state(
-        state.clone(),
-        auth::middleware,
-    ));
+    let api_routes = api::router(state.clone());
 
     let app = Router::new()
         .nest("/api", api_routes)
@@ -83,10 +79,7 @@ pub async fn run(state: SharedState) -> Result<()> {
     Ok(())
 }
 
-async fn index_handler(State(state): State<SharedState>) -> Response {
-    // Auth middleware already ran on `/`; bypass it for the SPA shell so the
-    // token login screen can render.
-    let _ = state;
+async fn index_handler(State(_state): State<SharedState>) -> Response {
     serve_asset("index.html")
 }
 

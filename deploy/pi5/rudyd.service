@@ -23,8 +23,6 @@ Restart=on-failure
 RestartSec=3
 TimeoutStopSec=10
 
-# Reload auth token on SIGHUP (Phase 2 - until then SIGHUP triggers a
-# graceful restart so the token file is re-read).
 KillSignal=SIGTERM
 FinalKillSignal=SIGKILL
 

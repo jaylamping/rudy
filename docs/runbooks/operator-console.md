@@ -31,32 +31,10 @@ From any Tailscale-connected machine:
 https://rudy.your-tailnet.ts.net:8443/
 ```
 
-You will be prompted for the operator token.
-
-## Token rotation
-
-The shared operator token lives at the path referenced by
-`config/rudyd.toml:auth.token_file`. On the Pi this is typically
-`/etc/rudy/rudyd.token` (chmod `0600`, owned by `rudy:rudy`).
-
-```bash
-# 1. Generate a new token.
-sudo -u rudy openssl rand -hex 32 | sudo tee /etc/rudy/rudyd.token.new >/dev/null
-sudo chmod 0600 /etc/rudy/rudyd.token.new
-sudo chown rudy:rudy /etc/rudy/rudyd.token.new
-
-# 2. Atomically replace the old file.
-sudo mv /etc/rudy/rudyd.token.new /etc/rudy/rudyd.token
-
-# 3. Restart rudyd.service so it re-reads the file. (Phase 2: SIGHUP-triggered reload.)
-sudo systemctl restart rudyd.service
-
-# 4. Copy the new token to your password manager.
-sudo cat /etc/rudy/rudyd.token
-```
-
-Open sessions with the previous token will 401 on their next REST call and
-bounce to the login screen.
+No login screen — `rudydae` does not authenticate requests. Reachability is
+gated entirely by Tailscale ACLs / being on the local network. If we ever need
+real auth back, see the deleted `auth.rs` module in git history for the
+shared-bearer-token starting point.
 
 ## Audit log
 
@@ -135,7 +113,7 @@ WebTransport surfaces still work (handy for backend-only testing).
 - Confirm you are on the tailnet (`tailscale status` on your laptop).
 - Confirm the Pi listens only on the Tailscale-local address (`ss -tlnp` on
 the Pi).
-- Try `curl -k https://rudy.*.ts.net:8443/api/config -H "Authorization: Bearer $(sudo cat /etc/rudy/rudyd.token)"`.
+- Try `curl -k https://rudy.*.ts.net:8443/api/config`.
 
 ### WebTransport not connecting but HTTPS works
 

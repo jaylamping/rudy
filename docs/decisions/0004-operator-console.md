@@ -73,18 +73,17 @@ One `serde` struct per API concept, encoded two ways:
 TypeScript types are generated from the Rust structs via `ts-rs` into
 `link/src/lib/types/` when running `cargo test -p rudydae export_bindings` (see `crates/.cargo/config.toml` for `TS_RS_EXPORT_DIR`) followed by `python scripts/fix-ts-rs-imports.py` (or `npm run gen:types` in `link/`). No second source of truth.
 
-### D5. Auth: shared bearer token
+### D5. Auth: none (network-bounded)
 
-A single operator token, read from the file pointed to by
-`config/rudyd.toml:token_file`. An axum middleware validates it on every
-`/api/*` request. WebTransport session opens validate it via a `?token=`
-query parameter because the browser WebTransport API does not expose a
-request-header hook. Every mutating REST request and every WebTransport
-session open/close writes an entry to `~/.rudyd/audit.jsonl` (append-only).
+`rudydae` does not authenticate requests. Reachability is gated entirely by
+the network: Tailscale ACLs in production, localhost in dev. Every mutating
+REST request and every WebTransport session open/close still writes an entry
+to `~/.rudyd/audit.jsonl` (append-only) so we have a record of who did what.
 
-Rationale: single operator, Tailscale-bounded reachability — anything more
-(OIDC, mTLS, per-action signing) is ceremony without a threat model to match.
-Token rotation is documented in the runbook.
+Rationale: single operator, Tailscale-bounded reachability — even a shared
+bearer token was ceremony without a threat model to match. If a second
+operator or non-tailnet access ever lands, revisit (see deleted `auth.rs` in
+git history for the shared-token starting point).
 
 ### D6. Safety model: `rudydae` is strictly outside the firmware envelope
 
@@ -162,7 +161,7 @@ is the moment to revisit; the split becomes ADR-0005 then.
 
 - Two network listeners in one process — more surface area than a single
   WebSocket server. Mitigated by their sharing an in-process core and
-  identical auth.
+  identical (none) auth posture.
 - WebTransport debuggability is thinner than WebSocket (no `wscat`, DevTools
   support younger). Accepted; telemetry is secondary to the REST surface
   during bring-up.

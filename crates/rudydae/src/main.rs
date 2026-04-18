@@ -10,7 +10,6 @@ use tracing_subscriber::EnvFilter;
 
 mod api;
 mod audit;
-mod auth;
 mod can;
 mod config;
 mod inventory;
@@ -51,7 +50,6 @@ async fn main() -> Result<()> {
     let audit = audit::AuditLog::open(&cfg.paths.audit_log)
         .with_context(|| format!("opening audit log {:?}", cfg.paths.audit_log))?;
 
-    let token = auth::load_token(&cfg.auth).context("loading auth token")?;
     let real_can = can::build_handle(&cfg, &inv).context("opening CAN core")?;
 
     let app_state = Arc::new(state::AppState::new(
@@ -59,7 +57,6 @@ async fn main() -> Result<()> {
         spec,
         inv,
         audit,
-        token,
         real_can,
     ));
 

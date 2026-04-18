@@ -61,12 +61,6 @@ rsync -a --delete "${REPO_ROOT}/config/" /opt/rudy/config/
 sudo install -m 0644 "${REPO_ROOT}/docs/runbooks/operator-console.md" /etc/rudy/docs/runbooks/operator-console.md
 sudo install -m 0644 "${REPO_ROOT}/deploy/pi5/rudyd.service" /etc/systemd/system/rudyd.service
 
-if [[ ! -f /etc/rudy/rudyd.token ]]; then
-  sudo -u rudy openssl rand -hex 32 | sudo tee /etc/rudy/rudyd.token >/dev/null
-  sudo chmod 0600 /etc/rudy/rudyd.token
-  sudo chown rudy:rudy /etc/rudy/rudyd.token
-fi
-
 declare -a CAN_BUSES=()
 for iface in can0 can1; do
   if ip link show "${iface}" >/dev/null 2>&1; then
@@ -121,10 +115,6 @@ fi
   echo "[webtransport]"
   echo "bind = \"${WT_BIND}\""
   echo "enabled = ${WT_ENABLED}"
-  echo
-  echo "[auth]"
-  echo "token_file = \"/etc/rudy/rudyd.token\""
-  echo "dev_allow_no_token = false"
   echo
   echo "[paths]"
   echo "actuator_spec = \"/opt/rudy/config/actuators/robstride_rs03.yaml\""

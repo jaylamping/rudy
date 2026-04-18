@@ -57,9 +57,9 @@ src/
   index.css                tailwind v4 + shadcn CSS vars
   routes/                  file-based TanStack Router routes
     __root.tsx
-    index.tsx              /-> /telemetry (with auth gate)
-    login.tsx              /login
-    _authed.tsx            layout route: AppShell + auth guard
+    index.tsx              /-> /telemetry
+    _authed.tsx            layout route: AppShell (name kept for routing tree;
+                           no auth guard - tailnet/localhost only)
     _authed.telemetry.tsx  /telemetry
     _authed.params.tsx     /params
     _authed.jog.tsx        /jog    (Phase 2 stub)
@@ -71,10 +71,9 @@ src/
     coming-soon.tsx
     ui/                    shadcn components (installed on demand)
   lib/
-    api.ts                 bearer-token fetch wrapper
-    auth.ts                token store (localStorage)
+    api.ts                 fetch wrapper
     query.ts               TanStack QueryClient
     utils.ts               cn() helper (shadcn)
-    wt.ts                  WebTransport client hook
+    hooks/useWebTransport.ts  WebTransport client hook
   lib/types/               ts-rs-generated wire types (see above)
 ```

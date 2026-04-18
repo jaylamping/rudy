@@ -1,7 +1,7 @@
 # rudydae operator-console daemon configuration.
 #
 # See ADR-0004 (docs/decisions/0004-operator-console.md) for the architecture.
-# See docs/runbooks/operator-console.md for start/stop + token rotation.
+# See docs/runbooks/operator-console.md for start/stop.
 
 [http]
 # Address to bind the HTTPS + SPA listener.
@@ -29,16 +29,6 @@ enabled = false
 bind = "127.0.0.1:4433"
 # Disable entirely when running against Vite dev server, which has no HTTP/3.
 enabled = false
-
-[auth]
-# Absolute path to a file containing the shared bearer token (one line, no
-# trailing whitespace). Rotate by writing a new file and sending SIGHUP to rudydae.
-# On the Pi this should be chmod 600 and owned by the `rudy` user.
-#
-# For local development with no token, set `dev_allow_no_token = true` below.
-# DO NOT enable that on the Pi.
-token_file = "./config/rudyd.token"
-dev_allow_no_token = true
 
 [paths]
 # All relative paths are resolved against the working directory rudydae was

@@ -34,12 +34,6 @@ rsync -a --delete "${STAGE}/config/" /opt/rudy/config/
 install -m 0644 "${STAGE}/docs/runbooks/operator-console.md" /etc/rudy/docs/runbooks/operator-console.md
 install -m 0644 "${STAGE}/deploy/pi5/rudyd.service" /etc/systemd/system/rudyd.service
 
-if [[ ! -f /etc/rudy/rudyd.token ]]; then
-  sudo -u rudy openssl rand -hex 32 > /etc/rudy/rudyd.token
-  chmod 0600 /etc/rudy/rudyd.token
-  chown rudy:rudy /etc/rudy/rudyd.token
-fi
-
 if [[ ! -f /etc/rudy/rudyd.toml ]]; then
   bash "${STAGE}/deploy/pi5/render-rudyd-toml.sh" /etc/rudy/rudyd.toml
 fi
