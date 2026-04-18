@@ -1,0 +1,154 @@
+name: Release Pi artifact
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    name: Cross-build aarch64 + publish release
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute version
+        id: ver
+        run: |
+          SHORT_SHA="$(git rev-parse --short=12 HEAD)"
+          TAG="pi-${SHORT_SHA}"
+          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Install cross toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gcc-aarch64-linux-gnu \
+            g++-aarch64-linux-gnu \
+            libc6-dev-arm64-cross \
+            pkg-config
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: link/package-lock.json
+
+      - name: Build SPA
+        working-directory: link
+        run: |
+          npm ci
+          npm run build
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-gnu
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates -> target
+          key: aarch64-${{ steps.ver.outputs.short_sha }}
+
+      - name: Build rudydae for aarch64
+        working-directory: crates
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+          CC_aarch64_unknown_linux_gnu: aarch64-linux-gnu-gcc
+          CXX_aarch64_unknown_linux_gnu: aarch64-linux-gnu-g++
+        run: |
+          cargo build --release -p rudydae --target aarch64-unknown-linux-gnu
+
+      - name: Stage release tarball
+        id: stage
+        run: |
+          STAGE="$(mktemp -d)"
+          mkdir -p \
+            "${STAGE}/bin" \
+            "${STAGE}/config" \
+            "${STAGE}/deploy/pi5" \
+            "${STAGE}/docs/runbooks"
+
+          # SPA is embedded into the rudydae binary at build time via rust-embed
+          # (see crates/rudydae/build.rs); we do not ship link/dist/ separately.
+          cp crates/target/aarch64-unknown-linux-gnu/release/rudydae "${STAGE}/bin/rudydae"
+          chmod 0755 "${STAGE}/bin/rudydae"
+
+          cp -r config/. "${STAGE}/config/"
+          cp deploy/pi5/rudyd.service "${STAGE}/deploy/pi5/rudyd.service"
+          cp deploy/pi5/render-rudyd-toml.sh "${STAGE}/deploy/pi5/render-rudyd-toml.sh"
+          cp deploy/pi5/apply-release.sh "${STAGE}/deploy/pi5/apply-release.sh"
+          cp docs/runbooks/operator-console.md "${STAGE}/docs/runbooks/operator-console.md"
+
+          echo "${GITHUB_SHA}" > "${STAGE}/COMMIT_SHA"
+          date -u +%Y-%m-%dT%H:%M:%SZ > "${STAGE}/BUILT_AT"
+
+          TAR="${RUNNER_TEMP}/rudy-pi-${{ steps.ver.outputs.short_sha }}.tar.gz"
+          tar -C "${STAGE}" -czf "${TAR}" .
+          SHA256="$(sha256sum "${TAR}" | awk '{print $1}')"
+          BYTES="$(stat -c '%s' "${TAR}")"
+
+          echo "tar=${TAR}" >> "$GITHUB_OUTPUT"
+          echo "sha256=${SHA256}" >> "$GITHUB_OUTPUT"
+          echo "bytes=${BYTES}" >> "$GITHUB_OUTPUT"
+
+      - name: Build latest.json manifest
+        id: manifest
+        run: |
+          MANIFEST="${RUNNER_TEMP}/latest.json"
+          ASSET_NAME="rudy-pi-${{ steps.ver.outputs.short_sha }}.tar.gz"
+          REPO_URL="https://github.com/${GITHUB_REPOSITORY}"
+          DOWNLOAD_URL="${REPO_URL}/releases/download/${{ steps.ver.outputs.tag }}/${ASSET_NAME}"
+
+          jq -n \
+            --arg sha "${GITHUB_SHA}" \
+            --arg short "${{ steps.ver.outputs.short_sha }}" \
+            --arg tag "${{ steps.ver.outputs.tag }}" \
+            --arg asset "${ASSET_NAME}" \
+            --arg url "${DOWNLOAD_URL}" \
+            --arg sha256 "${{ steps.stage.outputs.sha256 }}" \
+            --argjson bytes "${{ steps.stage.outputs.bytes }}" \
+            --arg built_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '{
+              schema: 1,
+              commit_sha: $sha,
+              short_sha: $short,
+              tag: $tag,
+              asset: $asset,
+              url: $url,
+              sha256: $sha256,
+              bytes: $bytes,
+              built_at: $built_at
+            }' > "${MANIFEST}"
+
+          cat "${MANIFEST}"
+          echo "path=${MANIFEST}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: Pi build ${{ steps.ver.outputs.short_sha }}
+          body: |
+            Automatic Pi build for `${{ github.sha }}`.
+
+            - Asset: `rudy-pi-${{ steps.ver.outputs.short_sha }}.tar.gz`
+            - sha256: `${{ steps.stage.outputs.sha256 }}`
+            - bytes: `${{ steps.stage.outputs.bytes }}`
+
+            Pi installations polling `latest.json` will pick this up automatically.
+          make_latest: "true"
+          files: |
+            ${{ steps.stage.outputs.tar }}
+            ${{ steps.manifest.outputs.path }}

@@ -1,0 +1,18 @@
+[Unit]
+Description=Rudy Pi auto-updater (poll latest GitHub release)
+Documentation=file:///etc/rudy/docs/runbooks/operator-console.md
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/rudy-update.sh
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=300
+
+# The updater runs as root because it writes /opt/rudy and restarts a unit.
+# It downloads only signed-by-sha256 tarballs from a hard-coded GitHub repo.
+
+[Install]
+WantedBy=multi-user.target

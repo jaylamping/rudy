@@ -33,19 +33,41 @@ sudo ./deploy/pi5/can_setup.sh 1000000
 
 ## Install / deploy `rudydae`
 
+The Pi pulls prebuilt aarch64 releases from GitHub Actions on a 60-second
+timer. You do not build on the Pi any more.
+
+**One-time bootstrap on a fresh Pi (after Tailscale + cert):**
+
 ```bash
-sudo bash deploy/pi5/install.sh
+git clone https://github.com/jaylamping/rudy ~/rudy
+sudo bash ~/rudy/deploy/pi5/bootstrap.sh
 ```
 
-Or sync from your desktop and run the installer remotely:
+That installs `rudy-update.timer`, which polls the latest GitHub Release.
+On every push to `main`, [`.github/workflows/release.yaml`](../../.github/workflows/release.yaml)
+cross-builds `rudydae` for `aarch64-unknown-linux-gnu`, bundles the SPA,
+and publishes the tarball + `latest.json` manifest. Within ~60s of a green
+build, the Pi downloads it (sha256-verified) and restarts `rudyd`.
+
+**Day-to-day:**
 
 ```bash
-./deploy/pi5/deploy.sh jaylamping@rudy-pi.local
+# Force an immediate update check
+sudo systemctl start rudy-update
+
+# Watch deploys land
+journalctl -u rudy-update -f
+journalctl -u rudyd -f
+
+# What commit is running?
+cat /opt/rudy/current.sha
 ```
 
-This path builds the frontend and `rudydae` on the Pi, installs the binary to
-`/opt/rudy/bin/rudydae`, writes `/etc/rudy/rudyd.toml`, installs
-`rudyd.service`, and starts it.
+**Emergency build-on-Pi path (offline, no GHA):**
+
+```bash
+sudo bash deploy/pi5/install.sh   # legacy; compiles locally
+```
 
 ## CAN debugging checklist
 
