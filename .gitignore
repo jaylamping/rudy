@@ -36,3 +36,6 @@ link/*.tsbuildinfo
 
 # rudyd local state (paths + token file naming; binary is `rudydae`)
 **/.rudyd/
+
+# Local dev terminal captures (e.g. from `npm run smoke -- --spawn`)
+terminal-*.log
