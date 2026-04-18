@@ -77,8 +77,17 @@ fi
   fi
   echo
   echo "[paths]"
+  echo "# actuator_spec is read-only at runtime, so it stays in the release tree."
   echo "actuator_spec = \"/opt/rudy/config/actuators/robstride_rs03.yaml\""
-  echo "inventory = \"/opt/rudy/config/actuators/inventory.yaml\""
+  echo "# inventory is read AND written by rudydae (travel-limit / verified /"
+  echo "# rename PUTs), so it MUST live on a writable path. /opt/rudy is the"
+  echo "# read-only release tree and is also blocked by systemd's"
+  echo "# ProtectSystem=strict. /var/lib/rudy is in ReadWritePaths and is"
+  echo "# preserved across releases. inventory_seed below is the read-only"
+  echo "# baseline shipped with the release tarball; rudydae copies it over"
+  echo "# the first time it boots and never touches it again."
+  echo "inventory = \"/var/lib/rudy/inventory.yaml\""
+  echo "inventory_seed = \"/opt/rudy/config/actuators/inventory.yaml\""
   echo "audit_log = \"/var/lib/rudy/audit.jsonl\""
   echo
   echo "[can]"

@@ -43,6 +43,20 @@ async fn main() -> Result<()> {
 
     let spec = spec::ActuatorSpec::load(&cfg.paths.actuator_spec)
         .with_context(|| format!("loading actuator spec {:?}", cfg.paths.actuator_spec))?;
+
+    // First-boot bootstrap on the Pi: the release tarball ships a baseline
+    // inventory in the read-only `/opt/rudy/...` tree, while rudydae reads
+    // and writes from `/var/lib/rudy/inventory.yaml`. Copy the baseline over
+    // on the very first start; afterwards the live file is the source of
+    // truth and the seed is ignored.
+    inventory::ensure_seeded(&cfg.paths.inventory, cfg.paths.inventory_seed.as_deref())
+        .with_context(|| {
+            format!(
+                "seeding inventory at {:?} from {:?}",
+                cfg.paths.inventory, cfg.paths.inventory_seed
+            )
+        })?;
+
     let inv = inventory::Inventory::load(&cfg.paths.inventory)
         .with_context(|| format!("loading inventory {:?}", cfg.paths.inventory))?;
     info!(motors = inv.motors.len(), "loaded inventory");

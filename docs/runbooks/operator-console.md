@@ -104,6 +104,50 @@ sudo gzip /var/lib/rudy/audit-*.jsonl
 sudo systemctl start rudyd.service
 ```
 
+## Inventory file layout
+
+There are two `inventory.yaml` files on the Pi and they are different:
+
+| Path | Role | Writable by rudyd? | Survives release? |
+|---|---|---|---|
+| `/opt/rudy/config/actuators/inventory.yaml` | Read-only seed shipped by the release tarball. Pinned to the commit you deployed. | No (blocked by both `ProtectSystem=strict` and the rsync-based release flow that resets `/opt/rudy` on every update) | Replaced on every `apply-release.sh` |
+| `/var/lib/rudy/inventory.yaml` | Live, runtime-mutable copy. Every `PUT /api/motors/.../travel_limits`, `verified`, `rename` rewrites this file atomically. | **Yes** (`/var/lib/rudy` is in the systemd unit's `ReadWritePaths`). | Yes — `apply-release.sh` never touches `/var/lib/rudy` |
+
+On first boot after install, `rudydae` notices the live file is missing and
+copies the seed over (`inventory::ensure_seeded`). On every boot after
+that the live file wins; the seed is ignored.
+
+### How to apply an in-tree edit to the Pi
+
+If you've edited `config/actuators/inventory.yaml` in the repo and want
+the Pi to pick it up:
+
+```bash
+# Option A: after apply-release.sh has shipped the new seed, blow away the
+# live file so rudyd re-seeds on next start. WARNING: this discards every
+# operator edit (travel limits, verified flags, renames) made via the UI.
+sudo systemctl stop rudyd.service
+sudo rm /var/lib/rudy/inventory.yaml
+sudo systemctl start rudyd.service
+
+# Option B: hand-merge. Stop the daemon, edit the live file, start it again.
+sudo systemctl stop rudyd.service
+sudoedit /var/lib/rudy/inventory.yaml
+sudo systemctl start rudyd.service
+```
+
+Never edit `/var/lib/rudy/inventory.yaml` while `rudyd` is running — the
+daemon caches the parsed inventory in memory and a concurrent UI write
+will overwrite your edit. Ditto in the other direction: hand edits made
+while the daemon is up will be silently clobbered the next time the UI
+PUTs.
+
+### Backup
+
+Both files are tiny YAML; back them up the same way you back up
+`/var/lib/rudy/audit.jsonl`. A nightly `rsync /var/lib/rudy/ <somewhere>/`
+is sufficient.
+
 ## Common operations
 
 ### Commissioning an RS03 (Phase 1 target workflow)
@@ -119,7 +163,7 @@ The UI replaces Motor Studio for steps 4-7.
 4. Go to **Params**, select the motor. In **Firmware limits (writable)**:
   - Set `limit_torque`, `limit_spd`, `limit_cur`, `canTimeout` to the
    values documented in `config/actuators/robstride_rs03.yaml:commissioning_defaults`.
-  - Click **Write RAM**, type the confirm phrase, submit.
+  - Click **Write RAM** and Confirm.
 5. Repeat for every limit parameter. The UI range-checks every write against
   `hardware_range`.
 6. Click **Save to flash** on any one limit (rudydae issues a single type-22
@@ -128,8 +172,10 @@ The UI replaces Motor Studio for steps 4-7.
 8. Back in **Params**, confirm the saved values persisted (Phase 1 UX
   shortcut: the UI's snapshot reloads on refresh; Phase 2 adds a "Read
    from motor" button).
-9. Flip `inventory.yaml:verified: true` and commit. `rudydae` will now permit
-  enable requests on this motor.
+9. Toggle **verified** on the Inventory tab. This rewrites the live
+  inventory at `/var/lib/rudy/inventory.yaml` (NOT the in-tree
+  `config/actuators/inventory.yaml` — see "Inventory file layout" below).
+  `rudydae` will now permit enable requests on this motor.
 
 ### Control lock
 

@@ -118,7 +118,11 @@ fi
   echo
   echo "[paths]"
   echo "actuator_spec = \"/opt/rudy/config/actuators/robstride_rs03.yaml\""
-  echo "inventory = \"/opt/rudy/config/actuators/inventory.yaml\""
+  echo "# inventory is the operator-mutable, runtime-writable copy."
+  echo "# inventory_seed is the read-only baseline shipped with the release;"
+  echo "# rudydae copies it to inventory the first time it boots."
+  echo "inventory = \"/var/lib/rudy/inventory.yaml\""
+  echo "inventory_seed = \"/opt/rudy/config/actuators/inventory.yaml\""
   echo "audit_log = \"/var/lib/rudy/audit.jsonl\""
   echo
   echo "[can]"

@@ -91,6 +91,7 @@ pub fn make_state() -> (SharedState, tempfile::TempDir) {
         paths: PathsConfig {
             actuator_spec: spec_path.clone(),
             inventory: inv_path.clone(),
+            inventory_seed: None,
             audit_log: audit_path.clone(),
         },
         can: CanConfig {

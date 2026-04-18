@@ -270,6 +270,7 @@ mod path_check_tests {
             paths: PathsConfig {
                 actuator_spec: spec_path.clone(),
                 inventory: inv_path.clone(),
+                inventory_seed: None,
                 audit_log: dir.path().join("audit.jsonl"),
             },
             can: CanConfig {
@@ -357,6 +358,7 @@ mod path_check_tests {
             paths: PathsConfig {
                 actuator_spec: spec_path.clone(),
                 inventory: inv_path.clone(),
+                inventory_seed: None,
                 audit_log: dir.path().join("audit.jsonl"),
             },
             can: CanConfig {

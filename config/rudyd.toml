@@ -30,6 +30,14 @@ enabled = false
 [paths]
 # All relative paths are resolved against the working directory rudydae was
 # launched from.
+#
+# `inventory` is read AND written by rudydae (travel_limits / verified /
+# rename PUTs all rewrite it atomically). For dev work the in-tree copy is
+# fine because the editor and the daemon both have write access. On the
+# Pi, `deploy/pi5/render-rudyd-toml.sh` rewrites this to
+# `/var/lib/rudy/inventory.yaml` (writable, preserved across releases) and
+# adds an `inventory_seed = "/opt/rudy/config/actuators/inventory.yaml"`
+# line so the first boot bootstraps from the release-tarball baseline.
 actuator_spec = "./config/actuators/robstride_rs03.yaml"
 inventory = "./config/actuators/inventory.yaml"
 audit_log = "./.rudyd/audit.jsonl"

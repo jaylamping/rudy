@@ -279,6 +279,41 @@ pub fn write_atomic(
     Ok(inv)
 }
 
+/// One-shot bootstrap: if `inventory` does not exist on disk and `seed`
+/// does, copy seed → inventory. Run once at startup before the typed
+/// loader. Lets the Pi ship a baseline inventory in the read-only release
+/// tree (`/opt/rudy/config/actuators/inventory.yaml`) while `rudydae` reads
+/// and writes the live, operator-mutable copy from `/var/lib/rudy/`.
+///
+/// Idempotent. Once `inventory` exists, this never overwrites it — even if
+/// the seed has been updated by a release. Operator edits win, by design.
+/// To pick up a refreshed seed, the operator must `rm` the live file first.
+pub fn ensure_seeded(inventory: &Path, seed: Option<&Path>) -> Result<()> {
+    if inventory.exists() {
+        return Ok(());
+    }
+    let Some(seed) = seed else {
+        return Ok(());
+    };
+    if !seed.exists() {
+        return Ok(());
+    }
+    if let Some(parent) = inventory.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("creating parent dir {}", parent.display()))?;
+        }
+    }
+    std::fs::copy(seed, inventory).with_context(|| {
+        format!(
+            "seeding inventory: copy {} -> {}",
+            seed.display(),
+            inventory.display()
+        )
+    })?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
