@@ -18,6 +18,7 @@ use http_body_util::BodyExt;
 use serde_json::json;
 use tower::ServiceExt;
 
+use rudydae::inventory::TravelLimits;
 use rudydae::types::{
     ApiError, MotorFeedback, MotorSummary, ParamSnapshot, Reminder, ServerConfig, ServerFeatures,
     SystemSnapshot, WebTransportAdvert,
@@ -171,7 +172,10 @@ async fn list_motors_matches_motor_summary() {
     assert_eq!(resp.status(), StatusCode::OK);
 
     let motors: Vec<MotorSummary> = body_json(resp).await;
-    assert_eq!(motors.len(), state.inventory.motors.len());
+    assert_eq!(
+        motors.len(),
+        state.inventory.read().expect("inventory poisoned").motors.len()
+    );
 
     let by_role: std::collections::BTreeMap<&str, &MotorSummary> =
         motors.iter().map(|m| (m.role.as_str(), m)).collect();
@@ -586,6 +590,314 @@ async fn create_reminder_with_blank_text_400s() {
     assert_eq!(err.error, "empty_text");
 }
 
+/// `GET /api/motors/:role/travel_limits` returns 404 + `no_travel_limits`
+/// when no band has been configured yet. This is the SPA's signal to fall
+/// back to "use spec defaults" instead of erroring loudly.
+#[tokio::test]
+async fn get_travel_limits_404s_when_unset() {
+    let (state, _dir) = common::make_state();
+    let app = rudydae::build_app(state);
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/motors/shoulder_actuator_a/travel_limits")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    let err: ApiError = body_json(resp).await;
+    assert_eq!(err.error, "no_travel_limits");
+}
+
+/// PUT /api/motors/:role/travel_limits with a valid band roundtrips to the
+/// matching GET. The lock-gate is satisfied implicitly: nobody holds the
+/// lock yet, so `has_control(<empty>)` returns true.
+#[tokio::test]
+async fn put_travel_limits_roundtrips_through_get() {
+    let (state, _dir) = common::make_state();
+    let app = rudydae::build_app(state);
+
+    let body = serde_json::to_vec(&json!({"min_rad": -1.0, "max_rad": 1.0})).unwrap();
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::PUT)
+                .uri("/api/motors/shoulder_actuator_a/travel_limits")
+                .header("content-type", "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let limits: TravelLimits = body_json(resp).await;
+    assert!((limits.min_rad - -1.0).abs() < 1e-6);
+    assert!((limits.max_rad - 1.0).abs() < 1e-6);
+    assert!(limits.updated_at.is_some());
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/motors/shoulder_actuator_a/travel_limits")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let limits: TravelLimits = body_json(resp).await;
+    assert!((limits.max_rad - 1.0).abs() < 1e-6);
+}
+
+/// Bands wider than the hardware envelope are rejected before any disk
+/// write happens.
+#[tokio::test]
+async fn put_travel_limits_rejects_out_of_range() {
+    let (state, _dir) = common::make_state();
+    let app = rudydae::build_app(state);
+
+    let body = serde_json::to_vec(&json!({"min_rad": -1000.0, "max_rad": 1000.0})).unwrap();
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::PUT)
+                .uri("/api/motors/shoulder_actuator_a/travel_limits")
+                .header("content-type", "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    let err: ApiError = body_json(resp).await;
+    assert_eq!(err.error, "out_of_range");
+}
+
+/// Inverted bands are rejected too (and audited as denied).
+#[tokio::test]
+async fn put_travel_limits_rejects_inverted_band() {
+    let (state, _dir) = common::make_state();
+    let app = rudydae::build_app(state);
+
+    let body = serde_json::to_vec(&json!({"min_rad": 0.5, "max_rad": -0.5})).unwrap();
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::PUT)
+                .uri("/api/motors/shoulder_actuator_a/travel_limits")
+                .header("content-type", "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    let err: ApiError = body_json(resp).await;
+    assert_eq!(err.error, "out_of_range");
+}
+
+/// `GET /api/motors/:role/inventory` returns the typed scalars + free-form
+/// `extra` map; the SPA renders it directly in the Inventory tab.
+#[tokio::test]
+async fn get_inventory_returns_motor_record() {
+    let (state, _dir) = common::make_state();
+    let app = rudydae::build_app(state);
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/motors/shoulder_actuator_a/inventory")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let v: serde_json::Value = body_json(resp).await;
+    assert_eq!(v.get("role").and_then(|v| v.as_str()), Some("shoulder_actuator_a"));
+    assert_eq!(v.get("can_id").and_then(|v| v.as_u64()), Some(0x08));
+}
+
+/// `PUT /api/motors/:role/verified` flips the flag and the next GET
+/// reflects it (cache hot-swap is exercised end-to-end here).
+#[tokio::test]
+async fn put_verified_flips_flag() {
+    let (state, _dir) = common::make_state();
+    let app = rudydae::build_app(state);
+
+    let body = serde_json::to_vec(&json!({"verified": false, "note": "test"})).unwrap();
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::PUT)
+                .uri("/api/motors/shoulder_actuator_a/verified")
+                .header("content-type", "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/motors/shoulder_actuator_a")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let m: MotorSummary = body_json(resp).await;
+    assert!(!m.verified);
+}
+
+/// `POST /api/estop` returns OK in mock mode and counts every present motor.
+#[tokio::test]
+async fn estop_returns_ok_envelope() {
+    let (state, _dir) = common::make_state();
+    let total_present = state
+        .inventory
+        .read()
+        .expect("inventory")
+        .motors
+        .iter()
+        .filter(|m| m.present)
+        .count();
+    let app = rudydae::build_app(state);
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/estop")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    #[derive(serde::Deserialize)]
+    struct Resp {
+        ok: bool,
+        stopped: usize,
+    }
+    let r: Resp = body_json(resp).await;
+    assert!(r.ok);
+    assert_eq!(r.stopped, total_present);
+}
+
+/// `GET /api/lock` reports `null` holder and `you_hold=false` until someone
+/// POSTs (and the request carries no `X-Rudy-Session`).
+#[tokio::test]
+async fn lock_lifecycle_acquire_release() {
+    let (state, _dir) = common::make_state();
+    let app = rudydae::build_app(state);
+
+    // Initial state: free.
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/lock")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let v: serde_json::Value = body_json(resp).await;
+    assert!(v.get("holder").map(|h| h.is_null()).unwrap_or(true));
+
+    // Acquire as session-A.
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/lock")
+                .header("x-rudy-session", "session-A")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let v: serde_json::Value = body_json(resp).await;
+    assert_eq!(v.get("holder").and_then(|h| h.as_str()), Some("session-A"));
+    assert_eq!(v.get("you_hold").and_then(|b| b.as_bool()), Some(true));
+
+    // session-B sees you_hold=false.
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/lock")
+                .header("x-rudy-session", "session-B")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let v: serde_json::Value = body_json(resp).await;
+    assert_eq!(v.get("you_hold").and_then(|b| b.as_bool()), Some(false));
+
+    // Release as session-A.
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::DELETE)
+                .uri("/api/lock")
+                .header("x-rudy-session", "session-A")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+/// While session-A holds the lock, mutating endpoints reject session-B
+/// with 423 Locked / `lock_held`.
+#[tokio::test]
+async fn travel_limits_rejected_when_lock_held_by_another() {
+    let (state, _dir) = common::make_state();
+    let app = rudydae::build_app(state);
+
+    let _ = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/lock")
+                .header("x-rudy-session", "session-A")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let body = serde_json::to_vec(&json!({"min_rad": -0.5, "max_rad": 0.5})).unwrap();
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::PUT)
+                .uri("/api/motors/shoulder_actuator_a/travel_limits")
+                .header("content-type", "application/json")
+                .header("x-rudy-session", "session-B")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::from_u16(423).unwrap());
+    let err: ApiError = body_json(resp).await;
+    assert_eq!(err.error, "lock_held");
+}
+
 /// Sanity check: the URL paths the test hits above are exactly the ones the
 /// SPA's `link/src/lib/api.ts` constructs. If someone renames a route in
 /// `crates/rudydae/src/api/mod.rs`, this test file fails to compile because
@@ -609,6 +921,16 @@ fn endpoint_inventory_documented() {
         "POST   /api/motors/:role/stop",
         "POST   /api/motors/:role/save",
         "POST   /api/motors/:role/set_zero",
+        "GET    /api/motors/:role/travel_limits",
+        "PUT    /api/motors/:role/travel_limits",
+        "POST   /api/motors/:role/jog",
+        "POST   /api/motors/:role/tests/:name",
+        "GET    /api/motors/:role/inventory",
+        "PUT    /api/motors/:role/verified",
+        "POST   /api/estop",
+        "GET    /api/lock",
+        "POST   /api/lock",
+        "DELETE /api/lock",
         "GET    /api/reminders",
         "POST   /api/reminders",
         "PUT    /api/reminders/:id",

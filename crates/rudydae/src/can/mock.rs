@@ -25,7 +25,13 @@ pub fn spawn(state: SharedState) -> Result<()> {
         loop {
             tick.tick().await;
             let t = start.elapsed().as_secs_f32();
-            for (i, motor) in state.inventory.motors.iter().enumerate() {
+            let motors = state
+                .inventory
+                .read()
+                .expect("inventory poisoned")
+                .motors
+                .clone();
+            for (i, motor) in motors.iter().enumerate() {
                 let phase = i as f32 * 0.9;
                 let fb = MotorFeedback {
                     t_ms: Utc::now().timestamp_millis(),

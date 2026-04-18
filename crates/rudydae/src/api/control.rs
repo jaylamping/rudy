@@ -51,13 +51,19 @@ fn require_present(
     action: &str,
     role: &str,
 ) -> Result<crate::inventory::Motor, (StatusCode, Json<ApiError>)> {
-    let motor = state.inventory.by_role(role).cloned().ok_or_else(|| {
-        err(
-            StatusCode::NOT_FOUND,
-            "unknown_motor",
-            Some(format!("no motor with role={role}")),
-        )
-    })?;
+    let motor = state
+        .inventory
+        .read()
+        .expect("inventory poisoned")
+        .by_role(role)
+        .cloned()
+        .ok_or_else(|| {
+            err(
+                StatusCode::NOT_FOUND,
+                "unknown_motor",
+                Some(format!("no motor with role={role}")),
+            )
+        })?;
 
     if !motor.present {
         audit(state, action, role, AuditResult::Denied);

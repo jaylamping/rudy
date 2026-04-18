@@ -1,6 +1,12 @@
 // Thin fetch wrapper. Server-state caching lives in TanStack Query (see
 // `./query.ts`). Requests are same-origin (Vite dev proxy or rudydae serving
 // the built SPA). No auth: the console is tailnet/localhost-only.
+//
+// Mutating requests carry an `X-Rudy-Session` header used by the daemon's
+// single-operator lock. The session id is minted once per browser tab and
+// stashed in `sessionStorage`; see `./session.ts`.
+
+import { sessionId } from "./session";
 
 export class ApiError extends Error {
   status: number;
@@ -19,6 +25,10 @@ export async function apiFetch<T>(
   const headers = new Headers(init.headers);
   if (!headers.has("Content-Type") && init.body) {
     headers.set("Content-Type", "application/json");
+  }
+  const method = (init.method ?? "GET").toUpperCase();
+  if (method !== "GET" && method !== "HEAD" && !headers.has("X-Rudy-Session")) {
+    headers.set("X-Rudy-Session", sessionId());
   }
 
   const res = await fetch(path, { ...init, headers });
@@ -74,6 +84,73 @@ export const api = {
     apiFetch<{ ok: boolean }>(`/api/motors/${encodeURIComponent(role)}/save`, { method: "POST" }),
   setZero: (role: string) =>
     apiFetch<{ ok: boolean }>(`/api/motors/${encodeURIComponent(role)}/set_zero`, { method: "POST" }),
+  // Travel limits (added by the actuator-detail page work).
+  getTravelLimits: (role: string) =>
+    apiFetch<import("@/lib/types/TravelLimits").TravelLimits>(
+      `/api/motors/${encodeURIComponent(role)}/travel_limits`,
+    ),
+  setTravelLimits: (
+    role: string,
+    body: { min_rad: number; max_rad: number },
+  ) =>
+    apiFetch<import("@/lib/types/TravelLimits").TravelLimits>(
+      `/api/motors/${encodeURIComponent(role)}/travel_limits`,
+      { method: "PUT", body: JSON.stringify(body) },
+    ),
+  // Hold-to-jog. The TTL is also a server-side watchdog: if no follow-up
+  // jog frame arrives within ttl_ms the daemon issues `cmd_stop`.
+  jog: (role: string, body: { vel_rad_s: number; ttl_ms: number }) =>
+    apiFetch<{ ok: boolean }>(
+      `/api/motors/${encodeURIComponent(role)}/jog`,
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+  // Bench routines. Returns a run_id that filters the test_progress stream.
+  runTest: (
+    role: string,
+    name: import("@/lib/types/TestName").TestName,
+    body: { save?: boolean; target_vel?: number; duration?: number },
+  ) =>
+    apiFetch<{ run_id: string }>(
+      `/api/motors/${encodeURIComponent(role)}/tests/${encodeURIComponent(name)}`,
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+  // Inventory passthrough (raw `extra` map plus typed scalars).
+  getInventory: (role: string) =>
+    apiFetch<Record<string, unknown>>(
+      `/api/motors/${encodeURIComponent(role)}/inventory`,
+    ),
+  setVerified: (role: string, body: { verified: boolean; note?: string }) =>
+    apiFetch<{ ok: boolean; verified: boolean }>(
+      `/api/motors/${encodeURIComponent(role)}/verified`,
+      { method: "PUT", body: JSON.stringify(body) },
+    ),
+  // Global e-stop: fans cmd_stop to every present motor and emits a
+  // safety_event WT frame.
+  estop: () =>
+    apiFetch<{ ok: boolean; stopped: number }>(`/api/estop`, { method: "POST" }),
+  // Single-operator control lock. The SPA mints a session id per tab; the
+  // daemon keys the lock off the `X-Rudy-Session` header (added by
+  // `apiFetch` automatically for every mutating method).
+  lock: {
+    get: () =>
+      apiFetch<{
+        holder: string | null;
+        acquired_at_ms: number | null;
+        you_hold: boolean;
+      }>(`/api/lock`),
+    acquire: () =>
+      apiFetch<{
+        holder: string | null;
+        acquired_at_ms: number | null;
+        you_hold: boolean;
+      }>(`/api/lock`, { method: "POST" }),
+    release: () =>
+      apiFetch<{
+        holder: string | null;
+        acquired_at_ms: number | null;
+        you_hold: boolean;
+      }>(`/api/lock`, { method: "DELETE" }),
+  },
   reminders: {
     list: () =>
       apiFetch<import("@/lib/types/Reminder").Reminder[]>("/api/reminders"),

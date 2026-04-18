@@ -23,7 +23,9 @@
 // bridge's reducer registry. This file does NOT need editing.
 
 import { decode as cborDecode } from "cbor-x/decode";
+import { encode as cborEncode } from "cbor-x/encode";
 import { useEffect, useRef, useState } from "react";
+import type { WtSubscribe } from "@/lib/types/WtSubscribe";
 
 /**
  * Envelope schema version this client speaks. Must match the daemon's
@@ -73,6 +75,17 @@ export interface UseWebTransportResult {
   ) => () => void;
   /** Subscribe to per-stream sequence-gap notifications. */
   onGap: (listener: GapListener) => () => void;
+  /**
+   * Send (or replace) the active stream-filter `WtSubscribe`. Opens a fresh
+   * bidirectional stream and writes one CBOR-encoded message; the daemon
+   * applies it to the current session. Re-callable: a later send replaces
+   * the previous filter.
+   *
+   * Returns a promise so the caller can sequence the next request after
+   * the daemon has applied the filter (small but non-zero latency on
+   * first call because the QUIC bidi stream init has to round-trip).
+   */
+  setFilter: (filter: WtSubscribe) => Promise<void>;
 }
 
 export interface UseWebTransportOptions {
@@ -81,6 +94,10 @@ export interface UseWebTransportOptions {
    * through the dispatch path without exercising `cbor-x`.
    */
   decode?: (bytes: Uint8Array) => unknown;
+  /**
+   * Override the CBOR encoder for `setFilter`. Same rationale as `decode`.
+   */
+  encode?: (value: unknown) => Uint8Array;
 }
 
 export function useWebTransport(
@@ -98,6 +115,14 @@ export function useWebTransport(
   const seqRef = useRef<Map<string, number>>(new Map());
   const decodeRef = useRef(opts.decode ?? defaultDecode);
   decodeRef.current = opts.decode ?? defaultDecode;
+  const encodeRef = useRef(opts.encode ?? defaultEncode);
+  encodeRef.current = opts.encode ?? defaultEncode;
+  // The live transport handle, exposed via a ref so `setFilter` can reach
+  // into it from outside the connect effect.
+  const transportRef = useRef<WebTransport | null>(null);
+  // Last applied filter; if the session reconnects we re-send it so the
+  // operator's narrowing survives a transient disconnect.
+  const lastFilterRef = useRef<WtSubscribe | null>(null);
 
   useEffect(() => {
     if (!url) {
@@ -128,10 +153,19 @@ export function useWebTransport(
           transport.close();
           return;
         }
+        transportRef.current = transport;
         setStatus({ enabled: true, connected: true, error: null });
 
         // Reset gap-detection state at the start of each session.
         seqRef.current = new Map();
+
+        // Re-send the last filter on reconnect so a transient drop doesn't
+        // silently widen the per-detail-page subscription.
+        if (lastFilterRef.current) {
+          await sendFilter(transport, encodeRef.current, lastFilterRef.current).catch(() => {
+            /* surfaced on next call */
+          });
+        }
 
         // Drive the datagram path and the reliable-stream acceptor in
         // parallel. Both use the same dispatch helper.
@@ -170,6 +204,7 @@ export function useWebTransport(
       } catch {
         // ignore
       }
+      transportRef.current = null;
     };
   }, [url]);
 
@@ -196,7 +231,36 @@ export function useWebTransport(
         gapListenersRef.current.delete(listener);
       };
     },
+    async setFilter(filter) {
+      lastFilterRef.current = filter;
+      const t = transportRef.current;
+      if (!t) {
+        // Defer: the connect effect picks the filter up the moment the
+        // QUIC session is ready (see lastFilterRef branch above).
+        return;
+      }
+      await sendFilter(t, encodeRef.current, filter);
+    },
   };
+}
+
+async function sendFilter(
+  transport: WebTransport,
+  encode: (v: unknown) => Uint8Array,
+  filter: WtSubscribe,
+): Promise<void> {
+  const stream = await transport.createBidirectionalStream();
+  const writer = stream.writable.getWriter();
+  try {
+    await writer.write(encode(filter));
+    await writer.close();
+  } finally {
+    writer.releaseLock();
+  }
+}
+
+function defaultEncode(value: unknown): Uint8Array {
+  return cborEncode(value);
 }
 
 // ---------- internals ----------

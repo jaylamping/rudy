@@ -64,6 +64,9 @@ ciborium = "0.2"
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 
+# Atomic file writes for inventory.yaml mutations.
+tempfile = "3"
+
 # ROS-workspace driver crate (RS03 protocol, SocketCAN on Linux).
 # Kept as a relative path; see ADR-0004 §D8 for why it stays in ros/src/.
 driver = { path = "../../ros/src/driver" }

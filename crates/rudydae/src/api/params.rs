@@ -48,13 +48,19 @@ pub async fn put_param(
         )
     };
 
-    let motor = state.inventory.by_role(&role).cloned().ok_or_else(|| {
-        err(
-            StatusCode::NOT_FOUND,
-            "unknown_motor",
-            Some(format!("no motor with role={role}")),
-        )
-    })?;
+    let motor = state
+        .inventory
+        .read()
+        .expect("inventory poisoned")
+        .by_role(&role)
+        .cloned()
+        .ok_or_else(|| {
+            err(
+                StatusCode::NOT_FOUND,
+                "unknown_motor",
+                Some(format!("no motor with role={role}")),
+            )
+        })?;
 
     if !motor.present {
         state.audit.write(AuditEntry {

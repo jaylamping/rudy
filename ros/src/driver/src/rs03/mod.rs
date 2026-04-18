@@ -17,6 +17,7 @@
 //! | [feedback] | Type-2 motor feedback decode |
 //! | [errors] | RS03 encode/decode / reply errors |
 //! | [session] | Blocking I/O helpers on [crate::socketcan_bus::CanBus] |
+//! | [tests] | Reusable bench / commissioning routines (`read`, `set_zero`, `smoke`, `jog`) |
 //! | [actuator] | [Rs03] instance implementing [crate::robstride::RsActuator] |
 //!
 //! New RSxx lines should follow the same split: **transport stays generic**,
@@ -31,6 +32,7 @@ pub mod frame;
 pub mod mit;
 pub mod params;
 pub mod session;
+pub mod tests;
 
 pub use actuator::Rs03;
 pub use comm_types::CommType;

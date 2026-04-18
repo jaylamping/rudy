@@ -31,6 +31,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { useWebTransport } from "@/lib/hooks/useWebTransport";
+import { publishBridgeWt } from "@/lib/hooks/wt-bridge-handle";
 import { publishWtStatus } from "@/lib/hooks/wt-status";
 import { DEFAULT_REDUCERS, type WtReducer } from "@/lib/hooks/wt-reducers";
 import type { ServerConfig } from "@/lib/types/ServerConfig";
@@ -107,6 +108,13 @@ export function WebTransportBridge({
   useEffect(() => {
     publishWtStatus(wt.status);
   }, [wt.status]);
+
+  // Publish the live `useWebTransport` result so non-bridge consumers
+  // (e.g. the per-run `test_progress` listener inside the Tests tab) can
+  // attach extra `onKind` listeners without re-opening a QUIC session.
+  useEffect(() => {
+    publishBridgeWt(wt);
+  }, [wt]);
 
   // The active registry. Memoize on identity of the prop so a parent that
   // builds a fresh array each render doesn't tear down subscriptions.

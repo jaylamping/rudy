@@ -152,6 +152,38 @@ impl LinuxCanCore {
         })
     }
 
+    /// Velocity-mode setpoint. Idempotent, so the jog endpoint can call it
+    /// at 20 Hz without re-entering enable / run-mode for each frame: the
+    /// setup writes only run on the first call, subsequent calls just
+    /// re-issue `spd_ref`.
+    ///
+    /// Velocity is *clamped* to the firmware-level `limit_spd` envelope
+    /// before forwarding so a misbehaving caller can't bypass the firmware
+    /// guard via the REST layer.
+    pub fn set_velocity_setpoint(&self, motor: &Motor, vel_rad_s: f32) -> Result<()> {
+        self.with_bus(&motor.can_bus, |bus| {
+            // Best-effort: re-arm the motor on every call. cmd_enable is
+            // idempotent and write_param_u8 / _f32 are tiny — at 20 Hz this
+            // adds ~1 ms of bus time per frame.
+            driver::rs03::session::write_param_u8(
+                bus,
+                self.host_id,
+                motor.can_id,
+                driver::rs03::params::RUN_MODE,
+                2,
+            )?;
+            driver::rs03::session::cmd_enable(bus, self.host_id, motor.can_id)?;
+            driver::rs03::session::write_param_f32(
+                bus,
+                self.host_id,
+                motor.can_id,
+                driver::rs03::params::SPD_REF,
+                vel_rad_s,
+            )?;
+            Ok(())
+        })
+    }
+
     /// Refresh the full parameter snapshot for every present motor.
     ///
     /// Per-motor failures are isolated: a motor that errors out logs
@@ -161,7 +193,18 @@ impl LinuxCanCore {
     /// always returns `Ok(())` to its caller — there's nothing left at
     /// the call site that can usefully fail-the-batch on.
     pub fn refresh_all_params(&self, state: &SharedState) -> Result<()> {
-        for motor in state.inventory.motors.iter().filter(|m| m.present) {
+        // Snapshot the inventory so we don't hold the RwLock across the
+        // (potentially blocking) per-motor SocketCAN reads.
+        let motors: Vec<Motor> = state
+            .inventory
+            .read()
+            .expect("inventory poisoned")
+            .motors
+            .iter()
+            .filter(|m| m.present)
+            .cloned()
+            .collect();
+        for motor in &motors {
             if !self.backoff.should_poll(&motor.role) {
                 continue;
             }
@@ -186,7 +229,16 @@ impl LinuxCanCore {
     ///
     /// Same isolation guarantees as [`Self::refresh_all_params`].
     pub fn poll_once(&self, state: &SharedState) -> Result<()> {
-        for motor in state.inventory.motors.iter().filter(|m| m.present) {
+        let motors: Vec<Motor> = state
+            .inventory
+            .read()
+            .expect("inventory poisoned")
+            .motors
+            .iter()
+            .filter(|m| m.present)
+            .cloned()
+            .collect();
+        for motor in &motors {
             if !self.backoff.should_poll(&motor.role) {
                 continue;
             }
@@ -402,6 +454,25 @@ impl LinuxCanCore {
             .buses
             .get(iface)
             .ok_or_else(|| anyhow!("SocketCAN iface {iface} not configured"))?;
+        f(bus)
+    }
+
+    /// Like [`with_bus`] but for callers that already use `std::io::Result`
+    /// (e.g. the `driver::rs03::tests` library). The bench routines own the
+    /// bus for their entire duration, which is exactly what the per-iface
+    /// mutex inside `LinuxCanInner` already enforces.
+    pub fn with_bus_for_test<T>(
+        &self,
+        iface: &str,
+        f: impl FnOnce(&CanBus) -> std::io::Result<T>,
+    ) -> std::io::Result<T> {
+        let inner = self.inner.lock().expect("linux can mutex poisoned");
+        let bus = inner.buses.get(iface).ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("SocketCAN iface {iface} not configured"),
+            )
+        })?;
         f(bus)
     }
 }

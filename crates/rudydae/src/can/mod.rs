@@ -25,6 +25,7 @@ use crate::state::SharedState;
 
 pub mod backoff;
 pub mod mock;
+pub mod travel;
 
 #[cfg(target_os = "linux")]
 pub mod linux;
@@ -62,6 +63,10 @@ impl RealCanHandle {
     }
 
     pub fn set_zero(&self, _motor: &Motor) -> Result<()> {
+        anyhow::bail!("real CAN is only available on Linux targets")
+    }
+
+    pub fn set_velocity_setpoint(&self, _motor: &Motor, _vel_rad_s: f32) -> Result<()> {
         anyhow::bail!("real CAN is only available on Linux targets")
     }
 

@@ -159,6 +159,8 @@ describe("WebTransportBridge", () => {
         can_id: 8,
         firmware_version: "1.2.3",
         verified: true,
+        present: true,
+        travel_limits: null,
         latest: null,
       },
       {
@@ -167,6 +169,8 @@ describe("WebTransportBridge", () => {
         can_id: 9,
         firmware_version: "1.2.3",
         verified: false,
+        present: true,
+        travel_limits: null,
         latest: null,
       },
     ];
@@ -210,6 +214,8 @@ describe("WebTransportBridge", () => {
         can_id: 1,
         firmware_version: null,
         verified: true,
+        present: true,
+        travel_limits: null,
         latest: null,
       },
     ];

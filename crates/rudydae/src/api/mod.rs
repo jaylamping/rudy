@@ -12,10 +12,16 @@ use crate::state::SharedState;
 
 mod config_route;
 mod control;
+mod estop;
+mod inventory_route;
+mod jog;
+mod lock;
 mod motors;
 mod params;
 mod reminders_route;
 mod system;
+mod tests;
+mod travel;
 
 pub fn router(state: SharedState) -> Router<SharedState> {
     Router::new()
@@ -30,6 +36,27 @@ pub fn router(state: SharedState) -> Router<SharedState> {
         .route("/motors/:role/enable", post(control::enable))
         .route("/motors/:role/stop", post(control::stop))
         .route("/motors/:role/set_zero", post(control::set_zero))
+        .route(
+            "/motors/:role/travel_limits",
+            get(travel::get_travel_limits).put(travel::put_travel_limits),
+        )
+        .route("/motors/:role/jog", post(jog::jog))
+        .route("/motors/:role/tests/:name", post(tests::run_test))
+        .route(
+            "/motors/:role/inventory",
+            get(inventory_route::get_inventory),
+        )
+        .route(
+            "/motors/:role/verified",
+            put(inventory_route::put_verified),
+        )
+        .route("/estop", post(estop::estop))
+        .route(
+            "/lock",
+            get(lock::get_lock)
+                .post(lock::acquire_lock)
+                .delete(lock::release_lock),
+        )
         .route(
             "/reminders",
             get(reminders_route::list).post(reminders_route::create),

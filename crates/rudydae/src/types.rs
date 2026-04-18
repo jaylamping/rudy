@@ -46,6 +46,8 @@ pub struct MotorSummary {
     pub can_id: u8,
     pub firmware_version: Option<String>,
     pub verified: bool,
+    pub present: bool,
+    pub travel_limits: Option<crate::inventory::TravelLimits>,
     pub latest: Option<MotorFeedback>,
 }
 
@@ -149,6 +151,81 @@ pub struct SystemThrottled {
     pub raw_hex: Option<String>,
 }
 
+/// Bench-routine name accepted by `POST /api/motors/:role/tests/:name`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "./")]
+#[serde(rename_all = "snake_case")]
+pub enum TestName {
+    Read,
+    SetZero,
+    Smoke,
+    Jog,
+    JogOverlimit,
+}
+
+impl TestName {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TestName::Read => "read",
+            TestName::SetZero => "set_zero",
+            TestName::Smoke => "smoke",
+            TestName::Jog => "jog",
+            TestName::JogOverlimit => "jog_overlimit",
+        }
+    }
+}
+
+/// Severity for one [`TestProgress`] line.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "./")]
+#[serde(rename_all = "snake_case")]
+pub enum TestLevel {
+    Info,
+    Warn,
+    Pass,
+    Fail,
+}
+
+/// One progress line for a running bench routine. Streamed reliably on the
+/// `test_progress` WebTransport stream.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "./")]
+pub struct TestProgress {
+    pub run_id: String,
+    pub role: String,
+    /// Per-run monotonic line counter; the SPA uses it for the React key so
+    /// every line lands exactly once even if the WT stream re-anchors.
+    pub seq: u64,
+    pub t_ms: i64,
+    /// Coarse step name (e.g. `"sanity"`, `"ramp_up"`, `"defang"`). Helps
+    /// the operator scan a long log.
+    pub step: String,
+    pub level: TestLevel,
+    pub message: String,
+}
+
+/// Reliable broadcast for safety-relevant transitions.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "./")]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SafetyEvent {
+    Estop {
+        t_ms: i64,
+        source: String,
+    },
+    LockChanged {
+        t_ms: i64,
+        holder: Option<String>,
+    },
+    TravelLimitViolation {
+        t_ms: i64,
+        role: String,
+        attempted_rad: f32,
+        min_rad: f32,
+        max_rad: f32,
+    },
+}
+
 /// One operator reminder. File-backed in `.rudyd/reminders.json`.
 /// Created/edited/deleted via `/api/reminders[/:id]`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -201,6 +278,10 @@ pub struct WtSubscribeFilters {
     /// Empty / missing ≡ all roles.
     #[serde(default)]
     pub motor_roles: Vec<String>,
+    /// Run ids the client cares about for `test_progress` frames.
+    /// Empty / missing ≡ every run on the bus.
+    #[serde(default)]
+    pub run_ids: Vec<String>,
 }
 
 /// Current WebTransport envelope schema version.
@@ -337,6 +418,17 @@ declare_wt_streams! {
         transport: Datagram,
         /// Host-system metrics (CPU / mem / temps / throttle) at 0.5 Hz.
     },
+    TestProgress => TestProgress {
+        kind: "test_progress",
+        transport: Stream,
+        /// One progress line for a running bench routine. Reliable so the
+        /// pass/fail terminal line is never dropped.
+    },
+    SafetyEvent => SafetyEvent {
+        kind: "safety_event",
+        transport: Stream,
+        /// E-stop / control-lock / travel-band events. Reliable.
+    },
 }
 
 /// Wire envelope for every WebTransport frame, datagram or stream.
@@ -412,4 +504,6 @@ impl<T: WtPayload> WtEnvelope<T> {
 pub enum WtFrame {
     MotorFeedback(MotorFeedback),
     SystemSnapshot(SystemSnapshot),
+    TestProgress(TestProgress),
+    SafetyEvent(SafetyEvent),
 }

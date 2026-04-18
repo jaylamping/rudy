@@ -48,11 +48,38 @@ pub struct Motor {
     ///     motors so the UI can show them with an "absent" badge.
     #[serde(default = "default_true")]
     pub present: bool,
+    /// Per-motor soft travel-limits band, in radians. None ≡ "use the spec
+    /// default" (which is currently the full RS03 ±2-turn envelope from
+    /// `protocol.position_min_rad / position_max_rad`).
+    ///
+    /// Edited via `PUT /api/motors/:role/travel_limits`; persisted by
+    /// rewriting `inventory.yaml` atomically (see `inventory::write_atomic`).
+    /// Enforced by `crate::can::travel::enforce_travel_band` on every
+    /// commanded move (jog now, future move-to).
+    #[serde(default)]
+    pub travel_limits: Option<TravelLimits>,
     /// Everything else in the YAML entry. Preserved for server-side logic
     /// but opaque to the UI (hence ts(skip)).
     #[serde(flatten)]
     #[ts(skip)]
     pub extra: BTreeMap<String, serde_yaml::Value>,
+}
+
+/// Per-actuator soft travel-limits band (radians).
+///
+/// Stored on each [`Motor`] in `config/actuators/inventory.yaml` and enforced
+/// by rudydae on every commanded move (jog, future move-to). Semantically
+/// this is a software-side inner cap; the firmware-level position envelope
+/// remains authoritative.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "./")]
+pub struct TravelLimits {
+    pub min_rad: f32,
+    pub max_rad: f32,
+    /// ISO 8601 timestamp (UTC) of the most recent change. None on entries
+    /// authored by hand or imported from a pre-rudydae inventory.
+    #[serde(default)]
+    pub updated_at: Option<String>,
 }
 
 fn default_true() -> bool {
@@ -77,4 +104,53 @@ impl Inventory {
     pub fn by_can_id(&self, can_id: u8) -> Option<&Motor> {
         self.motors.iter().find(|m| m.can_id == can_id)
     }
+}
+
+/// Atomic YAML rewrite: read the on-disk inventory, hand the parsed value to
+/// `mutate`, then write the result to a sibling tempfile and rename it into
+/// place. Either the rename succeeds and the new file is fully visible, or
+/// it fails and the original file is untouched.
+///
+/// Used by the per-motor PUT endpoints (`travel_limits`, `verified`) so a
+/// crash mid-write can never produce a half-written `inventory.yaml`.
+///
+/// Returns the post-mutation `Inventory` so callers can refresh in-memory
+/// state without a re-read.
+pub fn write_atomic(
+    path: &Path,
+    mutate: impl FnOnce(&mut Inventory) -> Result<()>,
+) -> Result<Inventory> {
+    let mut inv = Inventory::load(path)
+        .with_context(|| format!("re-reading {} for write_atomic", path.display()))?;
+    mutate(&mut inv)?;
+
+    let yaml = serde_yaml::to_string(&inv).context("serialising inventory back to YAML")?;
+
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let file_stem = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("inventory.yaml");
+
+    // tempfile in the *same* directory so the rename is atomic on POSIX.
+    let mut tmp = tempfile::Builder::new()
+        .prefix(&format!(".{file_stem}."))
+        .suffix(".tmp")
+        .tempfile_in(parent)
+        .with_context(|| format!("creating tempfile next to {}", path.display()))?;
+
+    {
+        use std::io::Write;
+        tmp.write_all(yaml.as_bytes())
+            .context("writing inventory YAML to tempfile")?;
+        tmp.as_file()
+            .sync_all()
+            .context("fsync inventory tempfile")?;
+    }
+
+    // `persist` does the rename. On Windows it can fail if the target is
+    // open; rudydae never holds a handle to inventory.yaml between writes.
+    tmp.persist(path)
+        .with_context(|| format!("rename tempfile -> {}", path.display()))?;
+    Ok(inv)
 }

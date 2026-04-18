@@ -20,8 +20,9 @@
 //! number, because ts-rs declares it as `bigint`.
 
 use rudydae::types::{
-    MotorFeedback, SystemSnapshot, SystemTemps, SystemThrottled, WtEnvelope, WtFrame, WtKind,
-    WtPayload, WtSubscribe, WtTransport, WT_PROTOCOL_VERSION, WT_STREAMS,
+    MotorFeedback, SafetyEvent, SystemSnapshot, SystemTemps, SystemThrottled, TestLevel,
+    TestProgress, WtEnvelope, WtFrame, WtKind, WtPayload, WtSubscribe, WtTransport,
+    WT_PROTOCOL_VERSION, WT_STREAMS,
 };
 
 fn sample_motor() -> MotorFeedback {
@@ -127,24 +128,87 @@ fn envelope_json_shape_is_stable() {
 #[test]
 fn discriminator_strings_match_macro() {
     // The frontend hard-codes the kind strings ("motor_feedback",
-    // "system_snapshot") in its reducer registry. The macro's job is to
-    // keep the Rust side in sync: this asserts the macro-generated
+    // "system_snapshot", ...) in its reducer registry. The macro's job is
+    // to keep the Rust side in sync: this asserts the macro-generated
     // `KIND` constants and the `WtKind::as_str()` mapping agree.
     assert_eq!(MotorFeedback::KIND, "motor_feedback");
     assert_eq!(SystemSnapshot::KIND, "system_snapshot");
+    assert_eq!(TestProgress::KIND, "test_progress");
+    assert_eq!(SafetyEvent::KIND, "safety_event");
     assert_eq!(WtKind::MotorFeedback.as_str(), "motor_feedback");
     assert_eq!(WtKind::SystemSnapshot.as_str(), "system_snapshot");
+    assert_eq!(WtKind::TestProgress.as_str(), "test_progress");
+    assert_eq!(WtKind::SafetyEvent.as_str(), "safety_event");
 
     let kinds: Vec<&str> = WT_STREAMS.iter().map(|s| s.kind).collect();
     assert!(kinds.contains(&"motor_feedback"));
     assert!(kinds.contains(&"system_snapshot"));
+    assert!(kinds.contains(&"test_progress"));
+    assert!(kinds.contains(&"safety_event"));
 }
 
 #[test]
 fn transport_assignments_match_macro() {
     assert_eq!(MotorFeedback::TRANSPORT, WtTransport::Datagram);
     assert_eq!(SystemSnapshot::TRANSPORT, WtTransport::Datagram);
+    assert_eq!(TestProgress::TRANSPORT, WtTransport::Stream);
+    assert_eq!(SafetyEvent::TRANSPORT, WtTransport::Stream);
     assert_eq!(WtKind::MotorFeedback.transport(), WtTransport::Datagram);
+    assert_eq!(WtKind::TestProgress.transport(), WtTransport::Stream);
+}
+
+#[test]
+fn envelope_roundtrips_test_progress() {
+    let payload = TestProgress {
+        run_id: "abc-123".into(),
+        role: "shoulder_actuator_a".into(),
+        seq: 42,
+        t_ms: 1_700_000_123_456,
+        step: "ramp".into(),
+        level: TestLevel::Info,
+        message: "spd_ref=0.20".into(),
+    };
+    let env = WtEnvelope::new(7, payload.clone());
+    assert_eq!(env.kind, TestProgress::KIND);
+    let mut buf = Vec::with_capacity(192);
+    ciborium::into_writer(&env, &mut buf).expect("encode CBOR");
+    let frame: WtFrame = ciborium::from_reader(buf.as_slice()).expect("decode CBOR");
+    let WtFrame::TestProgress(decoded) = frame else {
+        panic!("expected TestProgress variant");
+    };
+    assert_eq!(decoded.run_id, payload.run_id);
+    assert_eq!(decoded.message, payload.message);
+}
+
+#[test]
+fn envelope_roundtrips_safety_event() {
+    let payload = SafetyEvent::Estop {
+        t_ms: 1_700_000_123_456,
+        source: "session-A".into(),
+    };
+    let env = WtEnvelope::new(0, payload.clone());
+    assert_eq!(env.kind, SafetyEvent::KIND);
+    let mut buf = Vec::with_capacity(160);
+    ciborium::into_writer(&env, &mut buf).expect("encode CBOR");
+    let frame: WtFrame = ciborium::from_reader(buf.as_slice()).expect("decode CBOR");
+    let WtFrame::SafetyEvent(decoded) = frame else {
+        panic!("expected SafetyEvent variant");
+    };
+    if let SafetyEvent::Estop { source, .. } = decoded {
+        assert_eq!(source, "session-A");
+    } else {
+        panic!("expected Estop variant");
+    }
+}
+
+/// Run-id filter on `WtSubscribe` is honoured by the wt_router's
+/// `allows_run` predicate. We pin the field shape here so a future
+/// rename trips a contract failure rather than a silent dropped frame.
+#[test]
+fn wt_subscribe_round_trips_run_ids() {
+    let json = r#"{"kinds":["test_progress"],"filters":{"motor_roles":[],"run_ids":["r-1","r-2"]}}"#;
+    let sub: WtSubscribe = serde_json::from_str(json).expect("decode WtSubscribe");
+    assert_eq!(sub.filters.run_ids, vec!["r-1", "r-2"]);
 }
 
 #[test]

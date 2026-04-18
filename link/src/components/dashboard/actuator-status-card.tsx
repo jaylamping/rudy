@@ -68,7 +68,7 @@ export function ActuatorStatusCard({ className }: { className?: string }) {
         </div>
       )}
 
-      <ul className="divide-y divide-border/60">
+      <ul>
         {motors.map((m) => (
           <MotorRow key={m.role} motor={m} />
         ))}
@@ -83,41 +83,47 @@ function MotorRow({ motor }: { motor: MotorSummary }) {
   const ageS = fb ? (Date.now() - Number(fb.t_ms)) / 1000 : null;
 
   return (
-    <li className="flex items-center justify-between py-1.5 text-xs">
-      <div className="flex items-center gap-2 truncate">
-        <span className={cn("h-2 w-2 shrink-0 rounded-full", toneDot(tone))} />
-        <span className="truncate font-medium">{motor.role}</span>
-        <span className="text-muted-foreground">
-          0x{motor.can_id.toString(16).padStart(2, "0").toUpperCase()} ·{" "}
-          {motor.can_bus}
-        </span>
-      </div>
-      <div className="flex items-center gap-3 font-mono tabular-nums text-muted-foreground">
-        {fb ? (
-          <>
-            <span title="position (rad)">{fb.mech_pos_rad.toFixed(2)}</span>
-            <span
-              title="temperature"
-              className={cn(
-                fb.temp_c >= HOT_DEGC && "text-amber-400",
-                fb.temp_c >= HOT_DEGC + 10 && "text-rose-400",
-              )}
-            >
-              {fb.temp_c.toFixed(0)}degC
-            </span>
-            <span
-              title="last update"
-              className={cn(
-                ageS != null && ageS * 1000 > STALE_MS && "text-amber-400",
-              )}
-            >
-              {fmtAge(ageS)}
-            </span>
-          </>
-        ) : (
-          <span className="italic">no data</span>
-        )}
-      </div>
+    <li>
+      <Link
+        to="/actuators/$role"
+        params={{ role: motor.role }}
+        className="-mx-2 flex items-center justify-between rounded-md px-2 py-1.5 text-xs transition-colors hover:bg-accent/40 focus-visible:bg-accent/40 focus-visible:outline-none"
+      >
+        <div className="flex items-center gap-2 truncate">
+          <span className={cn("h-2 w-2 shrink-0 rounded-full", toneDot(tone))} />
+          <span className="truncate font-medium">{motor.role}</span>
+          <span className="text-muted-foreground">
+            0x{motor.can_id.toString(16).padStart(2, "0").toUpperCase()} ·{" "}
+            {motor.can_bus}
+          </span>
+        </div>
+        <div className="flex items-center gap-3 font-mono tabular-nums text-muted-foreground">
+          {fb ? (
+            <>
+              <span title="position (rad)">{fb.mech_pos_rad.toFixed(2)}</span>
+              <span
+                title="temperature"
+                className={cn(
+                  fb.temp_c >= HOT_DEGC && "text-amber-400",
+                  fb.temp_c >= HOT_DEGC + 10 && "text-rose-400",
+                )}
+              >
+                {fb.temp_c.toFixed(0)}degC
+              </span>
+              <span
+                title="last update"
+                className={cn(
+                  ageS != null && ageS * 1000 > STALE_MS && "text-amber-400",
+                )}
+              >
+                {fmtAge(ageS)}
+              </span>
+            </>
+          ) : (
+            <span className="italic">no data</span>
+          )}
+        </div>
+      </Link>
     </li>
   );
 }

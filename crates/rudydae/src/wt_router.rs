@@ -38,8 +38,8 @@ use wtransport::SendStream;
 
 use crate::state::SharedState;
 use crate::types::{
-    MotorFeedback, SystemSnapshot, WtEnvelope, WtKind, WtPayload, WtSubscribe, WtSubscribeFilters,
-    WtTransport,
+    MotorFeedback, SafetyEvent, SystemSnapshot, TestProgress, WtEnvelope, WtKind, WtPayload,
+    WtSubscribe, WtSubscribeFilters, WtTransport,
 };
 
 /// Per-session router: owns subscriptions, sequence counters, the lazily-
@@ -91,6 +91,11 @@ impl SubscriptionFilter {
         let roles = &self.sub.motor_roles;
         roles.is_empty() || roles.iter().any(|r| r == role)
     }
+
+    fn allows_run(&self, run_id: &str) -> bool {
+        let runs = &self.sub.run_ids;
+        runs.is_empty() || runs.iter().any(|r| r == run_id)
+    }
 }
 
 impl Default for SessionRouter {
@@ -131,6 +136,16 @@ impl SessionRouter {
 
     pub fn allows_system_snapshot(&self) -> bool {
         self.filter.allows_kind(WtKind::SystemSnapshot)
+    }
+
+    pub fn allows_test_progress(&self, p: &TestProgress) -> bool {
+        self.filter.allows_kind(WtKind::TestProgress)
+            && self.filter.allows_motor(&p.role)
+            && self.filter.allows_run(&p.run_id)
+    }
+
+    pub fn allows_safety_event(&self) -> bool {
+        self.filter.allows_kind(WtKind::SafetyEvent)
     }
 
     /// Encode `payload` in a `WtEnvelope`, allocate the next sequence
@@ -236,6 +251,8 @@ pub async fn run_session(connection: Connection, state: SharedState) -> Result<(
     let mut router = SessionRouter::new();
     let mut feedback_rx = state.feedback_tx.subscribe();
     let mut system_rx = state.system_tx.subscribe();
+    let mut tests_rx = state.test_progress_tx.subscribe();
+    let mut safety_rx = state.safety_event_tx.subscribe();
 
     // Concurrent tasks: the WT session can simultaneously
     //   (a) accept a bidi stream carrying one `WtSubscribe`, and
@@ -294,6 +311,38 @@ pub async fn run_session(connection: Connection, state: SharedState) -> Result<(
                 }
                 Err(RecvError::Lagged(n)) => {
                     debug!("wt: system receiver lagged {n}");
+                }
+                Err(RecvError::Closed) => break,
+            },
+
+            // (b3) Bench-test progress fan-out (reliable).
+            res = tests_rx.recv() => match res {
+                Ok(p) => {
+                    if router.allows_test_progress(&p) {
+                        if let Err(e) = router.send::<TestProgress>(&connection, WtKind::TestProgress, p).await {
+                            debug!("wt: test_progress send failed; closing session: {e:#}");
+                            break;
+                        }
+                    }
+                }
+                Err(RecvError::Lagged(n)) => {
+                    debug!("wt: tests receiver lagged {n}");
+                }
+                Err(RecvError::Closed) => break,
+            },
+
+            // (b4) Safety-event fan-out (reliable).
+            res = safety_rx.recv() => match res {
+                Ok(ev) => {
+                    if router.allows_safety_event() {
+                        if let Err(e) = router.send::<SafetyEvent>(&connection, WtKind::SafetyEvent, ev).await {
+                            debug!("wt: safety_event send failed; closing session: {e:#}");
+                            break;
+                        }
+                    }
+                }
+                Err(RecvError::Lagged(n)) => {
+                    debug!("wt: safety receiver lagged {n}");
                 }
                 Err(RecvError::Closed) => break,
             },

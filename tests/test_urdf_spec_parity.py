@@ -4,7 +4,6 @@
 """Parity checks between URDF and actuator spec (gold standard tests)."""
 from __future__ import annotations
 
-import re
 import subprocess
 import sys
 from pathlib import Path
@@ -12,7 +11,7 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-XACRO = REPO_ROOT / "src" / "description" / "urdf" / "robot.urdf.xacro"
+XACRO = REPO_ROOT / "ros" / "src" / "description" / "urdf" / "robot.urdf.xacro"
 
 
 @pytest.fixture(scope="module")
@@ -27,16 +26,23 @@ def expanded_urdf() -> str:
 
 
 def test_revolute_joint_limits_have_matching_effort_velocity(expanded_urdf: str) -> None:
-    """Every revolute joint limit effort/velocity match RS03 caps from xacro properties."""
-    # Extract first revolute limit line as reference
-    m = re.search(
-        r'<limit\s+lower="[^"]+"\s+upper="[^"]+"\s+effort="([^"]+)"\s+velocity="([^"]+)"',
-        expanded_urdf,
-    )
-    assert m, "No revolute <limit> found in expanded URDF"
-    effort, velocity = float(m.group(1)), float(m.group(2))
-    assert effort == pytest.approx(60.0)
-    assert velocity == pytest.approx(50.0)
+    """Every revolute joint <limit> must carry effort=60 / velocity=50 (RS03 caps)."""
+    # xacro can shuffle attribute order on expansion (especially after macro
+    # substitution), so assert per-attribute on every revolute limit element
+    # rather than pinning a literal attribute order in a regex.
+    import xml.etree.ElementTree as ET
+
+    root = ET.fromstring(expanded_urdf)
+    revolute_count = 0
+    for joint in root.findall("joint"):
+        if joint.get("type") != "revolute":
+            continue
+        revolute_count += 1
+        lim = joint.find("limit")
+        assert lim is not None, f"joint {joint.get('name')!r} missing <limit>"
+        assert float(lim.attrib["effort"]) == pytest.approx(60.0)
+        assert float(lim.attrib["velocity"]) == pytest.approx(50.0)
+    assert revolute_count > 0, "expected at least one revolute joint in URDF"
 
 
 def test_soft_limits_inside_hard_limits(expanded_urdf: str) -> None:

@@ -12,12 +12,24 @@ use crate::inventory::Inventory;
 use crate::reminders::ReminderStore;
 use crate::spec::ActuatorSpec;
 use crate::system::SystemPoller;
-use crate::types::{MotorFeedback, ParamSnapshot, SystemSnapshot};
+use crate::types::{MotorFeedback, ParamSnapshot, SafetyEvent, SystemSnapshot, TestProgress};
+
+/// Identity record for whichever WebTransport session currently owns the
+/// single-operator lock. Exposed so the SPA can render a "held by ..." pill
+/// and a "take over" button.
+#[derive(Debug, Clone)]
+pub struct ControlLockHolder {
+    pub session_id: String,
+    pub acquired_at_ms: i64,
+}
 
 pub struct AppState {
     pub cfg: Config,
     pub spec: ActuatorSpec,
-    pub inventory: Inventory,
+    /// Live inventory. Behind a lock so the per-motor PUT endpoints
+    /// (`travel_limits`, `verified`) can swap in the freshly-rewritten
+    /// disk copy without restarting the daemon.
+    pub inventory: RwLock<Inventory>,
     pub audit: AuditLog,
     pub real_can: Option<Arc<RealCanHandle>>,
 
@@ -38,10 +50,18 @@ pub struct AppState {
     /// few seconds is acceptable.
     pub system_tx: broadcast::Sender<SystemSnapshot>,
 
+    /// Per-bench-routine progress. One sender; the WT listener subscribes
+    /// per-session and forwards each line as a reliable
+    /// `WtFrame::TestProgress` stream frame.
+    pub test_progress_tx: broadcast::Sender<TestProgress>,
+
+    /// Safety-event broadcast (e-stop, lock changes, travel-band rejections).
+    /// Reliable WT stream so the dashboard never misses an e-stop pulse.
+    pub safety_event_tx: broadcast::Sender<SafetyEvent>,
+
     /// Control-lock state: which session id (if any) is allowed to issue
     /// mutating commands (enable / jog / param write / save).
-    #[allow(dead_code)]
-    pub control_lock: RwLock<Option<String>>,
+    pub control_lock: RwLock<Option<ControlLockHolder>>,
 
     /// Host-metrics state. Mutex (not RwLock) because computing the snapshot
     /// requires the previous CPU totals to compute the delta -> always &mut.
@@ -62,28 +82,56 @@ impl AppState {
     ) -> Self {
         let (feedback_tx, _) = broadcast::channel::<MotorFeedback>(512);
         let (system_tx, _) = broadcast::channel::<SystemSnapshot>(8);
+        let (test_progress_tx, _) = broadcast::channel::<TestProgress>(256);
+        let (safety_event_tx, _) = broadcast::channel::<SafetyEvent>(64);
         Self {
             cfg,
             spec,
-            inventory,
+            inventory: RwLock::new(inventory),
             audit,
             real_can,
             latest: RwLock::new(BTreeMap::new()),
             params: RwLock::new(BTreeMap::new()),
             feedback_tx,
             system_tx,
+            test_progress_tx,
+            safety_event_tx,
             control_lock: RwLock::new(None),
             system: Mutex::new(SystemPoller::new()),
             reminders,
         }
     }
 
-    /// Helper used by control handlers to enforce single-operator semantics.
-    #[allow(dead_code)]
+    /// Returns true if `session_id` currently holds the lock (or no lock is
+    /// held). Mutating handlers consult this before issuing CAN frames; a
+    /// `None` return means the request should be rejected with 423 Locked.
     pub fn has_control(&self, session_id: &str) -> bool {
         match &*self.control_lock.read().expect("control_lock poisoned") {
             None => true,
-            Some(holder) => holder == session_id,
+            Some(holder) => holder.session_id == session_id,
+        }
+    }
+
+    /// Acquire (or take-over) the control lock for `session_id`. Returns the
+    /// previous holder, if any, so the caller can audit the take-over.
+    pub fn acquire_control(&self, session_id: &str) -> Option<ControlLockHolder> {
+        let mut guard = self.control_lock.write().expect("control_lock poisoned");
+        let prev = guard.clone();
+        *guard = Some(ControlLockHolder {
+            session_id: session_id.to_string(),
+            acquired_at_ms: chrono::Utc::now().timestamp_millis(),
+        });
+        prev
+    }
+
+    /// Release the lock if `session_id` currently holds it. No-op otherwise.
+    pub fn release_control(&self, session_id: &str) -> bool {
+        let mut guard = self.control_lock.write().expect("control_lock poisoned");
+        if guard.as_ref().map(|h| h.session_id == session_id).unwrap_or(false) {
+            *guard = None;
+            true
+        } else {
+            false
         }
     }
 }

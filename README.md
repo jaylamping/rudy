@@ -70,6 +70,22 @@ python3 -m pytest -q tests
 (cd link && npm run lint && npm run typecheck && npm run build)
 ```
 
+### Regenerating shared TS types
+
+The SPA's TypeScript types under `link/src/lib/types/` are generated from
+the Rust structs in `crates/rudydae/src/types.rs` (and a few others) via
+[`ts-rs`](https://github.com/Aleph-Alpha/ts-rs). Re-run after editing any
+`#[derive(TS)]` struct:
+
+```bash
+(cd link && npm run gen:types)   # = `cd ../crates && cargo test export_bindings`
+(cd link && npm run typecheck)   # confirm SPA still compiles against the regen'd types
+```
+
+`crates/.cargo/config.toml` pins `TS_RS_EXPORT_DIR` so the files land next
+to the SPA. **Do not hand-edit** anything under `link/src/lib/types/` — the
+header on each file says so, and the next regeneration will overwrite it.
+
 ## Visualize the model
 
 ```bash
@@ -97,6 +113,31 @@ tail. Reachable over Tailscale only. See:
 - [ADR-0004](docs/decisions/0004-operator-console.md) — architecture + safety model
 - [Runbook](docs/runbooks/operator-console.md) — start/stop, token rotation, audit log
 - [Tailscale cert runbook](deploy/pi5/tailscale-cert.md)
+
+### Per-actuator detail page
+
+Click any actuator in the dashboard's **Actuators** card or the
+**Telemetry** grid to open `/actuators/<role>` — a six-tab page that lets
+the operator:
+
+- watch live `position / velocity / torque / temperature` charts plus a
+  per-joint URDF highlight (Overview tab),
+- set per-actuator soft travel limits in degrees, enforced server-side on
+  every commanded move (Travel tab),
+- edit every firmware parameter in the spec catalog (Firmware tab),
+- enable / stop / set-zero / save-to-flash plus a hold-to-jog dead-man
+  widget (Controls tab),
+- run any of the canonical bench routines — `read`, `set_zero`, `smoke`,
+  `jog`, `jog_overlimit` — from the same library that powers
+  `cargo run --bin bench_tool`, with progress streamed live over
+  WebTransport (Tests tab),
+- inspect the full commissioning record + flip the `verified` flag with
+  audit (Inventory tab).
+
+Every mutating action is gated by a single-operator lock (`X-Rudy-Session`
+header → `state.control_lock`) and audit-logged. A persistent **E-STOP**
+button in the app shell fans `cmd_stop` to every present motor in one
+click.
 
 ## CI
 

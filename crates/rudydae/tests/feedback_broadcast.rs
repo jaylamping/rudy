@@ -22,6 +22,8 @@ async fn mock_can_publishes_feedback_for_every_inventoried_motor() {
     let (state, _dir) = common::make_state();
     let expected_roles: HashSet<String> = state
         .inventory
+        .read()
+        .expect("inventory poisoned")
         .motors
         .iter()
         .map(|m| m.role.clone())

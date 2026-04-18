@@ -9,4 +9,9 @@ export type WtSubscribeFilters = {
  * Motor roles the client cares about for `motor_feedback` frames.
  * Empty / missing ≡ all roles.
  */
-motor_roles: Array<string>, };
+motor_roles: Array<string>, 
+/**
+ * Run ids the client cares about for `test_progress` frames.
+ * Empty / missing ≡ every run on the bus.
+ */
+run_ids: Array<string>, };

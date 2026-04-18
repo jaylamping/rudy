@@ -123,10 +123,15 @@ pub fn make_state_with_wt_advert() -> (SharedState, tempfile::TempDir) {
     let mut cfg = state.cfg.clone();
     cfg.webtransport.enabled = true;
     cfg.webtransport.bind = "127.0.0.1:4433".into();
+    let inv = state
+        .inventory
+        .read()
+        .expect("inventory poisoned")
+        .clone();
     let new_state = Arc::new(AppState::new(
         cfg,
         state.spec.clone(),
-        state.inventory.clone(),
+        inv,
         AuditLog::open(dir.path().join("audit2.jsonl")).unwrap(),
         state.real_can.clone(),
         ReminderStore::open(dir.path().join("reminders2.json")).unwrap(),
@@ -141,7 +146,8 @@ pub fn seed_params(state: &SharedState) {
     use std::collections::BTreeMap;
 
     let mut seeded: BTreeMap<String, ParamSnapshot> = BTreeMap::new();
-    for motor in &state.inventory.motors {
+    let inv = state.inventory.read().expect("inventory poisoned");
+    for motor in &inv.motors {
         let mut values = BTreeMap::new();
         for (name, desc) in state.spec.catalog() {
             let default = match desc.ty.as_str() {
@@ -177,7 +183,8 @@ pub fn seed_params(state: &SharedState) {
 pub fn seed_feedback(state: &SharedState) {
     use rudydae::types::MotorFeedback;
     let mut latest = state.latest.write().expect("latest");
-    for motor in &state.inventory.motors {
+    let inv = state.inventory.read().expect("inventory poisoned");
+    for motor in &inv.motors {
         latest.insert(
             motor.role.clone(),
             MotorFeedback {
