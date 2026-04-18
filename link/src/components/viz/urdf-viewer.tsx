@@ -12,8 +12,8 @@
 //
 // The loader and the robot live in refs; setJointAngles bypasses React.
 
-import { OrbitControls, Grid, Bounds } from "@react-three/drei";
-import { Canvas, useThree } from "@react-three/fiber";
+import { OrbitControls, Grid, Bounds, useBounds } from "@react-three/drei";
+import { Canvas } from "@react-three/fiber";
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
@@ -72,7 +72,7 @@ export function UrdfViewer({
             fadeStrength={2}
           />
         )}
-        <Bounds fit clip observe margin={1.2}>
+        <Bounds clip observe margin={1.2}>
           <RobotScene
             jointStates={jointStates}
             wireframe={wireframe}
@@ -94,8 +94,18 @@ function RobotScene({
   wireframe: boolean;
   manifest: Manifest | null;
 }) {
-  const { scene } = useThree();
+  // The robot is attached to this group so it lives inside <Bounds>'s
+  // subtree; that's what lets bounds.refresh() see real geometry instead
+  // of falling back to camera-position-based defaults (which previously
+  // caused the camera to clip / dolly out as meshes arrived).
+  const groupRef = useRef<THREE.Group>(null);
   const robotRef = useRef<URDFRobot | null>(null);
+  // useBounds() returns a memo that may change identity once OrbitControls
+  // mounts (Bounds re-memoises against `controls`). Stash it in a ref so
+  // the load effect below doesn't re-fire and re-fetch the URDF.
+  const bounds = useBounds();
+  const boundsRef = useRef(bounds);
+  boundsRef.current = bounds;
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
 
@@ -117,6 +127,23 @@ function RobotScene({
     const byUrl = indexManifest(manifest);
     const gltfLoader = new GLTFLoader();
 
+    // Track outstanding mesh loads so we can fit the camera exactly once,
+    // after every <mesh> has been swapped in. Fitting before that point
+    // sees an empty box and Bounds falls back to camera.position.length(),
+    // which is what made the scene "zoom out forever" on first load.
+    let pending = 0;
+    let urdfParsed = false;
+    const tryFit = () => {
+      if (cancelled) return;
+      if (!urdfParsed || pending > 0) return;
+      // Defer to next frame so URDFRobot has updated its world matrices
+      // after the freshly-attached meshes.
+      requestAnimationFrame(() => {
+        if (cancelled) return;
+        boundsRef.current?.refresh().fit().clip();
+      });
+    };
+
     // Override the mesh loader to flow through our IndexedDB cache. This
     // gets called once per <mesh filename="..."> in the URDF.
     loader.loadMeshCb = (path, _manager, onLoad) => {
@@ -127,12 +154,19 @@ function RobotScene({
         // resolves it). Strip the origin so we match manifest URLs.
         const urlPath = stripOrigin(path);
         const meta = byUrl.get(urlPath);
+        pending++;
         loadCachedAsset(path, meta?.sha256)
           .then((buf) => gltfLoader.parseAsync(buf, MESH_BASE))
-          .then((gltf) => onLoad(gltf.scene))
+          .then((gltf) => {
+            onLoad(gltf.scene);
+          })
           .catch((err) => {
             console.warn("urdf-viewer: mesh load failed", path, err);
             onLoad(new THREE.Object3D(), err as Error);
+          })
+          .finally(() => {
+            pending--;
+            tryFit();
           });
         return;
       }
@@ -150,8 +184,13 @@ function RobotScene({
         // URDF convention: z up. R3F default is y up; rotate the robot so
         // the camera angles in the wrapper still feel natural.
         robot.rotation.x = -Math.PI / 2;
-        scene.add(robot);
+        const g = groupRef.current;
+        if (g) g.add(robot);
+        urdfParsed = true;
         setLoaded(true);
+        // If the URDF had no <mesh> tags (or all were synchronous), fit
+        // straight away. Otherwise tryFit() runs once pending hits 0.
+        tryFit();
       })
       .catch((e) => {
         if (cancelled) return;
@@ -161,13 +200,12 @@ function RobotScene({
     return () => {
       cancelled = true;
       const r = robotRef.current;
-      if (r) {
-        scene.remove(r);
-        robotRef.current = null;
-      }
+      const g = groupRef.current;
+      if (r && g) g.remove(r);
+      robotRef.current = null;
       setLoaded(false);
     };
-  }, [scene, manifest]);
+  }, [manifest]);
 
   // Imperatively apply joint angles. Skips React reconciliation on the
   // hot path; safe because URDFRobot mutates Three.js objects in place.
@@ -217,7 +255,7 @@ function RobotScene({
     );
   }
 
-  return null;
+  return <group ref={groupRef} />;
 }
 
 // `urdf-loader` resolves relative mesh paths against `loader.packages`,
