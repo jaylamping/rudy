@@ -6,6 +6,11 @@ dist-ssr
 # TanStack Router generates this on vite dev/build. Do not edit by hand.
 src/routeTree.gen.ts
 
+# Baked URDF + meshes copied from ros/src/description/ by scripts/bake-urdf.mjs.
+# Regenerated on every dev/build; the source of truth lives at
+# ros/src/description/urdf/robot.urdf.xacro and ros/src/description/meshes/.
+public/robot/
+
 # Env files
 .env
 .env.local

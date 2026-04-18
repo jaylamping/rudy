@@ -108,6 +108,71 @@ pub struct ApiError {
     pub detail: Option<String>,
 }
 
+/// GET /api/system - host metrics for the operator-console dashboard.
+///
+/// Linux real values come from `/proc` + `/sys` + (on the Pi) `vcgencmd`;
+/// when `cfg.can.mock == true` or running on non-Linux, fields are
+/// slowly-varying mock numbers and `is_mock = true`. See `system.rs`.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "./")]
+pub struct SystemSnapshot {
+    /// Wallclock at sample time, ms since unix epoch.
+    pub t_ms: i64,
+    pub cpu_pct: f32,
+    /// 1, 5, 15-minute load average from `/proc/loadavg`.
+    pub load: [f32; 3],
+    pub mem_used_mb: u64,
+    pub mem_total_mb: u64,
+    pub temps_c: SystemTemps,
+    pub throttled: SystemThrottled,
+    pub uptime_s: u64,
+    pub hostname: String,
+    pub kernel: String,
+    /// True when values are synthetic (no Linux host or `cfg.can.mock = true`).
+    pub is_mock: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "./")]
+pub struct SystemTemps {
+    pub cpu: Option<f32>,
+    pub gpu: Option<f32>,
+}
+
+/// Pi-specific power/thermal throttling state. `now` and `ever` are derived
+/// from `vcgencmd get_throttled` bits (0/2 -> now, 16/18 -> ever).
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "./")]
+pub struct SystemThrottled {
+    pub now: bool,
+    pub ever: bool,
+    pub raw_hex: Option<String>,
+}
+
+/// One operator reminder. File-backed in `.rudyd/reminders.json`.
+/// Created/edited/deleted via `/api/reminders[/:id]`.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "./")]
+pub struct Reminder {
+    pub id: String,
+    pub text: String,
+    /// Optional ISO 8601 due date; the UI renders relative ("in 2h", "overdue").
+    pub due_at: Option<String>,
+    pub done: bool,
+    /// Wallclock at creation, ms since unix epoch.
+    pub created_ms: i64,
+}
+
+/// POST /api/reminders body and PUT /api/reminders/:id body.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "./")]
+pub struct ReminderInput {
+    pub text: String,
+    pub due_at: Option<String>,
+    #[serde(default)]
+    pub done: bool,
+}
+
 /// WebTransport subscription request (sent on a bidirectional stream by the
 /// client right after session open).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

@@ -1,7 +1,7 @@
 //! Shared application state injected into every axum handler.
 
 use std::collections::BTreeMap;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
 use tokio::sync::broadcast;
 
@@ -9,7 +9,9 @@ use crate::audit::AuditLog;
 use crate::can::RealCanHandle;
 use crate::config::Config;
 use crate::inventory::Inventory;
+use crate::reminders::ReminderStore;
 use crate::spec::ActuatorSpec;
+use crate::system::SystemPoller;
 use crate::types::{MotorFeedback, ParamSnapshot};
 
 pub struct AppState {
@@ -33,6 +35,13 @@ pub struct AppState {
     /// mutating commands (enable / jog / param write / save).
     #[allow(dead_code)]
     pub control_lock: RwLock<Option<String>>,
+
+    /// Host-metrics state. Mutex (not RwLock) because computing the snapshot
+    /// requires the previous CPU totals to compute the delta -> always &mut.
+    pub system: Mutex<SystemPoller>,
+
+    /// Operator reminders, file-backed at `.rudyd/reminders.json`.
+    pub reminders: ReminderStore,
 }
 
 impl AppState {
@@ -42,6 +51,7 @@ impl AppState {
         inventory: Inventory,
         audit: AuditLog,
         real_can: Option<Arc<RealCanHandle>>,
+        reminders: ReminderStore,
     ) -> Self {
         let (feedback_tx, _) = broadcast::channel::<MotorFeedback>(512);
         Self {
@@ -54,6 +64,8 @@ impl AppState {
             params: RwLock::new(BTreeMap::new()),
             feedback_tx,
             control_lock: RwLock::new(None),
+            system: Mutex::new(SystemPoller::new()),
+            reminders,
         }
     }
 

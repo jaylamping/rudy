@@ -1,14 +1,32 @@
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
-import { Activity, Cog, Gamepad2, ScrollText, View } from "lucide-react";
+import {
+  Activity,
+  Cog,
+  Gamepad2,
+  LayoutDashboard,
+  ScrollText,
+  View,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const NAV = [
+// `/` resolves to `_authed.index.tsx` (the Overview dashboard). All the
+// other entries are siblings of the Overview route and render inside the
+// same shell.
+interface NavItem {
+  to: string;
+  label: string;
+  Icon: typeof Activity;
+  exact?: boolean;
+}
+
+const NAV: readonly NavItem[] = [
+  { to: "/", label: "Overview", Icon: LayoutDashboard, exact: true },
   { to: "/telemetry", label: "Telemetry", Icon: Activity },
   { to: "/params", label: "Params", Icon: Cog },
   { to: "/jog", label: "Jog", Icon: Gamepad2 },
   { to: "/viz", label: "Viz", Icon: View },
   { to: "/logs", label: "Logs", Icon: ScrollText },
-] as const;
+];
 
 export function AppShell() {
   const { location } = useRouterState();
@@ -21,12 +39,14 @@ export function AppShell() {
           <div className="text-xs text-muted-foreground">operator console</div>
         </div>
         <nav className="flex-1 space-y-0.5 p-2">
-          {NAV.map(({ to, label, Icon }) => {
-            const active = location.pathname.startsWith(to);
+          {NAV.map(({ to, label, Icon, exact }) => {
+            const active = exact
+              ? location.pathname === to
+              : location.pathname.startsWith(to);
             return (
               <Link
                 key={to}
-                to={to}
+                to={to as "/"}
                 className={cn(
                   "flex items-center gap-2 rounded-md px-3 py-2 text-sm transition",
                   active

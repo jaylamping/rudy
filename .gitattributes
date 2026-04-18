@@ -1,3 +1,28 @@
 # Normalize text so shell scripts run on Linux (LF, UTF-8).
 * text=auto
 *.sh text eol=lf
+
+# --- Git LFS: CAD + mesh assets under cad/ and ros/src/description/meshes/ ---
+# Native SolidWorks
+*.SLDPRT  filter=lfs diff=lfs merge=lfs -text
+*.SLDASM  filter=lfs diff=lfs merge=lfs -text
+# Neutral CAD interchange
+*.stp     filter=lfs diff=lfs merge=lfs -text
+*.step    filter=lfs diff=lfs merge=lfs -text
+*.STEP    filter=lfs diff=lfs merge=lfs -text
+# Mesh / 3D-print formats
+*.stl     filter=lfs diff=lfs merge=lfs -text
+*.STL     filter=lfs diff=lfs merge=lfs -text
+*.3mf     filter=lfs diff=lfs merge=lfs -text
+*.3MF     filter=lfs diff=lfs merge=lfs -text
+*.glb     filter=lfs diff=lfs merge=lfs -text
+*.gltf    filter=lfs diff=lfs merge=lfs -text
+# Datasheets and high-res reference photos under cad/
+cad/**/*.pdf  filter=lfs diff=lfs merge=lfs -text
+cad/**/*.png  filter=lfs diff=lfs merge=lfs -text
+cad/**/*.PNG  filter=lfs diff=lfs merge=lfs -text
+cad/**/*.jpg  filter=lfs diff=lfs merge=lfs -text
+cad/**/*.JPG  filter=lfs diff=lfs merge=lfs -text
+cad/**/*.jpeg filter=lfs diff=lfs merge=lfs -text
+# Bundled binary blobs that occasionally appear in CAD vendor packages
+cad/**/*.zip  filter=lfs diff=lfs merge=lfs -text

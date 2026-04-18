@@ -1,0 +1,40 @@
+{
+  "$comment": "Source-of-truth mapping from cad/ inputs to ros/src/description/meshes/ outputs. See scripts/convert-meshes-to-glb.mjs and cad/README.md.",
+  "outputDir": "ros/src/description/meshes",
+  "defaults": {
+    "scale": 0.001,
+    "rpy": [0, 0, 0]
+  },
+  "meshes": [
+    {
+      "name": "shoulder_housing",
+      "source": "cad/parts/shoulders/printed/Shoulder_Housing_v3.STL",
+      "scale": 0.001,
+      "rpy": [0, 0, 0]
+    },
+    {
+      "name": "shoulder_housing_cap",
+      "source": "cad/parts/shoulders/printed/Shoulder_Housing_Cap.STL",
+      "scale": 0.001,
+      "rpy": [0, 0, 0]
+    },
+    {
+      "name": "torso_shoulder_mount",
+      "source": "cad/parts/torso/printed/Internal Shoulder Actuator Mount.STL",
+      "scale": 0.001,
+      "rpy": [0, 0, 0]
+    }
+  ],
+  "$pending_step_to_stl": [
+    {
+      "intendedName": "rs03_actuator",
+      "stepSource": "cad/actuators/robstride/rs03/RS03.stp",
+      "note": "STEP -> STL needs a CAD kernel (SolidWorks or FreeCAD). Until then the URDF uses a primitive box for the RS03 actuator visual."
+    },
+    {
+      "intendedName": "torso_profile",
+      "stepSource": "cad/parts/structure/aluminium_2020_500mm.SLDPRT",
+      "note": "SLDPRT -> STL needs SolidWorks (or import via FreeCAD). Placeholder box stands in."
+    }
+  ]
+}

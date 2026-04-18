@@ -47,6 +47,8 @@ function safeJson(s: string): unknown {
 
 export const api = {
   config: () => apiFetch<import("@/lib/types/ServerConfig").ServerConfig>("/api/config"),
+  system: () =>
+    apiFetch<import("@/lib/types/SystemSnapshot").SystemSnapshot>("/api/system"),
   listMotors: () =>
     apiFetch<import("@/lib/types/MotorSummary").MotorSummary[]>("/api/motors"),
   getMotor: (role: string) =>
@@ -72,4 +74,25 @@ export const api = {
     apiFetch<{ ok: boolean }>(`/api/motors/${encodeURIComponent(role)}/save`, { method: "POST" }),
   setZero: (role: string) =>
     apiFetch<{ ok: boolean }>(`/api/motors/${encodeURIComponent(role)}/set_zero`, { method: "POST" }),
+  reminders: {
+    list: () =>
+      apiFetch<import("@/lib/types/Reminder").Reminder[]>("/api/reminders"),
+    create: (body: import("@/lib/types/ReminderInput").ReminderInput) =>
+      apiFetch<import("@/lib/types/Reminder").Reminder>("/api/reminders", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    update: (
+      id: string,
+      body: import("@/lib/types/ReminderInput").ReminderInput,
+    ) =>
+      apiFetch<import("@/lib/types/Reminder").Reminder>(
+        `/api/reminders/${encodeURIComponent(id)}`,
+        { method: "PUT", body: JSON.stringify(body) },
+      ),
+    delete: (id: string) =>
+      apiFetch<null>(`/api/reminders/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      }),
+  },
 };

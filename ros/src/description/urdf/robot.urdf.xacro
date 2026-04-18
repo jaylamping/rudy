@@ -48,6 +48,34 @@
     </link>
   </xacro:macro>
 
+  <!--
+    mesh_link: real glTF mesh as visual, conservative box as collision +
+    inertial. Use for printed/machined parts whose silhouette matters in
+    the operator console. Mesh meters; collision box dimensions are
+    bounding-box approximations (kept cheap for any future physics pass).
+    Source meshes regenerate via scripts/convert-meshes-to-glb.mjs.
+  -->
+  <xacro:macro name="mesh_link" params="name mesh sx sy sz rgba mass mesh_xyz:='0 0 0' mesh_rpy:='0 0 0' mesh_scale:='1 1 1'">
+    <link name="${name}">
+      <visual>
+        <origin xyz="${mesh_xyz}" rpy="${mesh_rpy}"/>
+        <geometry>
+          <mesh filename="package://description/meshes/${mesh}" scale="${mesh_scale}"/>
+        </geometry>
+        <material name="${name}_mat">
+          <color rgba="${rgba}"/>
+        </material>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <box size="${sx} ${sy} ${sz}"/>
+        </geometry>
+      </collision>
+      <xacro:box_inertial m="${mass}" x="${sx}" y="${sy}" z="${sz}"/>
+    </link>
+  </xacro:macro>
+
   <!-- Macro: revolute joint with hard limits, dynamics, soft safety band (~0.12 rad inside hard stops) -->
   <xacro:macro name="robot_revolute" params="name parent child axis lower upper soft_lower soft_upper origin_xyz origin_rpy">
     <joint name="${name}" type="revolute">
@@ -92,9 +120,16 @@
     origin_xyz="0 0 0.23"
     origin_rpy="0 0 0"/>
 
-  <!-- Left arm links (visual/collision only; joint origins define kinematics) -->
-  <xacro:box_link name="l_shoulder_pitch_link" sx="0.08" sy="0.08" sz="0.14" rgba="0.2 0.55 0.3 1" mass="0.6"/>
-  <xacro:box_link name="l_shoulder_roll_link" sx="0.10" sy="0.10" sz="0.12" rgba="0.2 0.55 0.3 1" mass="0.5"/>
+  <!--
+    Left arm links. Joint origins define kinematics; visual geometry is the
+    shoulder housing mesh where available, primitive boxes elsewhere.
+  -->
+  <xacro:mesh_link name="l_shoulder_pitch_link"
+    mesh="shoulder_housing.glb"
+    sx="0.08" sy="0.08" sz="0.14" rgba="0.2 0.55 0.3 1" mass="0.6"/>
+  <xacro:mesh_link name="l_shoulder_roll_link"
+    mesh="shoulder_housing_cap.glb"
+    sx="0.10" sy="0.10" sz="0.12" rgba="0.2 0.55 0.3 1" mass="0.5"/>
   <xacro:box_link name="l_upper_arm_link" sx="0.09" sy="0.09" sz="0.22" rgba="0.2 0.55 0.3 1" mass="0.7"/>
   <xacro:box_link name="l_forearm_link" sx="0.08" sy="0.08" sz="0.20" rgba="0.15 0.45 0.25 1" mass="0.5"/>
 
@@ -147,9 +182,15 @@
     origin_xyz="0 0 -0.18"
     origin_rpy="0 0 0"/>
 
-  <!-- Right arm -->
-  <xacro:box_link name="r_shoulder_pitch_link" sx="0.08" sy="0.08" sz="0.14" rgba="0.25 0.35 0.65 1" mass="0.6"/>
-  <xacro:box_link name="r_shoulder_roll_link" sx="0.10" sy="0.10" sz="0.12" rgba="0.25 0.35 0.65 1" mass="0.5"/>
+  <!-- Right arm: mirror of left, with the shoulder housing rotated 180 deg about Z. -->
+  <xacro:mesh_link name="r_shoulder_pitch_link"
+    mesh="shoulder_housing.glb"
+    mesh_rpy="0 0 3.14159"
+    sx="0.08" sy="0.08" sz="0.14" rgba="0.25 0.35 0.65 1" mass="0.6"/>
+  <xacro:mesh_link name="r_shoulder_roll_link"
+    mesh="shoulder_housing_cap.glb"
+    mesh_rpy="0 0 3.14159"
+    sx="0.10" sy="0.10" sz="0.12" rgba="0.25 0.35 0.65 1" mass="0.5"/>
   <xacro:box_link name="r_upper_arm_link" sx="0.09" sy="0.09" sz="0.22" rgba="0.25 0.35 0.65 1" mass="0.7"/>
   <xacro:box_link name="r_forearm_link" sx="0.08" sy="0.08" sz="0.20" rgba="0.2 0.3 0.55 1" mass="0.5"/>
 

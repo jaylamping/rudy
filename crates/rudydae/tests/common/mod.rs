@@ -15,6 +15,7 @@ use rudydae::config::{
     CanConfig, Config, HttpConfig, PathsConfig, SafetyConfig, TelemetryConfig, WebTransportConfig,
 };
 use rudydae::inventory::Inventory;
+use rudydae::reminders::ReminderStore;
 use rudydae::spec::ActuatorSpec;
 use rudydae::state::{AppState, SharedState};
 
@@ -108,8 +109,10 @@ pub fn make_state() -> (SharedState, tempfile::TempDir) {
     let inv = Inventory::load(&inv_path).expect("load inventory");
     let audit = AuditLog::open(&audit_path).expect("open audit");
     let real_can = can::build_handle(&cfg, &inv).expect("build can");
+    let reminders =
+        ReminderStore::open(dir.path().join("reminders.json")).expect("open reminders");
 
-    let state = Arc::new(AppState::new(cfg, spec, inv, audit, real_can));
+    let state = Arc::new(AppState::new(cfg, spec, inv, audit, real_can, reminders));
     (state, dir)
 }
 
@@ -127,6 +130,7 @@ pub fn make_state_with_wt_advert() -> (SharedState, tempfile::TempDir) {
         state.inventory.clone(),
         AuditLog::open(dir.path().join("audit2.jsonl")).unwrap(),
         state.real_can.clone(),
+        ReminderStore::open(dir.path().join("reminders2.json")).unwrap(),
     ));
     (new_state, dir)
 }

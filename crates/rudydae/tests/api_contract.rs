@@ -19,8 +19,8 @@ use serde_json::json;
 use tower::ServiceExt;
 
 use rudydae::types::{
-    ApiError, MotorFeedback, MotorSummary, ParamSnapshot, ServerConfig, ServerFeatures,
-    WebTransportAdvert,
+    ApiError, MotorFeedback, MotorSummary, ParamSnapshot, Reminder, ServerConfig, ServerFeatures,
+    SystemSnapshot, WebTransportAdvert,
 };
 
 mod common;
@@ -429,6 +429,164 @@ async fn enable_unverified_motor_is_forbidden() {
     assert_eq!(err.error, "not_verified");
 }
 
+/// `GET /api/system` returns a `SystemSnapshot`. With `cfg.can.mock = true`
+/// (the test fixture's default) the snapshot is mocked: `is_mock=true`, all
+/// numeric fields populated. Pins the wire shape the dashboard's
+/// `SystemHealthCard` consumes.
+#[tokio::test]
+async fn get_system_returns_system_snapshot_shape() {
+    let (state, _dir) = common::make_state();
+    let app = rudydae::build_app(state);
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/system")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let snap: SystemSnapshot = body_json(resp).await;
+    assert!(snap.is_mock, "test fixture has cfg.can.mock=true");
+    assert!(snap.cpu_pct >= 0.0 && snap.cpu_pct <= 100.0);
+    assert!(snap.mem_total_mb > 0);
+    assert!(snap.t_ms > 0);
+    assert_eq!(snap.load.len(), 3);
+}
+
+/// Reminders CRUD: empty list on first call, create returns 201 + reminder
+/// echoed back, list reflects it, update mutates fields, delete returns 204.
+/// One test pinning the whole flow because the operations only make sense
+/// in sequence (id from create -> update/delete).
+#[tokio::test]
+async fn reminders_crud_roundtrip() {
+    let (state, _dir) = common::make_state();
+    let app = rudydae::build_app(state);
+
+    // Empty initial list.
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/reminders")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let initial: Vec<Reminder> = body_json(resp).await;
+    assert!(initial.is_empty(), "fresh tempdir should have no reminders");
+
+    // Create.
+    let body = serde_json::to_vec(&json!({ "text": "torque rs03" })).unwrap();
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/reminders")
+                .header("content-type", "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CREATED);
+    let created: Reminder = body_json(resp).await;
+    assert_eq!(created.text, "torque rs03");
+    assert!(!created.done);
+    assert!(!created.id.is_empty());
+
+    // List shows the created one.
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/reminders")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let listed: Vec<Reminder> = body_json(resp).await;
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].id, created.id);
+
+    // Update done=true.
+    let body =
+        serde_json::to_vec(&json!({ "text": created.text, "done": true })).unwrap();
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::PUT)
+                .uri(format!("/api/reminders/{}", created.id))
+                .header("content-type", "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let updated: Reminder = body_json(resp).await;
+    assert!(updated.done);
+
+    // Delete.
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::DELETE)
+                .uri(format!("/api/reminders/{}", created.id))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+
+    // 404 on the now-missing id.
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::DELETE)
+                .uri(format!("/api/reminders/{}", created.id))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}
+
+/// Empty text is rejected with 400 / `empty_text` so the SPA can show a
+/// friendly inline validation error without parsing free-form messages.
+#[tokio::test]
+async fn create_reminder_with_blank_text_400s() {
+    let (state, _dir) = common::make_state();
+    let app = rudydae::build_app(state);
+
+    let body = serde_json::to_vec(&json!({ "text": "   " })).unwrap();
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/reminders")
+                .header("content-type", "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    let err: ApiError = body_json(resp).await;
+    assert_eq!(err.error, "empty_text");
+}
+
 /// Sanity check: the URL paths the test hits above are exactly the ones the
 /// SPA's `link/src/lib/api.ts` constructs. If someone renames a route in
 /// `crates/rudydae/src/api/mod.rs`, this test file fails to compile because
@@ -442,6 +600,7 @@ fn endpoint_inventory_documented() {
     // checklist for code reviewers.
     let _spa_endpoints = [
         "GET    /api/config",
+        "GET    /api/system",
         "GET    /api/motors",
         "GET    /api/motors/:role",
         "GET    /api/motors/:role/feedback",
@@ -451,5 +610,9 @@ fn endpoint_inventory_documented() {
         "POST   /api/motors/:role/stop",
         "POST   /api/motors/:role/save",
         "POST   /api/motors/:role/set_zero",
+        "GET    /api/reminders",
+        "POST   /api/reminders",
+        "PUT    /api/reminders/:id",
+        "DELETE /api/reminders/:id",
     ];
 }

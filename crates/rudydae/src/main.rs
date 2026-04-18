@@ -8,7 +8,7 @@ use anyhow::{Context, Result};
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
-use rudydae::{audit, can, config, inventory, server, spec, state, telemetry, wt};
+use rudydae::{audit, can, config, inventory, reminders, server, spec, state, telemetry, wt};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -48,6 +48,17 @@ async fn main() -> Result<()> {
     let audit = audit::AuditLog::open(&cfg.paths.audit_log)
         .with_context(|| format!("opening audit log {:?}", cfg.paths.audit_log))?;
 
+    // Reminders live next to the audit log so all operator-state files share
+    // a parent directory and a single backup target.
+    let reminders_path = cfg
+        .paths
+        .audit_log
+        .parent()
+        .map(|p| p.join("reminders.json"))
+        .unwrap_or_else(|| std::path::PathBuf::from("reminders.json"));
+    let reminder_store = reminders::ReminderStore::open(&reminders_path)
+        .with_context(|| format!("opening reminders {:?}", reminders_path))?;
+
     let real_can = can::build_handle(&cfg, &inv).context("opening CAN core")?;
 
     let app_state = Arc::new(state::AppState::new(
@@ -56,6 +67,7 @@ async fn main() -> Result<()> {
         inv,
         audit,
         real_can,
+        reminder_store,
     ));
 
     can::spawn(app_state.clone())?;
