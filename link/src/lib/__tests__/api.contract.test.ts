@@ -127,7 +127,7 @@ describe("PUT /api/motors/:role/params/:name", () => {
   });
 
   it("URL-encodes role and name segments", async () => {
-    await api.writeParam("with space", "slash/in/name", { value: 1 });
+    await api.writeParam("with space", "slash/in/name", { value: 1, save_after: false });
     expect(captured?.url).toBe("/api/motors/with%20space/params/slash%2Fin%2Fname");
   });
 });
@@ -138,9 +138,9 @@ describe("Error envelope handling", () => {
       status: 400,
       body: { error: "out_of_range", detail: "9999 not in [0, 60]" },
     };
-    await expect(api.writeParam("x", "limit_torque", { value: 9999 })).rejects.toBeInstanceOf(
-      ApiError,
-    );
+    await expect(
+      api.writeParam("x", "limit_torque", { value: 9999, save_after: false }),
+    ).rejects.toBeInstanceOf(ApiError);
 
     nextResponse = {
       status: 404,
