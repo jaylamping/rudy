@@ -132,6 +132,14 @@ jobs:
         working-directory: link
     steps:
       - uses: actions/checkout@v4
+        with:
+          # `npm run build` -> `bake-urdf.mjs` copies *.glb out of
+          # ros/src/description/meshes/ into link/public/robot/meshes/. Those
+          # are Git LFS objects (see .gitattributes); without `lfs: true`
+          # we'd ship 140-byte LFS pointer files and the GLTFLoader in the
+          # operator console would explode with a JSON parse error on
+          # "version https://git-lfs.github.com/spec/v1".
+          lfs: true
       - uses: actions/setup-node@v4
         with:
           node-version: "20"

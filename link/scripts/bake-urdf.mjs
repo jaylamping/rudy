@@ -62,6 +62,27 @@ function tryRunXacro() {
   return { ok: false };
 }
 
+// Detect Git LFS pointer files. They're tiny (<200 B) and start with a
+// fixed magic line. We refuse to bake these because they'd ship as the
+// "asset" and the GLTFLoader in the operator console would try to
+// JSON.parse `version https://git-lfs.github.com/spec/v1\n...` and
+// throw `Unexpected token 'v', "version ht"... is not valid JSON`.
+//
+// This usually means LFS isn't installed locally, or the file was
+// checked out without `git lfs pull` (e.g. CI without `lfs: true`).
+const LFS_POINTER_PREFIX = "version https://git-lfs.github.com/spec/";
+
+async function isLfsPointer(absPath) {
+  // Real GLBs start with the 4-byte magic "glTF"; LFS pointers are tiny
+  // text. Read just enough to disambiguate without slurping the whole
+  // mesh.
+  const head = await readFile(absPath, { encoding: "utf8", flag: "r" }).catch(
+    () => null,
+  );
+  if (head === null) return false;
+  return head.startsWith(LFS_POINTER_PREFIX);
+}
+
 async function copyMeshes() {
   if (!existsSync(MESH_DIR)) {
     console.warn(`bake-urdf: no mesh dir at ${MESH_DIR}; skipping mesh copy`);
@@ -71,8 +92,23 @@ async function copyMeshes() {
   const entries = (await readdir(MESH_DIR)).filter(
     (n) => n.endsWith(".glb") || n.endsWith(".gltf"),
   );
+  const pointers = [];
   for (const name of entries) {
-    await copyFile(join(MESH_DIR, name), join(OUT_MESH_DIR, name));
+    const src = join(MESH_DIR, name);
+    if (await isLfsPointer(src)) {
+      pointers.push(name);
+      continue;
+    }
+    await copyFile(src, join(OUT_MESH_DIR, name));
+  }
+  if (pointers.length > 0) {
+    console.error(
+      `bake-urdf: ${pointers.length} mesh(es) are unresolved Git LFS pointers:\n` +
+        pointers.map((n) => `  - ${join(MESH_DIR, n)}`).join("\n") +
+        "\n  Install Git LFS and run `git lfs pull` in the repo root, then re-run this script.\n" +
+        "  In CI, set `lfs: true` on actions/checkout. Refusing to bake placeholder bytes.",
+    );
+    process.exit(1);
   }
   return entries;
 }

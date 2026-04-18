@@ -22,6 +22,14 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The SPA build (`link/ npm run build`) bakes *.glb meshes from
+          # ros/src/description/meshes/ into link/public/robot/. Those files
+          # are tracked by Git LFS (.gitattributes), so without `lfs: true`
+          # we'd embed 140-byte LFS pointer files into the rudydae binary
+          # and the operator console's URDF viewer would fail to parse
+          # them as glTF. Costs only a few hundred KB extra to fetch.
+          lfs: true
 
       - name: Compute version
         id: ver
