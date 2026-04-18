@@ -65,14 +65,16 @@ pub async fn put_travel_limits(
 ) -> Result<Json<TravelLimits>, (StatusCode, Json<ApiError>)> {
     let session = session_from_headers(&headers);
 
-    // Lock-gate write attempts so a second operator can't silently override
-    // the current operator's band without going through "take over".
-    if !state.has_control(session.as_deref().unwrap_or("")) {
+    // Lock-gate write attempts. First mutator from a fresh session implicitly
+    // claims the lock (see `AppState::ensure_control`); a second concurrent
+    // session is refused with 423 so two tabs can't silently fight over the
+    // same inventory file.
+    if let Err(holder) = state.ensure_control(session.as_deref().unwrap_or("")) {
         audit_denied(&state, session.as_deref(), &role, "lock_held", &body);
         return Err(err(
             StatusCode::from_u16(423).unwrap(),
             "lock_held",
-            Some("another operator holds the control lock".into()),
+            Some(format!("control lock is held by session {holder}")),
         ));
     }
 

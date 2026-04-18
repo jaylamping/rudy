@@ -621,8 +621,9 @@ async fn get_travel_limits_404s_when_unset() {
 }
 
 /// PUT /api/motors/:role/travel_limits with a valid band roundtrips to the
-/// matching GET. The lock-gate is satisfied implicitly: nobody holds the
-/// lock yet, so `has_control(<empty>)` returns true.
+/// matching GET. The lock-gate is satisfied implicitly: the request omits
+/// `X-Rudy-Session` and `ensure_control("")` permits anonymous mutators
+/// when the lock is free.
 #[tokio::test]
 async fn put_travel_limits_roundtrips_through_get() {
     let (state, _dir) = common::make_state();
@@ -802,97 +803,39 @@ async fn estop_returns_ok_envelope() {
     assert_eq!(r.stopped, total_present);
 }
 
-/// `GET /api/lock` reports `null` holder and `you_hold=false` until someone
-/// POSTs (and the request carries no `X-Rudy-Session`).
+/// First mutator from a fresh session implicitly claims the control lock,
+/// and a *second* concurrent session is then refused with 423 Locked.
+///
+/// This is the only failure mode the lock exists to guard against on a
+/// solo-operator deployment (two browser tabs racing each other on the bus).
+/// There is no `/api/lock` endpoint and no UI: the gate is invisible until
+/// it bites a stale tab.
 #[tokio::test]
-async fn lock_lifecycle_acquire_release() {
+async fn second_session_rejected_after_first_implicitly_claims_lock() {
     let (state, _dir) = common::make_state();
     let app = rudydae::build_app(state);
 
-    // Initial state: free.
-    let resp = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri("/api/lock")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-    let v: serde_json::Value = body_json(resp).await;
-    assert!(v.get("holder").map(|h| h.is_null()).unwrap_or(true));
-
-    // Acquire as session-A.
-    let resp = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method(Method::POST)
-                .uri("/api/lock")
-                .header("x-rudy-session", "session-A")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-    let v: serde_json::Value = body_json(resp).await;
-    assert_eq!(v.get("holder").and_then(|h| h.as_str()), Some("session-A"));
-    assert_eq!(v.get("you_hold").and_then(|b| b.as_bool()), Some(true));
-
-    // session-B sees you_hold=false.
-    let resp = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri("/api/lock")
-                .header("x-rudy-session", "session-B")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    let v: serde_json::Value = body_json(resp).await;
-    assert_eq!(v.get("you_hold").and_then(|b| b.as_bool()), Some(false));
-
-    // Release as session-A.
-    let resp = app
-        .oneshot(
-            Request::builder()
-                .method(Method::DELETE)
-                .uri("/api/lock")
-                .header("x-rudy-session", "session-A")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-}
-
-/// While session-A holds the lock, mutating endpoints reject session-B
-/// with 423 Locked / `lock_held`.
-#[tokio::test]
-async fn travel_limits_rejected_when_lock_held_by_another() {
-    let (state, _dir) = common::make_state();
-    let app = rudydae::build_app(state);
-
-    let _ = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method(Method::POST)
-                .uri("/api/lock")
-                .header("x-rudy-session", "session-A")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
+    // session-A makes a normal mutating call. This succeeds AND silently
+    // promotes session-A to lock holder.
     let body = serde_json::to_vec(&json!({"min_rad": -0.5, "max_rad": 0.5})).unwrap();
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::PUT)
+                .uri("/api/motors/shoulder_actuator_a/travel_limits")
+                .header("content-type", "application/json")
+                .header("x-rudy-session", "session-A")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // session-B's mutator is now refused with the holder's id surfaced in
+    // the detail string (so a debugger can see *which* tab is in the way).
+    let body = serde_json::to_vec(&json!({"min_rad": -0.4, "max_rad": 0.4})).unwrap();
     let resp = app
         .oneshot(
             Request::builder()
@@ -908,6 +851,11 @@ async fn travel_limits_rejected_when_lock_held_by_another() {
     assert_eq!(resp.status(), StatusCode::from_u16(423).unwrap());
     let err: ApiError = body_json(resp).await;
     assert_eq!(err.error, "lock_held");
+    assert!(
+        err.detail.as_deref().unwrap_or("").contains("session-A"),
+        "detail should name the holder: {:?}",
+        err.detail
+    );
 }
 
 // ============================================================================
@@ -1314,9 +1262,6 @@ fn endpoint_inventory_documented() {
         "GET    /api/motors/:role/inventory",
         "PUT    /api/motors/:role/verified",
         "POST   /api/estop",
-        "GET    /api/lock",
-        "POST   /api/lock",
-        "DELETE /api/lock",
         "GET    /api/reminders",
         "POST   /api/reminders",
         "PUT    /api/reminders/:id",

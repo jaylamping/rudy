@@ -155,7 +155,6 @@ export function ActuatorFirmwareTab({ role }: { role: string }) {
               non-volatile store. Survives power cycles.
             </>
           }
-          phrase={`save ${role}`}
           confirmLabel="Save"
           confirmVariant="destructive"
           onCancel={() => setConfirmSave(false)}

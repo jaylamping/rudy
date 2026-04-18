@@ -1,9 +1,8 @@
 // Persistent E-stop button.
 //
-// Always reachable from anywhere in the SPA — sits in the app shell header
-// next to the lock badge. Single click pops a typed-confirm dialog
-// ("estop") which dispatches `POST /api/estop`. The daemon broadcasts a
-// `safety_event` so other tabs flash a banner.
+// Always reachable from anywhere in the SPA — sits in the app shell header.
+// Single click pops a confirm dialog and dispatches `POST /api/estop`. The
+// daemon broadcasts a `safety_event` so other tabs flash a banner.
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -49,7 +48,6 @@ export function EstopButton({ className }: { className?: string }) {
               a stop frame.
             </>
           }
-          phrase="estop"
           confirmLabel="STOP NOW"
           confirmVariant="destructive"
           onCancel={() => setConfirm(false)}

@@ -9,7 +9,6 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { EstopButton } from "@/components/estop-button";
-import { LockBadge } from "@/components/lock-badge";
 
 // `/` resolves to `_authed.index.tsx` (the Overview dashboard). All the
 // other entries are siblings of the Overview route and render inside the
@@ -64,8 +63,7 @@ export function AppShell() {
         </nav>
       </aside>
       <main className="flex-1 overflow-auto bg-background">
-        <header className="sticky top-0 z-40 flex items-center justify-between gap-4 border-b border-border bg-background/85 px-6 py-3 backdrop-blur">
-          <LockBadge />
+        <header className="sticky top-0 z-40 flex items-center justify-end gap-4 border-b border-border bg-background/85 px-6 py-3 backdrop-blur">
           <EstopButton />
         </header>
         <div className="mx-auto max-w-6xl p-6">

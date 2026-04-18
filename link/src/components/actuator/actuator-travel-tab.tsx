@@ -209,7 +209,6 @@ export function ActuatorTravelTab({ motor }: { motor: MotorSummary }) {
               rudydae.
             </>
           }
-          phrase={`limit ${motor.role}`}
           confirmLabel="Save"
           confirmVariant="default"
           onCancel={() => setConfirm(false)}

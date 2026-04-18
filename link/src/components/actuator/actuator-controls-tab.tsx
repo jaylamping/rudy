@@ -110,7 +110,6 @@ export function ActuatorControlsTab({ motor }: { motor: MotorSummary }) {
             }[confirm]
           }
           description={describe(confirm, motor.role)}
-          phrase={`${confirm} ${motor.role}`}
           confirmLabel={confirm === "enable" ? "Enable" : "Confirm"}
           confirmVariant={confirm === "enable" ? "default" : "destructive"}
           onCancel={() => setConfirm(null)}

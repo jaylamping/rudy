@@ -88,11 +88,11 @@ async fn do_rename(
     assignment: Option<(String, JointKind)>,
 ) -> Result<Json<RenameResp>, (StatusCode, Json<ApiError>)> {
     let session = session_from_headers(&headers);
-    if !state.has_control(session.as_deref().unwrap_or("")) {
+    if let Err(holder) = state.ensure_control(session.as_deref().unwrap_or("")) {
         return Err(err(
             StatusCode::from_u16(423).unwrap(),
             "lock_held",
-            Some("another operator holds the control lock".into()),
+            Some(format!("control lock is held by session {holder}")),
         ));
     }
 

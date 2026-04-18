@@ -73,7 +73,7 @@ pub async fn put_verified(
     Json(body): Json<VerifiedBody>,
 ) -> Result<Json<VerifiedResp>, (StatusCode, Json<ApiError>)> {
     let session = session_from_headers(&headers);
-    if !state.has_control(session.as_deref().unwrap_or("")) {
+    if let Err(holder) = state.ensure_control(session.as_deref().unwrap_or("")) {
         state.audit.write(AuditEntry {
             timestamp: Utc::now(),
             session_id: session.clone(),
@@ -86,7 +86,7 @@ pub async fn put_verified(
         return Err(err(
             StatusCode::from_u16(423).unwrap(),
             "lock_held",
-            Some("another operator holds the control lock".into()),
+            Some(format!("control lock is held by session {holder}")),
         ));
     }
 

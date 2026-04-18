@@ -2,9 +2,11 @@
 // `./query.ts`). Requests are same-origin (Vite dev proxy or rudydae serving
 // the built SPA). No auth: the console is tailnet/localhost-only.
 //
-// Mutating requests carry an `X-Rudy-Session` header used by the daemon's
-// single-operator lock. The session id is minted once per browser tab and
-// stashed in `sessionStorage`; see `./session.ts`.
+// Mutating requests carry an `X-Rudy-Session` header. The daemon uses it
+// for the implicit single-operator lock (first mutator from a fresh session
+// wins; a second concurrent session gets 423 Locked) and to attribute audit
+// log entries. The session id is minted once per browser tab and stashed in
+// `sessionStorage`; see `./session.ts`.
 
 import { sessionId } from "./session";
 
@@ -172,29 +174,6 @@ export const api = {
   // safety_event WT frame.
   estop: () =>
     apiFetch<{ ok: boolean; stopped: number }>(`/api/estop`, { method: "POST" }),
-  // Single-operator control lock. The SPA mints a session id per tab; the
-  // daemon keys the lock off the `X-Rudy-Session` header (added by
-  // `apiFetch` automatically for every mutating method).
-  lock: {
-    get: () =>
-      apiFetch<{
-        holder: string | null;
-        acquired_at_ms: number | null;
-        you_hold: boolean;
-      }>(`/api/lock`),
-    acquire: () =>
-      apiFetch<{
-        holder: string | null;
-        acquired_at_ms: number | null;
-        you_hold: boolean;
-      }>(`/api/lock`, { method: "POST" }),
-    release: () =>
-      apiFetch<{
-        holder: string | null;
-        acquired_at_ms: number | null;
-        you_hold: boolean;
-      }>(`/api/lock`, { method: "DELETE" }),
-  },
   reminders: {
     list: () =>
       apiFetch<import("@/lib/types/Reminder").Reminder[]>("/api/reminders"),

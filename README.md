@@ -134,10 +134,13 @@ the operator:
 - inspect the full commissioning record + flip the `verified` flag with
   audit (Inventory tab).
 
-Every mutating action is gated by a single-operator lock (`X-Rudy-Session`
-header → `state.control_lock`) and audit-logged. A persistent **E-STOP**
-button in the app shell fans `cmd_stop` to every present motor in one
-click.
+Every mutating action is audit-logged with the originating session id
+(`X-Rudy-Session` header). The first mutator from a fresh session implicitly
+claims a lightweight single-operator lock so a second concurrent tab can't
+race the active operator on the bus — the second tab's mutators come back
+as 423 Locked. There is no operator-facing UI for this; the gate is
+invisible until it bites a stale tab. A persistent **E-STOP** button in the
+app shell fans `cmd_stop` to every present motor in one click.
 
 ## CI
 

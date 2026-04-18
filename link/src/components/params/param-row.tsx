@@ -1,7 +1,7 @@
 // One row of the firmware-params table.
 //
 // Originally inlined inside `_authed.params.tsx`; pulled out so the
-// per-actuator detail page can reuse the same row + typed-confirm dialog.
+// per-actuator detail page can reuse the same row + confirm dialog.
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -87,11 +87,6 @@ export function ParamRow({ role, param }: ParamRowProps) {
                 <code className="font-mono">{role}</code>.
                 {confirm.save && " This persists across power cycles."}
               </>
-            }
-            phrase={
-              confirm.save
-                ? `save ${param.name}`
-                : `write ${param.name}`
             }
             confirmLabel={confirm.save ? "Save" : "Write"}
             confirmVariant="destructive"

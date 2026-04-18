@@ -264,7 +264,6 @@ export function ActuatorTestsTab({ motor }: { motor: MotorSummary }) {
               )}
             </div>
           }
-          phrase={`run ${confirm.name}`}
           confirmLabel="Run"
           confirmVariant={confirm.destructive ? "destructive" : "default"}
           onCancel={() => setConfirm(null)}

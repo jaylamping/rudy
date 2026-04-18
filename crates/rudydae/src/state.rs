@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex, RwLock};
 
 use tokio::sync::broadcast;
 
-use crate::audit::AuditLog;
+use crate::audit::{AuditEntry, AuditLog, AuditResult};
 use crate::boot_state::BootState;
 use crate::can::RealCanHandle;
 use crate::config::Config;
@@ -15,9 +15,11 @@ use crate::spec::ActuatorSpec;
 use crate::system::SystemPoller;
 use crate::types::{MotorFeedback, ParamSnapshot, SafetyEvent, SystemSnapshot, TestProgress};
 
-/// Identity record for whichever WebTransport session currently owns the
-/// single-operator lock. Exposed so the SPA can render a "held by ..." pill
-/// and a "take over" button.
+/// Identity record for whichever session currently owns the single-operator
+/// lock. The lock is auto-acquired by the first mutating request from a fresh
+/// session, so this is mostly an internal bookkeeping struct used to detect
+/// "a different tab is already driving" and refuse the second mutator with
+/// 423 Locked. There is no operator-facing UI for it.
 #[derive(Debug, Clone)]
 pub struct ControlLockHolder {
     pub session_id: String,
@@ -121,40 +123,57 @@ impl AppState {
         }
     }
 
-    /// Returns true if `session_id` currently holds the lock (or no lock is
-    /// held). Mutating handlers consult this before issuing CAN frames; a
-    /// `None` return means the request should be rejected with 423 Locked.
-    pub fn has_control(&self, session_id: &str) -> bool {
-        match &*self.control_lock.read().expect("control_lock poisoned") {
-            None => true,
-            Some(holder) => holder.session_id == session_id,
-        }
-    }
-
-    /// Acquire (or take-over) the control lock for `session_id`. Returns the
-    /// previous holder, if any, so the caller can audit the take-over.
-    pub fn acquire_control(&self, session_id: &str) -> Option<ControlLockHolder> {
+    /// Cooperative single-operator gate. Called by every mutating handler
+    /// before it touches the bus. Three outcomes:
+    ///
+    /// - **Lock free** → claim it for `session_id`, audit a
+    ///   `control_lock_auto_acquire` entry, broadcast `LockChanged`, return
+    ///   `Ok(())`. This is the common path: open a fresh tab, click anything,
+    ///   that tab now owns the bus.
+    /// - **Lock already held by `session_id`** → `Ok(())` cheap path.
+    /// - **Lock held by a *different* session** → `Err(holder_session_id)`.
+    ///   The caller turns this into 423 Locked. This is the only failure
+    ///   mode this gate exists for: prevent a stale/forgotten second tab
+    ///   from racing the active operator's commands on the CAN bus.
+    ///
+    /// `session_id` may be empty when the request omitted `X-Rudy-Session`;
+    /// in that case the gate refuses to claim the lock (an unidentified
+    /// caller can't be a "holder") but still permits the request when no
+    /// lock is currently held — matching the curl-friendly posture the rest
+    /// of the API takes.
+    pub fn ensure_control(&self, session_id: &str) -> Result<(), String> {
         let mut guard = self.control_lock.write().expect("control_lock poisoned");
-        let prev = guard.clone();
-        *guard = Some(ControlLockHolder {
-            session_id: session_id.to_string(),
-            acquired_at_ms: chrono::Utc::now().timestamp_millis(),
-        });
-        prev
-    }
+        match &*guard {
+            Some(holder) if holder.session_id == session_id => Ok(()),
+            Some(holder) => Err(holder.session_id.clone()),
+            None => {
+                if session_id.is_empty() {
+                    return Ok(());
+                }
+                let now_ms = chrono::Utc::now().timestamp_millis();
+                *guard = Some(ControlLockHolder {
+                    session_id: session_id.to_string(),
+                    acquired_at_ms: now_ms,
+                });
+                drop(guard);
 
-    /// Release the lock if `session_id` currently holds it. No-op otherwise.
-    pub fn release_control(&self, session_id: &str) -> bool {
-        let mut guard = self.control_lock.write().expect("control_lock poisoned");
-        if guard
-            .as_ref()
-            .map(|h| h.session_id == session_id)
-            .unwrap_or(false)
-        {
-            *guard = None;
-            true
-        } else {
-            false
+                self.audit.write(AuditEntry {
+                    timestamp: chrono::Utc::now(),
+                    session_id: Some(session_id.to_string()),
+                    remote: None,
+                    action: "control_lock_auto_acquire".into(),
+                    target: None,
+                    details: serde_json::json!({}),
+                    result: AuditResult::Ok,
+                });
+
+                let _ = self.safety_event_tx.send(SafetyEvent::LockChanged {
+                    t_ms: now_ms,
+                    holder: Some(session_id.to_string()),
+                });
+
+                Ok(())
+            }
         }
     }
 }

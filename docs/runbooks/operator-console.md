@@ -133,9 +133,20 @@ The UI replaces Motor Studio for steps 4-7.
 
 ### Control lock
 
-Phase 2 surfaces a visible control-lock indicator in the sidebar. In Phase 1,
-`rudydae` tracks the lock internally (see `state::AppState::control_lock`) but
-does not yet enforce it at the REST layer.
+`rudydae` runs a lightweight single-operator lock to keep two browser tabs
+from racing each other on the CAN bus. It is fully implicit: the first
+mutating REST call from a fresh `X-Rudy-Session` claims the lock, and any
+*other* concurrent session's mutator gets back 423 Locked with the holder's
+session id in the `detail` field. There is no operator UI: a fresh tab just
+works, and stale tabs find out they're stale by being refused.
+
+Recovery from a stuck holder (rare; would only happen if a tab vanished
+without the daemon restarting): restart `rudyd.service`. The lock is in
+memory only; nothing on disk pins it.
+
+The auto-acquire is recorded in `~/.rudyd/audit.jsonl` as
+`control_lock_auto_acquire` and broadcast over WebTransport as a
+`safety_event` `lock_changed` frame.
 
 ## Troubleshooting
 

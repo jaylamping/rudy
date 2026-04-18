@@ -104,9 +104,12 @@ holds. On top of it, `rudydae` adds:
 - **Enable gating.** `POST /api/motors/:id/enable` refuses unless the motor's
   `config/actuators/inventory.yaml` entry has `verified: true`. Same gate the
   Rust driver already enforces.
-- **Single-operator lock.** `rudydae` tracks which session currently holds the
-  "control lock." Other sessions can view telemetry but cannot enable, write
-  parameters, or jog. Lock can be transferred via an explicit UI action.
+- **Single-operator lock.** `rudydae` runs a lightweight implicit lock on
+  mutating endpoints (jog, home, params, travel-limits, verified, tests,
+  rename). The first mutator from a fresh `X-Rudy-Session` silently claims
+  it; a second concurrent session is refused with 423 Locked. There is no
+  UI surface — see the 2026-04-18 addendum below for why this collapsed
+  from the original "explicit Take control / Take over" UX.
 - **Dead-man jog.** Holding a jog key sends commands at ≥ 20 Hz; releasing
   (or disconnecting) causes `rudydae` to issue `cmd_stop`. The firmware
   `canTimeout` is the backstop if `rudydae` itself hangs.
@@ -356,3 +359,50 @@ SPA evolve its filter without coordinating server-side rollouts.
   dashboard's debug pane.
 - The bridge logs a `console.warn` per detected sequence gap; consumers
   can override via the `onGap` prop for richer telemetry.
+
+## Addendum 2026-04-18: solo-operator UX simplification
+
+The original D6 took a multi-operator posture: an explicit `LockBadge`
+component with **Take control** / **Take over** / **Release** buttons, a
+`GET/POST/DELETE /api/lock` endpoint, and a typed-confirm dialog
+(`ConfirmDialog` requiring you to type e.g. `limit shoulder_actuator_a`)
+on every destructive action. This was overbuilt for the actual deployment.
+
+Rudy is operated by exactly one human. The realistic failure modes that
+remain are:
+
+1. Two browser tabs of the operator's own session racing each other on the
+   bus (e.g. an old tab on the phone whose dead-man jog timer fires while
+   the laptop is driving).
+2. A stale tab's mutator landing concurrently with the active tab's.
+
+What was removed:
+
+- `LockBadge` component, the `["lock"]` query, the `lock_changed`
+  invalidation wiring in the SPA.
+- `GET / POST / DELETE /api/lock` route handlers and `crates/rudydae/src/api/lock.rs`.
+- `AppState::has_control / acquire_control / release_control`.
+- The typed-phrase requirement on `ConfirmDialog` (no `phrase` prop;
+  no input field; just Confirm / Cancel).
+
+What stayed:
+
+- The `control_lock: RwLock<Option<ControlLockHolder>>` field on `AppState`.
+- The 423-Locked guard at the top of every mutating handler — but it now
+  calls `AppState::ensure_control(session)` which **auto-claims the lock
+  when free**. So a fresh tab "just works" on first click and only a
+  *competing* concurrent session gets refused, which is exactly the
+  failure mode that matters for solo operation.
+- `LockChanged` SafetyEvent broadcast (still emitted on auto-acquire so
+  the audit trail captures it; useful if a future second tab needs to
+  diagnose "who took the lock from me").
+- Audit entries: auto-acquires log as `control_lock_auto_acquire`, refused
+  mutators audit-log per existing handler logic with `reason: "lock_held"`.
+
+Rationale: the safety story for Rudy is the firmware envelope (travel
+limits, `canTimeout`, enable-gating, dead-man jog watchdog), not modal
+ceremony. The lock now exists purely as a tab-race interlock, not as a
+permission system, and the dialogs exist to let the operator say "yes, I
+meant to" without the cognitive overhead of typing a phrase that nobody
+else is around to be tricked by. If a second human ever joins this
+project, revisit — the multi-operator UX is git-recoverable.

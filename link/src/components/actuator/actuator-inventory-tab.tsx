@@ -179,7 +179,6 @@ export function ActuatorInventoryTab({ motor }: { motor: MotorSummary }) {
               </Label>
             </div>
           }
-          phrase={`verify ${motor.role}`}
           confirmLabel={verified ? "Unverify" : "Verify"}
           confirmVariant={verified ? "destructive" : "default"}
           onCancel={() => {

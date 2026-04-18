@@ -1,12 +1,18 @@
-// Generic typed-confirm dialog.
+// Generic confirm dialog.
 //
-// Supersedes the inline `ConfirmDialog` in `_authed.params.tsx`. Used for
-// every destructive operation in the operator console: param writes, save
-// to flash, set-zero, enable, travel-limit changes, verified-flag toggles,
-// and (via `phrase`) anything else where requiring the operator to type a
-// short phrase before continuing is the right friction.
+// Used for every destructive operation in the operator console: param
+// writes, save to flash, set-zero, enable, travel-limit changes,
+// verified-flag toggles, etc.
+//
+// This is a plain "are you sure?" modal — no typed-phrase friction.
+// Rationale: Rudy is a single-operator tailnet-bounded console (see
+// ADR-0004 D5), so the misclick-prevention value of forcing the operator
+// to type a phrase is dominated by the day-to-day cost of typing it. The
+// firmware envelope + travel-limits + dead-man jog + audit log are the
+// real safety story; the modal is a "did you mean to" pause and nothing
+// more.
 
-import { useState, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -16,14 +22,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 
 export interface ConfirmDialogProps {
   title: string;
   description: ReactNode;
-  /** Phrase the operator must type before the confirm button enables. */
-  phrase: string;
   confirmLabel?: string;
   confirmVariant?: "default" | "destructive";
   onCancel: () => void;
@@ -33,13 +35,11 @@ export interface ConfirmDialogProps {
 export function ConfirmDialog({
   title,
   description,
-  phrase,
   confirmLabel = "Confirm",
   confirmVariant = "destructive",
   onCancel,
   onConfirm,
 }: ConfirmDialogProps) {
-  const [typed, setTyped] = useState("");
   return (
     <Dialog open onOpenChange={(o) => !o && onCancel()}>
       <DialogContent>
@@ -47,26 +47,14 @@ export function ConfirmDialog({
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
-        <div className="space-y-1.5">
-          <Label htmlFor="confirm-phrase" className="text-sm">
-            Type <code className="font-mono">{phrase}</code> to confirm:
-          </Label>
-          <Input
-            id="confirm-phrase"
-            className="font-mono"
-            value={typed}
-            onChange={(e) => setTyped(e.target.value)}
-            autoFocus
-          />
-        </div>
         <DialogFooter>
           <Button variant="outline" onClick={onCancel}>
             Cancel
           </Button>
           <Button
             variant={confirmVariant}
-            disabled={typed !== phrase}
             onClick={onConfirm}
+            autoFocus
           >
             {confirmLabel}
           </Button>
