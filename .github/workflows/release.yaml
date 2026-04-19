@@ -64,10 +64,25 @@ jobs:
         with:
           targets: aarch64-unknown-linux-gnu
 
+      # Stable cache key (NOT keyed on commit SHA -- the previous setup
+      # `aarch64-${short_sha}` invalidated the cache on every commit and
+      # forced a cold compile every release. rust-cache@v2 already keys on
+      # Cargo.lock + rustc version + target internally, so a fixed prefix
+      # gives us cross-commit reuse while still busting on dependency
+      # changes. Expect cold builds (deps changed) ~10-15min, warm builds
+      # (just our crates changed) under a minute.
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: crates -> target
-          key: aarch64-${{ steps.ver.outputs.short_sha }}
+          key: aarch64
+          cache-on-failure: true
+
+      # sccache catches compilation units that rust-cache doesn't, in
+      # particular the `cc`/`cmake` C builds inside crates like ring's
+      # build script. Stacks with rust-cache; backed by GitHub Actions
+      # cache so it works without external infra.
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
 
       - name: Build rudydae for aarch64
         working-directory: crates
@@ -75,8 +90,11 @@ jobs:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
           CC_aarch64_unknown_linux_gnu: aarch64-linux-gnu-gcc
           CXX_aarch64_unknown_linux_gnu: aarch64-linux-gnu-g++
+          RUSTC_WRAPPER: sccache
+          SCCACHE_GHA_ENABLED: "true"
         run: |
           cargo build --release -p rudydae --target aarch64-unknown-linux-gnu
+          sccache --show-stats || true
 
       - name: Stage release tarball
         id: stage

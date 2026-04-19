@@ -54,6 +54,16 @@ jobs:
           targets: aarch64-unknown-linux-gnu
           components: rustfmt, clippy
 
+      # Cache the driver crate's target/ across both the host build and
+      # the aarch64 cross-check below. Small crate, but the deps
+      # (clap, tracing-subscriber, env_logger, socketcan + nix) still add
+      # ~20-30s cold per run.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ros/src/driver -> target
+          key: driver
+          cache-on-failure: true
+
       - name: Rust fmt + clippy + test (driver)
         working-directory: ${{ github.workspace }}/ros/src/driver
         run: |
@@ -110,6 +120,20 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends pkg-config libssl-dev
 
+      # Cache cargo registry + target/. Without this the rudydae job did a
+      # full cold compile (~150 crates incl. wtransport/quinn/rustls/axum)
+      # on every PR push, which dominated PR feedback latency. rust-cache
+      # keys on Cargo.lock + rustc version + target triple, so it busts
+      # automatically on dependency changes.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates -> target
+          key: x86_64-host
+          cache-on-failure: true
+
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
       - name: Prepare empty link/dist for embed
         run: |
           mkdir -p link/dist
@@ -119,10 +143,13 @@ jobs:
         working-directory: ${{ github.workspace }}/crates
         env:
           RUDYD_NO_EMBED: "0"
+          RUSTC_WRAPPER: sccache
+          SCCACHE_GHA_ENABLED: "true"
         run: |
           cargo fmt --check
           cargo clippy --all-targets -- -D warnings
           cargo test
+          sccache --show-stats || true
 
   link:
     name: link frontend

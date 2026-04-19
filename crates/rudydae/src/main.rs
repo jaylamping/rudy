@@ -22,14 +22,14 @@ async fn main() -> Result<()> {
         .with_target(true)
         .init();
 
-    // rustls 0.23 mandates an explicit CryptoProvider when more than one is
-    // compiled in (we get both aws-lc-rs via wtransport and ring transitively
-    // via reqwest in dev-deps). Without this both the axum-server HTTPS
-    // listener and the wtransport endpoint panic on first use. Must run
-    // before any TLS object is built.
-    rustls::crypto::aws_lc_rs::default_provider()
+    // rustls 0.23 mandates an explicit CryptoProvider when more than one
+    // could be selected. We compile rustls with `features = ["ring"]` (see
+    // crates/rudydae/Cargo.toml for why ring over aws-lc-rs); without this
+    // call both the axum-server HTTPS listener and the wtransport endpoint
+    // panic on first use. Must run before any TLS object is built.
+    rustls::crypto::ring::default_provider()
         .install_default()
-        .expect("install rustls aws-lc-rs CryptoProvider");
+        .expect("install rustls ring CryptoProvider");
 
     let args: Vec<String> = std::env::args().collect();
     let config_path = args
