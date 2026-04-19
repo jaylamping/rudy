@@ -60,6 +60,47 @@ pub struct Motor {
     /// commanded move (jog now, future move-to).
     #[serde(default)]
     pub travel_limits: Option<TravelLimits>,
+    /// Firmware `add_offset` (parameter 0x702B) recorded at commissioning
+    /// time, in radians. `None` means "this motor has never been
+    /// commissioned via `POST /api/motors/:role/commission`" — the boot
+    /// orchestrator skips uncommissioned motors with a clear log message
+    /// and they continue to require the manual `Verify & Home` flow on
+    /// every boot, exactly as before.
+    ///
+    /// Once set, every boot the daemon reads `add_offset` over CAN and
+    /// compares against this value within
+    /// `cfg.safety.commission_readback_tolerance_rad`. Mismatch surfaces
+    /// as `BootState::OffsetChanged { stored, current }` (Class-1
+    /// shenanigan detection) and refuses motion until the operator either
+    /// re-commissions or restores via
+    /// `POST /api/motors/:role/restore_offset`.
+    ///
+    /// Written ONLY by `POST /api/motors/:role/commission`; never edited
+    /// by hand. The endpoint sequences type-6 SetZero + type-22 SaveParams
+    /// + a readback of `add_offset` and stores the readback value here so
+    /// the on-disk record is exactly what the firmware confirmed it
+    /// flashed. See [the commissioned-zero plan][1].
+    ///
+    /// [1]: ../../../.cursor/plans/quick-home_commissioned_zero_boot.plan.md
+    #[serde(default)]
+    pub commissioned_zero_offset: Option<f32>,
+    /// Per-motor target angle for the boot orchestrator's auto-home flow,
+    /// in radians. `None` is interpreted as `0.0` by the orchestrator —
+    /// "drive this joint to its commissioned neutral on every boot."
+    ///
+    /// Set this when a particular joint's neutral pose isn't the same as
+    /// its commissioned zero (e.g. an arm whose comfortable resting pose
+    /// differs from the position where the operator commissioned it).
+    /// Must be inside `travel_limits`; the eventual
+    /// `PUT /api/motors/:role/predefined_home` endpoint enforces that
+    /// invariant at write time.
+    ///
+    /// Read by `boot_orchestrator::maybe_run` (lands in Phase C of the
+    /// commissioned-zero plan) and by the eventual real `home_all`
+    /// implementation. Independent of `travel_limits`: the band is the
+    /// safe envelope, this is the goal pose inside it.
+    #[serde(default)]
+    pub predefined_home_rad: Option<f32>,
     /// Free-form limb identifier (`left_arm`, `right_leg`, `torso`, `head`).
     /// Optional today: motors without `limb` are skipped by `POST /home_all`.
     /// Once set, the role becomes a derived identifier of the form
@@ -352,6 +393,8 @@ mod tests {
             commissioned_at: None,
             present: true,
             travel_limits: None,
+            commissioned_zero_offset: None,
+            predefined_home_rad: None,
             limb: Some("left_arm".into()),
             joint_kind: Some(JointKind::ShoulderPitch),
             extra: BTreeMap::new(),
@@ -376,6 +419,8 @@ mod tests {
                     commissioned_at: None,
                     present: true,
                     travel_limits: None,
+                    commissioned_zero_offset: None,
+                    predefined_home_rad: None,
                     limb: Some("left_arm".into()),
                     joint_kind: Some(JointKind::ShoulderPitch),
                     extra: BTreeMap::new(),
@@ -389,6 +434,8 @@ mod tests {
                     commissioned_at: None,
                     present: true,
                     travel_limits: None,
+                    commissioned_zero_offset: None,
+                    predefined_home_rad: None,
                     limb: Some("left_arm".into()),
                     joint_kind: Some(JointKind::ShoulderPitch),
                     extra: BTreeMap::new(),
@@ -411,12 +458,75 @@ mod tests {
                 commissioned_at: None,
                 present: true,
                 travel_limits: None,
+                commissioned_zero_offset: None,
+                predefined_home_rad: None,
                 limb: Some("left_arm".into()),
                 joint_kind: Some(JointKind::ShoulderPitch),
                 extra: BTreeMap::new(),
             }],
         };
         assert!(inv.validate().is_err());
+    }
+
+    /// Pre-Phase-B.1 inventory.yaml entries don't have
+    /// `commissioned_zero_offset` or `predefined_home_rad` keys at all.
+    /// The new fields must default to `None` (preserving the
+    /// "uncommissioned, orchestrator skips it" migration story
+    /// described in the commissioned-zero plan) when absent from the
+    /// YAML — and the parsed result must round-trip cleanly so a future
+    /// `write_atomic` doesn't introduce explicit `null` keys for fields
+    /// the operator never touched.
+    #[test]
+    fn motor_yaml_without_commissioning_fields_defaults_to_none() {
+        let yaml = r#"
+schema_version: 1
+motors:
+  - role: shoulder_actuator_a
+    can_bus: can1
+    can_id: 0x08
+    verified: true
+"#;
+        let inv: Inventory = serde_yaml::from_str(yaml).expect("parse");
+        let m = &inv.motors[0];
+        assert!(m.commissioned_zero_offset.is_none(),
+            "missing key must deserialize to None, got {:?}",
+            m.commissioned_zero_offset);
+        assert!(m.predefined_home_rad.is_none(),
+            "missing key must deserialize to None, got {:?}",
+            m.predefined_home_rad);
+    }
+
+    /// A commissioned motor's YAML record carries the readback value the
+    /// `commission` endpoint stored. Both fields round-trip through
+    /// serde_yaml correctly so `write_atomic` (which re-serializes the
+    /// in-memory `Inventory` after every mutation) won't truncate or
+    /// re-quantize them.
+    #[test]
+    fn motor_yaml_roundtrips_commissioning_fields() {
+        let yaml = r#"
+schema_version: 1
+motors:
+  - role: left_arm.shoulder_pitch
+    can_bus: can0
+    can_id: 1
+    verified: true
+    limb: left_arm
+    joint_kind: shoulder_pitch
+    commissioned_zero_offset: 0.123456
+    predefined_home_rad: -0.5
+"#;
+        let inv: Inventory = serde_yaml::from_str(yaml).expect("parse");
+        let m = &inv.motors[0];
+        assert_eq!(m.commissioned_zero_offset, Some(0.123456_f32));
+        assert_eq!(m.predefined_home_rad, Some(-0.5_f32));
+
+        // Round-trip: re-serialize and re-parse; the values must survive
+        // unchanged (this is what `write_atomic` will do on every
+        // commission / restore_offset call).
+        let reserialized = serde_yaml::to_string(&inv).expect("serialize");
+        let inv2: Inventory = serde_yaml::from_str(&reserialized).expect("re-parse");
+        assert_eq!(inv2.motors[0].commissioned_zero_offset, Some(0.123456_f32));
+        assert_eq!(inv2.motors[0].predefined_home_rad, Some(-0.5_f32));
     }
 
     #[test]
@@ -432,6 +542,8 @@ mod tests {
                 commissioned_at: None,
                 present: true,
                 travel_limits: None,
+                commissioned_zero_offset: None,
+                predefined_home_rad: None,
                 limb: None,
                 joint_kind: None,
                 extra: BTreeMap::new(),

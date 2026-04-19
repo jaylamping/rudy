@@ -32,6 +32,49 @@ present: boolean,
  */
 travel_limits: TravelLimits | null, 
 /**
+ * Firmware `add_offset` (parameter 0x702B) recorded at commissioning
+ * time, in radians. `None` means "this motor has never been
+ * commissioned via `POST /api/motors/:role/commission`" — the boot
+ * orchestrator skips uncommissioned motors with a clear log message
+ * and they continue to require the manual `Verify & Home` flow on
+ * every boot, exactly as before.
+ *
+ * Once set, every boot the daemon reads `add_offset` over CAN and
+ * compares against this value within
+ * `cfg.safety.commission_readback_tolerance_rad`. Mismatch surfaces
+ * as `BootState::OffsetChanged { stored, current }` (Class-1
+ * shenanigan detection) and refuses motion until the operator either
+ * re-commissions or restores via
+ * `POST /api/motors/:role/restore_offset`.
+ *
+ * Written ONLY by `POST /api/motors/:role/commission`; never edited
+ * by hand. The endpoint sequences type-6 SetZero + type-22 SaveParams
+ * + a readback of `add_offset` and stores the readback value here so
+ * the on-disk record is exactly what the firmware confirmed it
+ * flashed. See [the commissioned-zero plan][1].
+ *
+ * [1]: ../../../.cursor/plans/quick-home_commissioned_zero_boot.plan.md
+ */
+commissioned_zero_offset: number | null, 
+/**
+ * Per-motor target angle for the boot orchestrator's auto-home flow,
+ * in radians. `None` is interpreted as `0.0` by the orchestrator —
+ * "drive this joint to its commissioned neutral on every boot."
+ *
+ * Set this when a particular joint's neutral pose isn't the same as
+ * its commissioned zero (e.g. an arm whose comfortable resting pose
+ * differs from the position where the operator commissioned it).
+ * Must be inside `travel_limits`; the eventual
+ * `PUT /api/motors/:role/predefined_home` endpoint enforces that
+ * invariant at write time.
+ *
+ * Read by `boot_orchestrator::maybe_run` (lands in Phase C of the
+ * commissioned-zero plan) and by the eventual real `home_all`
+ * implementation. Independent of `travel_limits`: the band is the
+ * safe envelope, this is the goal pose inside it.
+ */
+predefined_home_rad: number | null, 
+/**
  * Free-form limb identifier (`left_arm`, `right_leg`, `torso`, `head`).
  * Optional today: motors without `limb` are skipped by `POST /home_all`.
  * Once set, the role becomes a derived identifier of the form

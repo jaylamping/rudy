@@ -13,6 +13,46 @@
 #
 # Everything else is filled in by the commissioning workflow (see
 # tools/robstride/commission.md — to be authored).
+#
+# ── Daemon-managed fields (do NOT hand-edit) ────────────────────────────────
+#
+# `commissioned_zero_offset` (float, radians; default null)
+#   The firmware's `add_offset` (parameter 0x702B) recorded at commissioning
+#   time. Written ONLY by `POST /api/motors/:role/commission`, which sequences
+#   type-6 SetZero + type-22 SaveParams + a readback of `add_offset` and stores
+#   the exact value the firmware confirmed it flashed.
+#   On every subsequent boot the daemon reads `add_offset` over CAN and
+#   compares it against the stored value within
+#   `safety.commission_readback_tolerance_rad`. A mismatch surfaces as
+#   `BootState::OffsetChanged { stored, current }` — the daemon refuses motion
+#   and the operator must explicitly re-commission or call
+#   `POST /api/motors/:role/restore_offset` to write the stored value back.
+#   `null` means "this motor has never been commissioned"; the boot
+#   orchestrator skips it with a clear log message and the operator must use
+#   the manual `Verify & Home` flow on every boot, exactly like before this
+#   feature shipped.
+#
+# `predefined_home_rad` (float, radians; default null ≡ 0.0)
+#   Per-motor target angle the boot orchestrator drives toward via the
+#   slow-ramp homer once it confirms the offset is unchanged and the joint is
+#   inside its `travel_limits` band. Set this when a joint's neutral pose
+#   isn't the same as its commissioned zero (e.g. an arm whose comfortable
+#   resting pose differs from the position the operator commissioned it at).
+#   Must be inside `travel_limits`; the
+#   `PUT /api/motors/:role/predefined_home` endpoint enforces that at write
+#   time. `null` means "0.0 rad" — drive to the commissioned neutral on every
+#   boot.
+#
+# Commissioning workflow (operator):
+#   1. Physically position the joint at its desired neutral.
+#   2. POST /api/motors/<role>/commission (the SPA "Commission Zero" button).
+#   3. Verify the response shows the readback `add_offset` ≈ 0.0 rad.
+#   4. Restart the daemon (or power-cycle the motor) to confirm the
+#      orchestrator auto-homes to the predefined neutral on next boot.
+#   5. Optionally PUT /api/motors/<role>/predefined_home with a non-zero
+#      target if "neutral" should differ from "commissioned zero".
+# See `.cursor/plans/quick-home_commissioned_zero_boot.plan.md` for the
+# full design and `docs/operator-guide/commissioning.md` for the walkthrough.
 
 schema_version: 1
 
