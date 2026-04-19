@@ -263,6 +263,43 @@ export const api = {
   // safety_event WT frame.
   estop: () =>
     apiFetch<{ ok: boolean; stopped: number }>(`/api/estop`, { method: "POST" }),
+  // Observability — backed by the SQLite log store + the tracing
+  // capture layer in `crates/rudydae/src/log_layer.rs`. Live tailing
+  // arrives over the WebTransport `LogEvent` stream (see
+  // `wtReducers.ts`); these REST methods cover history pagination,
+  // explicit clear, and the runtime EnvFilter snapshot/swap.
+  logs: {
+    list: (params: {
+      level?: string;     // comma-separated, e.g. "warn,error"
+      source?: string;    // "tracing" | "audit" | "tracing,audit"
+      q?: string;
+      target?: string;
+      since_ms?: number;
+      before_id?: number; // keyset cursor from previous page's next_before_id
+      limit?: number;     // default 200, cap 1000
+    } = {}) => {
+      const qs = new URLSearchParams();
+      for (const [k, v] of Object.entries(params)) {
+        if (v !== undefined && v !== null && v !== "") qs.set(k, String(v));
+      }
+      const tail = qs.toString();
+      return apiFetch<{
+        entries: import("@/lib/types/LogEntry").LogEntry[];
+        next_before_id: number | null;
+      }>(`/api/logs${tail ? `?${tail}` : ""}`);
+    },
+    clear: () =>
+      apiFetch<{ ok: boolean }>(`/api/logs`, { method: "DELETE" }),
+    getLevel: () =>
+      apiFetch<import("@/lib/types/LogFilterState").LogFilterState>(
+        `/api/logs/level`,
+      ),
+    setLevel: (raw: string) =>
+      apiFetch<import("@/lib/types/LogFilterState").LogFilterState>(
+        `/api/logs/level`,
+        { method: "PUT", body: JSON.stringify({ raw }) },
+      ),
+  },
   reminders: {
     list: () =>
       apiFetch<import("@/lib/types/Reminder").Reminder[]>("/api/reminders"),

@@ -232,7 +232,7 @@ mod path_check_tests {
     use crate::audit::AuditLog;
     use crate::can;
     use crate::config::{
-        CanConfig, Config, HttpConfig, PathsConfig, SafetyConfig, TelemetryConfig,
+        CanConfig, Config, HttpConfig, LogsConfig, PathsConfig, SafetyConfig, TelemetryConfig,
         WebTransportConfig,
     };
     use crate::inventory::Inventory;
@@ -292,6 +292,10 @@ mod path_check_tests {
                 homer_timeout_ms: 5_000,
                 auto_recovery_enabled: true,
                 max_feedback_age_ms: 100,
+            },
+            logs: LogsConfig {
+                db_path: dir.path().join("logs.db"),
+                ..LogsConfig::default()
             },
         };
         let spec = ActuatorSpec::load(&spec_path).unwrap();
@@ -381,6 +385,10 @@ mod path_check_tests {
                 homer_timeout_ms: 5_000,
                 auto_recovery_enabled: true,
                 max_feedback_age_ms: 100,
+            },
+            logs: LogsConfig {
+                db_path: dir.path().join("logs.db"),
+                ..LogsConfig::default()
             },
         };
         let spec = ActuatorSpec::load(&spec_path).unwrap();

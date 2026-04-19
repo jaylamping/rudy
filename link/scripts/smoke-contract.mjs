@@ -279,6 +279,80 @@ async function main() {
         );
       }
     }
+
+    // 8. /api/logs — paginated history. The store always has at least
+    // the "loaded inventory" tracing line by now, so `entries` should
+    // be non-empty. We also accept an empty list (e.g. immediately
+    // after a clear) — the shape check is what we're really pinning.
+    {
+      const r = await http("GET", "/api/logs?limit=10");
+      try {
+        if (r.status !== 200) throw new Error(`status=${r.status}`);
+        assertHas(r.body, ["entries", "next_before_id"], "LogsListResponse");
+        if (!Array.isArray(r.body.entries)) throw new Error("entries is not an array");
+        for (const e of r.body.entries) {
+          assertHas(
+            e,
+            ["id", "t_ms", "level", "source", "target", "message", "fields", "span"],
+            "LogEntry",
+          );
+          if (typeof e.id !== "number") {
+            throw new Error(`LogEntry.id must be a JSON number; got ${typeof e.id}`);
+          }
+          if (typeof e.t_ms !== "number") {
+            throw new Error(`LogEntry.t_ms must be a JSON number; got ${typeof e.t_ms}`);
+          }
+          if (!["trace", "debug", "info", "warn", "error"].includes(e.level)) {
+            throw new Error(`LogEntry.level out of vocabulary: ${e.level}`);
+          }
+          if (!["tracing", "audit"].includes(e.source)) {
+            throw new Error(`LogEntry.source out of vocabulary: ${e.source}`);
+          }
+        }
+        record("GET /api/logs (shape)", true);
+      } catch (e) {
+        record("GET /api/logs (shape)", false, e.message);
+      }
+    }
+
+    // 9. /api/logs/level — runtime EnvFilter snapshot.
+    {
+      const r = await http("GET", "/api/logs/level");
+      try {
+        if (r.status !== 200) throw new Error(`status=${r.status}`);
+        assertHas(r.body, ["default", "directives", "raw"], "LogFilterState");
+        if (!["trace", "debug", "info", "warn", "error"].includes(r.body.default)) {
+          throw new Error(`LogFilterState.default out of vocabulary: ${r.body.default}`);
+        }
+        if (!Array.isArray(r.body.directives)) {
+          throw new Error("directives is not an array");
+        }
+        for (const d of r.body.directives) {
+          assertHas(d, ["target", "level"], "LogFilterDirective");
+        }
+        if (typeof r.body.raw !== "string" || r.body.raw.length === 0) {
+          throw new Error("raw must be a non-empty string");
+        }
+        record("GET /api/logs/level (shape)", true);
+      } catch (e) {
+        record("GET /api/logs/level (shape)", false, e.message);
+      }
+    }
+
+    // 10. PUT /api/logs/level — invalid directive must come back 400
+    // with our error envelope. We don't exercise the success path here
+    // because that would mutate the running daemon's filter and risk
+    // slowing later checks; the unit tests in `crates/rudydae` cover it.
+    {
+      const r = await http("PUT", "/api/logs/level", { raw: "this is not a filter directive!!!" });
+      const ok =
+        r.status === 400 && (r.body?.error === "invalid_filter" || r.body?.error === "empty_filter");
+      record(
+        "PUT /api/logs/level (invalid -> 400)",
+        ok,
+        ok ? "" : `status=${r.status} body=${JSON.stringify(r.body)}`,
+      );
+    }
   } finally {
     if (child) {
       // SIGINT on Windows interacts poorly with cargo's process tree (libuv

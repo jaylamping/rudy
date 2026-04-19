@@ -1,20 +1,35 @@
 //! Shared application state injected into every axum handler.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 
 use tokio::sync::broadcast;
+use tracing_subscriber::EnvFilter;
 
 use crate::audit::{AuditEntry, AuditLog, AuditResult};
 use crate::boot_state::BootState;
 use crate::can::RealCanHandle;
 use crate::config::Config;
 use crate::inventory::Inventory;
+use crate::log_store::LogStore;
 use crate::motion::{MotionRegistry, MotionStatus};
 use crate::reminders::ReminderStore;
 use crate::spec::ActuatorSpec;
 use crate::system::SystemPoller;
-use crate::types::{MotorFeedback, ParamSnapshot, SafetyEvent, SystemSnapshot, TestProgress};
+use crate::types::{
+    LogEntry, MotorFeedback, ParamSnapshot, SafetyEvent, SystemSnapshot, TestProgress,
+};
+
+/// Erased setter for the reload-able `EnvFilter`. Stored in `AppState`
+/// instead of the concrete `tracing_subscriber::reload::Handle` so the
+/// state struct doesn't have to name the `Registry`'s exact subscriber
+/// type (which is awkward to spell once layers are stacked).
+///
+/// The `main.rs` setup function builds a closure over the real handle
+/// and hands it to `AppState::attach_filter_handle` once the subscriber
+/// is up. `PUT /api/logs/level` fires the closure; failure (e.g. internal
+/// reload error) is propagated as a `String`.
+pub type FilterReloadFn = Arc<dyn Fn(EnvFilter) -> Result<(), String> + Send + Sync>;
 
 /// Identity record for whichever session currently owns the single-operator
 /// lock. The lock is auto-acquired by the first mutating request from a fresh
@@ -133,6 +148,23 @@ pub struct AppState {
     /// Sequential-across-motors policy (one recovery at a time globally) is
     /// enforced by `auto_recovery::GLOBAL_RECOVERY_LOCK`.
     pub auto_recovery_attempted: Mutex<std::collections::HashSet<String>>,
+
+    /// Persistent log store handle. Set once at startup by
+    /// `attach_log_store`; tests that don't need the Logs API leave it
+    /// empty and the read endpoints return 503 in that case.
+    pub log_store: OnceLock<LogStore>,
+
+    /// Live broadcast for captured tracing + audit events. The WT router
+    /// subscribes per session and the per-session task sends each frame
+    /// as a reliable `WtFrame::LogEvent`. Capacity sized for ~5 s of
+    /// worst-case bursts at 1 kHz before the slowest subscriber starts
+    /// seeing `Lagged` errors (which the router already handles).
+    pub log_event_tx: broadcast::Sender<LogEntry>,
+
+    /// Runtime mutator for the global tracing `EnvFilter`. Wired by
+    /// `main.rs` after the subscriber is constructed; tests leave it
+    /// `None` and `PUT /api/logs/level` returns 503 in that case.
+    pub filter_reload: OnceLock<FilterReloadFn>,
 }
 
 impl AppState {
@@ -143,6 +175,31 @@ impl AppState {
         audit: AuditLog,
         real_can: Option<Arc<RealCanHandle>>,
         reminders: ReminderStore,
+    ) -> Self {
+        let (log_event_tx, _) = broadcast::channel::<LogEntry>(2048);
+        Self::new_with_log_tx(
+            cfg,
+            spec,
+            inventory,
+            audit,
+            real_can,
+            reminders,
+            log_event_tx,
+        )
+    }
+
+    /// Same as `new` but with a caller-supplied log event broadcast.
+    /// `main.rs` uses this to share the broadcast with the
+    /// `LogCaptureLayer` it builds before AppState exists; tests use the
+    /// short form.
+    pub fn new_with_log_tx(
+        cfg: Config,
+        spec: ActuatorSpec,
+        inventory: Inventory,
+        audit: AuditLog,
+        real_can: Option<Arc<RealCanHandle>>,
+        reminders: ReminderStore,
+        log_event_tx: broadcast::Sender<LogEntry>,
     ) -> Self {
         let (feedback_tx, _) = broadcast::channel::<MotorFeedback>(512);
         let (system_tx, _) = broadcast::channel::<SystemSnapshot>(8);
@@ -170,7 +227,28 @@ impl AppState {
             boot_state: RwLock::new(HashMap::new()),
             enabled: RwLock::new(BTreeSet::new()),
             auto_recovery_attempted: Mutex::new(std::collections::HashSet::new()),
+            log_store: OnceLock::new(),
+            log_event_tx,
+            filter_reload: OnceLock::new(),
         }
+    }
+
+    /// Wire the persistent log store + fan out the audit log into both it
+    /// and the live broadcast. Idempotent; called once from `main.rs`.
+    /// Tests skip this and the read endpoints return 503 in that case.
+    pub fn attach_log_store(&self, store: LogStore) {
+        self.audit.attach_fanout(crate::audit::AuditFanout {
+            store: store.clone(),
+            live_tx: self.log_event_tx.clone(),
+        });
+        let _ = self.log_store.set(store);
+    }
+
+    /// Wire the runtime `EnvFilter` reload closure. Called once from
+    /// `main.rs` after the subscriber is built. Subsequent calls are
+    /// no-ops (OnceLock).
+    pub fn attach_filter_reload(&self, f: FilterReloadFn) {
+        let _ = self.filter_reload.set(f);
     }
 
     /// Mark a motor as currently enabled on the bus. Idempotent.

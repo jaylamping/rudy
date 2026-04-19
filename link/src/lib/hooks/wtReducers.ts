@@ -13,9 +13,20 @@
 
 import type { QueryClient } from "@tanstack/react-query";
 import type { WtEnvelope } from "@/lib/hooks/useWebTransport";
+import type { LogEntry } from "@/lib/types/LogEntry";
 import type { MotorFeedback } from "@/lib/types/MotorFeedback";
 import type { MotorSummary } from "@/lib/types/MotorSummary";
 import type { SystemSnapshot } from "@/lib/types/SystemSnapshot";
+
+/** Cap on the in-memory live tail. Older entries fall off the front; the
+ * full history is still queryable via `GET /api/logs`, so the cap is
+ * about UI memory pressure, not durability. 5000 is large enough for a
+ * developer to scroll through a few seconds of debug-level chatter
+ * without the page going laggy. */
+export const LIVE_LOG_CAP = 5000;
+
+/** Cache key the Logs page subscribes to via `useQuery({ queryKey: LIVE_LOGS_KEY })`. */
+export const LIVE_LOGS_KEY = ["logs", "live"] as const;
 
 export interface WtReducer<TPayload = unknown, TBucket = unknown> {
   /** snake_case kind (matches the daemon's `WtPayload::KIND`). */
@@ -95,8 +106,43 @@ const systemSnapshotReducer: WtReducer<
   },
 };
 
+/**
+ * Append-and-cap merge for `log_event`. Bucket holds the live tail so
+ * the Logs page can render new entries without re-fetching `/api/logs`
+ * after every event. We coalesce per-rAF (the rest of the registry's
+ * convention) which keeps a 1 kHz debug-tracing burst from re-rendering
+ * the page every frame.
+ *
+ * The cache contract: query key `["logs", "live"]` is an array of
+ * `LogEntry`s in newest-first order, capped at `LIVE_LOG_CAP`. The
+ * Logs page seeds the cache with a REST page so the live tail and the
+ * historical view share one list.
+ */
+const logEventReducer: WtReducer<LogEntry, { incoming: LogEntry[] }> = {
+  kind: "log_event",
+  initBucket: () => ({ incoming: [] }),
+  merge(bucket, env) {
+    bucket.incoming.push(env.data);
+    return true;
+  },
+  flush(bucket, queryClient) {
+    if (bucket.incoming.length === 0) return;
+    // Fresh entries arrive in submission order (oldest first within the
+    // burst); the cache stores newest-first. Reverse the burst then
+    // prepend so the cache stays sorted without resorting the whole tail.
+    const burst = bucket.incoming.slice().reverse();
+    queryClient.setQueryData<LogEntry[]>(LIVE_LOGS_KEY, (prev) => {
+      const base = prev ?? [];
+      const merged = burst.concat(base);
+      return merged.length > LIVE_LOG_CAP ? merged.slice(0, LIVE_LOG_CAP) : merged;
+    });
+  },
+  resetBucket: () => ({ incoming: [] }),
+};
+
 /** Default registry mounted by `<WebTransportBridge>` when no override is given. */
 export const DEFAULT_REDUCERS: WtReducer[] = [
   motorFeedbackReducer as unknown as WtReducer,
   systemSnapshotReducer as unknown as WtReducer,
+  logEventReducer as unknown as WtReducer,
 ];

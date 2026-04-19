@@ -40,8 +40,8 @@ use wtransport::{RecvStream, SendStream};
 use crate::motion::{MotionIntent, MotionStatus};
 use crate::state::SharedState;
 use crate::types::{
-    MotorFeedback, SafetyEvent, SystemSnapshot, TestProgress, WtEnvelope, WtKind, WtPayload,
-    WtSubscribe, WtSubscribeFilters, WtTransport,
+    LogEntry, MotorFeedback, SafetyEvent, SystemSnapshot, TestProgress, WtEnvelope, WtKind,
+    WtPayload, WtSubscribe, WtSubscribeFilters, WtTransport,
 };
 use crate::wt_client::ClientFrame;
 
@@ -169,6 +169,11 @@ impl SessionRouter {
         f.allows_kind(WtKind::MotionStatus) && f.allows_motor(&ms.role)
     }
 
+    pub fn allows_log_event(&self) -> bool {
+        let f = self.filter.read().expect("filter poisoned");
+        f.allows_kind(WtKind::LogEvent)
+    }
+
     /// Encode `payload` in a `WtEnvelope`, allocate the next sequence
     /// number, and dispatch to the right transport. Returns `Err` only
     /// for QUIC-level failures (peer disconnect, stream reset). CBOR
@@ -276,6 +281,7 @@ pub async fn run_session(connection: Connection, state: SharedState) -> Result<(
     let mut tests_rx = state.test_progress_tx.subscribe();
     let mut safety_rx = state.safety_event_tx.subscribe();
     let mut motion_rx = state.motion_status_tx.subscribe();
+    let mut log_rx = state.log_event_tx.subscribe();
 
     // Spawn an accept loop for inbound bidi streams. Each accepted
     // stream becomes its own task running [`run_client_stream`]; that
@@ -392,6 +398,24 @@ pub async fn run_session(connection: Connection, state: SharedState) -> Result<(
                 }
                 Err(RecvError::Lagged(n)) => {
                     debug!("wt: motion receiver lagged {n}");
+                }
+                Err(RecvError::Closed) => break Ok(()),
+            },
+
+            // (b6) Live log fan-out (reliable). Captures both the
+            // tracing-layer events and the audit-log fanout — see
+            // `log_layer` and `audit::AuditLog::write`.
+            res = log_rx.recv() => match res {
+                Ok(le) => {
+                    if router.allows_log_event() {
+                        if let Err(e) = router.send::<LogEntry>(conn_ref, WtKind::LogEvent, le).await {
+                            debug!("wt: log_event send failed; closing session: {e:#}");
+                            break Ok(());
+                        }
+                    }
+                }
+                Err(RecvError::Lagged(n)) => {
+                    debug!("wt: log receiver lagged {n}");
                 }
                 Err(RecvError::Closed) => break Ok(()),
             },

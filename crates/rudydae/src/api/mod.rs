@@ -17,6 +17,7 @@ mod home;
 mod home_all;
 mod inventory_route;
 mod jog;
+mod logs;
 mod motion;
 mod motors;
 mod params;
@@ -63,6 +64,8 @@ pub fn router(state: SharedState) -> Router<SharedState> {
         )
         .route("/motors/:role/verified", put(inventory_route::put_verified))
         .route("/estop", post(estop::estop))
+        .route("/logs", get(logs::list).delete(logs::clear))
+        .route("/logs/level", get(logs::get_level).put(logs::put_level))
         .route(
             "/reminders",
             get(reminders_route::list).post(reminders_route::create),

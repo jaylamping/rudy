@@ -76,6 +76,13 @@ chrono = { version = "0.4", features = ["serde"] }
 # Atomic file writes for inventory.yaml mutations.
 tempfile = "3"
 
+# Persistent log store. `bundled` ships the C source so the cross-build
+# for the Pi doesn't depend on a system libsqlite (and dev hosts don't
+# need one either). WAL mode keeps writes from blocking readers; the
+# whole connection stays on a single tokio::task::spawn_blocking thread
+# (see `src/log_store.rs`) so we don't need rusqlite's `Send` shenanigans.
+rusqlite = { version = "0.32", features = ["bundled"] }
+
 # ROS-workspace driver crate (RS03 protocol, SocketCAN on Linux).
 # Kept as a relative path; see ADR-0004 §D8 for why it stays in ros/src/.
 driver = { path = "../../ros/src/driver" }

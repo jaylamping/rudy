@@ -12,7 +12,8 @@ use std::sync::Arc;
 use rudydae::audit::AuditLog;
 use rudydae::can;
 use rudydae::config::{
-    CanConfig, Config, HttpConfig, PathsConfig, SafetyConfig, TelemetryConfig, WebTransportConfig,
+    CanConfig, Config, HttpConfig, LogsConfig, PathsConfig, SafetyConfig, TelemetryConfig,
+    WebTransportConfig,
 };
 use rudydae::inventory::Inventory;
 use rudydae::reminders::ReminderStore;
@@ -113,6 +114,14 @@ pub fn make_state() -> (SharedState, tempfile::TempDir) {
             homer_timeout_ms: 5_000,
             auto_recovery_enabled: true,
             max_feedback_age_ms: 100,
+        },
+        logs: LogsConfig {
+            db_path: dir.path().join("logs.db"),
+            retention_days: 7,
+            default_filter: "rudydae=info".into(),
+            batch_max_rows: 64,
+            batch_flush_ms: 25,
+            purge_interval_s: 60,
         },
     };
 
