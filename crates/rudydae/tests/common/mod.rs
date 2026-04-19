@@ -140,14 +140,39 @@ pub fn make_state_auto_home_on_boot(auto_home_on_boot: bool) -> (SharedState, te
     let (state, dir) = make_state();
     let mut cfg = state.cfg.clone();
     cfg.safety.auto_home_on_boot = auto_home_on_boot;
+    let audit_path = dir.path().join("audit_auto_home.jsonl");
+    cfg.paths.audit_log = audit_path.clone();
     let inv = state.inventory.read().expect("inventory poisoned").clone();
     let new_state = Arc::new(AppState::new(
         cfg,
         state.spec.clone(),
         inv,
-        AuditLog::open(dir.path().join("audit_auto_home.jsonl")).unwrap(),
+        AuditLog::open(&audit_path).unwrap(),
         state.real_can.clone(),
         ReminderStore::open(dir.path().join("reminders_auto_home.json")).unwrap(),
+    ));
+    (new_state, dir)
+}
+
+/// Same as [`make_state`] but uses a slow homer tick and the minimum enforced
+/// homer wall-clock timeout (`slow_ramp` clamps to 1000 ms) so
+/// `slow_ramp::run` reliably hits `"timeout"` in mock-CAN tests without
+/// relying on tracking-error or path violations.
+pub fn make_state_homer_times_out_quickly() -> (SharedState, tempfile::TempDir) {
+    let (state, dir) = make_state();
+    let mut cfg = state.cfg.clone();
+    cfg.safety.tick_interval_ms = 500;
+    cfg.safety.homer_timeout_ms = 1_000;
+    let audit_path = dir.path().join("audit_homer_timeout.jsonl");
+    cfg.paths.audit_log = audit_path.clone();
+    let inv = state.inventory.read().expect("inventory poisoned").clone();
+    let new_state = Arc::new(AppState::new(
+        cfg,
+        state.spec.clone(),
+        inv,
+        AuditLog::open(&audit_path).unwrap(),
+        state.real_can.clone(),
+        ReminderStore::open(dir.path().join("reminders_homer_timeout.json")).unwrap(),
     ));
     (new_state, dir)
 }
@@ -176,12 +201,14 @@ pub fn make_state_with_wt_advert() -> (SharedState, tempfile::TempDir) {
     let mut cfg = state.cfg.clone();
     cfg.webtransport.enabled = true;
     cfg.webtransport.bind = "127.0.0.1:4433".into();
+    let audit_path = dir.path().join("audit2.jsonl");
+    cfg.paths.audit_log = audit_path.clone();
     let inv = state.inventory.read().expect("inventory poisoned").clone();
     let new_state = Arc::new(AppState::new(
         cfg,
         state.spec.clone(),
         inv,
-        AuditLog::open(dir.path().join("audit2.jsonl")).unwrap(),
+        AuditLog::open(&audit_path).unwrap(),
         state.real_can.clone(),
         ReminderStore::open(dir.path().join("reminders2.json")).unwrap(),
     ));

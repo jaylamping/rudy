@@ -6,8 +6,10 @@
 
 mod common;
 
+use std::time::Duration;
+
 use rudydae::boot_orchestrator;
-use rudydae::boot_state::BootState;
+use rudydae::boot_state::{BootState, ClassifyOutcome};
 use rudydae::types::MotorFeedback;
 
 const ROLE: &str = "shoulder_actuator_a";
@@ -195,4 +197,63 @@ async fn orchestrator_skips_when_mech_pos_outside_travel_limits() {
         rudydae::boot_state::current(&state, ROLE),
         BootState::Homed
     ));
+}
+
+#[tokio::test]
+async fn orchestrator_homer_timeout_marks_home_failed() {
+    let (state, _dir) = common::make_state_homer_times_out_quickly();
+    set_commissioned_zero(&state, ROLE, 0.0);
+    common::seed_feedback(&state);
+    common::set_boot_state(&state, ROLE, BootState::InBand);
+
+    boot_orchestrator::maybe_run(state.clone(), ROLE.into()).await;
+
+    let bs = rudydae::boot_state::current(&state, ROLE);
+    let BootState::HomeFailed { reason, .. } = bs else {
+        panic!("expected HomeFailed, got {bs:?}");
+    };
+    assert!(
+        reason.contains("timeout"),
+        "expected timeout abort, got reason={reason:?}"
+    );
+
+    let audit_path = state.cfg.paths.audit_log.clone();
+    let raw = std::fs::read_to_string(audit_path).expect("audit log");
+    assert!(
+        raw.lines().any(|l| l.contains("boot_orchestrator_home_failed")),
+        "audit log should record boot_orchestrator_home_failed"
+    );
+}
+
+#[tokio::test]
+async fn spawn_if_triggers_maybe_run_on_out_of_band_to_in_band() {
+    let (state, _dir) = common::make_state();
+    set_commissioned_zero(&state, ROLE, 0.0);
+    common::seed_feedback(&state);
+    common::set_boot_state(&state, ROLE, BootState::InBand);
+
+    let outcome = ClassifyOutcome::Changed {
+        prev: BootState::OutOfBand {
+            mech_pos_rad: 2.0,
+            min_rad: -1.0,
+            max_rad: 1.0,
+        },
+        new: BootState::InBand,
+    };
+
+    boot_orchestrator::spawn_if_orchestrator_qualifies(state.clone(), ROLE.into(), outcome, false);
+
+    tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            if matches!(
+                rudydae::boot_state::current(&state, ROLE),
+                BootState::Homed
+            ) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("orchestrator should reach Homed within 3s");
 }
