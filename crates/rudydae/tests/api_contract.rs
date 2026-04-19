@@ -1640,6 +1640,56 @@ async fn commission_endpoint_writes_inventory() {
     }
 }
 
+/// Non-Linux: `AppState` holds `Some(RealCanHandle)` so `POST /commission`
+/// exercises the CAN branch; the dev-host stub fails `set_zero` immediately.
+/// Inventory must not be rewritten (`write_atomic` never runs).
+#[cfg(not(target_os = "linux"))]
+#[tokio::test]
+async fn commission_endpoint_can_failure_leaves_inventory_clean() {
+    let (state, dir) = common::make_state_commission_can_path_fails();
+    let app = rudydae::build_app(state.clone());
+
+    let inv_path = dir.path().join("inventory.yaml");
+    let inv_before = std::fs::read_to_string(&inv_path).expect("read inventory");
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/motors/shoulder_actuator_a/commission")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::BAD_GATEWAY);
+
+    let body: serde_json::Value = body_json(resp).await;
+    assert_eq!(body["error"], serde_json::Value::String("commission_failed".into()));
+    assert!(
+        body["detail"]
+            .as_str()
+            .unwrap_or("")
+            .contains("step 3 (set_zero)"),
+        "detail={:?}",
+        body["detail"]
+    );
+    assert!(body["readback_rad"].is_null());
+
+    let inv_after = std::fs::read_to_string(&inv_path).expect("read inventory");
+    assert_eq!(inv_before, inv_after);
+
+    let m = state
+        .inventory
+        .read()
+        .expect("inventory poisoned")
+        .by_role("shoulder_actuator_a")
+        .cloned()
+        .unwrap();
+    assert_eq!(m.commissioned_zero_offset, None);
+    assert_eq!(m.commissioned_at, None);
+}
+
 /// `commission` against an unknown role returns the commission-specific
 /// error envelope (`error: "commission_failed"`, `detail` mentioning the
 /// failing step, `readback_rad: null`) — NOT the generic ApiError shape.

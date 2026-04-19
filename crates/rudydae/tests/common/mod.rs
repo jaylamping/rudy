@@ -134,6 +134,77 @@ pub fn make_state() -> (SharedState, tempfile::TempDir) {
     (state, dir)
 }
 
+/// Non-Linux only: same disk layout as [`make_state`], but
+/// `state.real_can = Some(Arc::new(RealCanHandle))` so `POST /commission` runs
+/// the CAN branch (`set_zero` → …). The non-Linux [`can::RealCanHandle`] stub
+/// always fails `set_zero`, so commission aborts before any inventory write.
+#[cfg(not(target_os = "linux"))]
+pub fn make_state_commission_can_path_fails() -> (SharedState, tempfile::TempDir) {
+    let dir = tempfile::tempdir().expect("tempdir");
+
+    let spec_path = dir.path().join("spec.yaml");
+    std::fs::write(&spec_path, SPEC_YAML).unwrap();
+
+    let inv_path = dir.path().join("inventory.yaml");
+    std::fs::write(&inv_path, INVENTORY_YAML).unwrap();
+
+    let audit_path = dir.path().join("audit.jsonl");
+
+    let cfg = Config {
+        http: HttpConfig {
+            bind: "127.0.0.1:0".into(),
+        },
+        webtransport: WebTransportConfig {
+            bind: "127.0.0.1:0".into(),
+            enabled: false,
+            cert_path: None,
+            key_path: None,
+        },
+        paths: PathsConfig {
+            actuator_spec: spec_path.clone(),
+            inventory: inv_path.clone(),
+            inventory_seed: None,
+            audit_log: audit_path.clone(),
+        },
+        can: CanConfig {
+            mock: true,
+            buses: vec![],
+        },
+        telemetry: TelemetryConfig {
+            poll_interval_ms: 10,
+        },
+        safety: SafetyConfig {
+            require_verified: true,
+            boot_max_step_rad: 0.087,
+            step_size_rad: 0.02,
+            tick_interval_ms: 5,
+            tracking_error_max_rad: 0.05,
+            target_tolerance_rad: 0.005,
+            homer_timeout_ms: 5_000,
+            max_feedback_age_ms: 100,
+            commission_readback_tolerance_rad: 1e-3,
+            auto_home_on_boot: true,
+        },
+        logs: LogsConfig {
+            db_path: dir.path().join("logs.db"),
+            retention_days: 7,
+            default_filter: "rudydae=info".into(),
+            batch_max_rows: 64,
+            batch_flush_ms: 25,
+            purge_interval_s: 60,
+        },
+    };
+
+    let spec = ActuatorSpec::load(&spec_path).expect("load spec");
+    let inv = Inventory::load(&inv_path).expect("load inventory");
+    let audit = AuditLog::open(&audit_path).expect("open audit");
+    let real_can = Some(Arc::new(can::RealCanHandle));
+    let reminders = ReminderStore::open(dir.path().join("reminders.json")).expect("open reminders");
+
+    let state = Arc::new(AppState::new(cfg, spec, inv, audit, real_can, reminders));
+    (state, dir)
+}
+
 /// Same as [`make_state`] but toggles `safety.auto_home_on_boot` (rebuilds
 /// `AppState` because `SharedState` is immutable).
 pub fn make_state_auto_home_on_boot(auto_home_on_boot: bool) -> (SharedState, tempfile::TempDir) {
