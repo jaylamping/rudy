@@ -27,6 +27,7 @@ pub mod auto_recovery;
 pub mod backoff;
 pub mod mock;
 pub mod motion;
+pub mod slow_ramp;
 pub mod travel;
 
 #[cfg(target_os = "linux")]
