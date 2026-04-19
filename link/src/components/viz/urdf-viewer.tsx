@@ -24,7 +24,7 @@ import {
   loadCachedText,
   type Manifest,
 } from "@/lib/asset-cache";
-import { useAssetManifest } from "@/lib/use-asset-cache";
+import { useAssetManifest } from "@/lib/hooks/useAssetCache";
 import type { JointStateMap } from "./use-joint-states";
 
 const URDF_URL = "/robot/robot.urdf";

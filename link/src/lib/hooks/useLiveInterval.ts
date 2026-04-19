@@ -14,7 +14,7 @@
 //     refetchInterval: useLiveInterval({ live: 30_000, fallback: 1_000 }),
 //   });
 
-import { useWtConnected } from "@/lib/hooks/wt-status";
+import { useWtConnected } from "@/lib/hooks/wtStatus";
 
 export interface LiveIntervalOpts {
   /** Slow safety-net cadence to use when the WT bridge is connected. */

@@ -31,12 +31,12 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { useWebTransport } from "@/lib/hooks/useWebTransport";
-import { publishBridgeWt } from "@/lib/hooks/wt-bridge-handle";
-import { publishWtStatus } from "@/lib/hooks/wt-status";
-import { DEFAULT_REDUCERS, type WtReducer } from "@/lib/hooks/wt-reducers";
+import { publishBridgeWt } from "@/lib/hooks/wtBridgeHandle";
+import { publishWtStatus } from "@/lib/hooks/wtStatus";
+import { DEFAULT_REDUCERS, type WtReducer } from "@/lib/hooks/wtReducers";
 import type { ServerConfig } from "@/lib/types/ServerConfig";
 
-export type { WtReducer } from "@/lib/hooks/wt-reducers";
+export type { WtReducer } from "@/lib/hooks/wtReducers";
 
 interface BridgeProps {
   /**

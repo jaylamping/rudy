@@ -8,7 +8,7 @@ import {
   useAssetManifest,
   useCacheStats,
   useClearAssetCache,
-} from "@/lib/use-asset-cache";
+} from "@/lib/hooks/useAssetCache";
 import { cn } from "@/lib/utils";
 import { DashboardCard } from "./dashboard-card";
 

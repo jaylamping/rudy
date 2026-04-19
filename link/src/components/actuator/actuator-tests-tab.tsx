@@ -22,7 +22,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { ConfirmDialog } from "@/components/params";
-import { useTestProgress } from "@/lib/hooks/use-test-progress";
+import { useTestProgress } from "@/lib/hooks/useTestProgress";
 import type { MotorSummary } from "@/lib/types/MotorSummary";
 import type { TestName } from "@/lib/types/TestName";
 import type { TestProgress } from "@/lib/types/TestProgress";

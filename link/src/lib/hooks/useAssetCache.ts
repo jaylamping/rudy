@@ -1,4 +1,4 @@
-// React-flavored façade over `./asset-cache.ts`. Keeps TanStack Query as
+// React-flavored façade over `../asset-cache.ts`. Keeps TanStack Query as
 // the single source of "manifest" truth and exposes a refreshable cache
 // stats query.
 
@@ -14,7 +14,7 @@ import {
   readCacheStats,
   type CacheStats,
   type Manifest,
-} from "./asset-cache";
+} from "../asset-cache";
 
 const MANIFEST_URL = "/robot/manifest.json";
 

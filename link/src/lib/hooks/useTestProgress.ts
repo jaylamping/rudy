@@ -12,7 +12,7 @@
 // data while the Tests tab is open. Restored to "all kinds" on unmount.
 
 import { useEffect, useState } from "react";
-import { getBridgeWt } from "@/lib/hooks/wt-bridge-handle";
+import { getBridgeWt } from "@/lib/hooks/wtBridgeHandle";
 import type { WtEnvelope } from "@/lib/hooks/useWebTransport";
 import type { TestProgress } from "@/lib/types/TestProgress";
 

@@ -319,7 +319,7 @@ state, log tail) is now a fixed-shape change:
 4. Add one `recv()` arm to `wt_router::run_session`. This is the only
    per-stream code in `wt_router.rs`; everything else (encoding,
    sequence numbering, transport dispatch, filtering) is generic.
-5. (Optional, frontend) register a reducer in `wt-reducers.ts`:
+5. (Optional, frontend) register a reducer in `wtReducers.ts`:
    ```ts
    const faultReducer: WtReducer<Fault, Fault[]> = {
      kind: "fault",

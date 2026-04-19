@@ -123,7 +123,7 @@ This puts ~60 Hz of type-2 feedback into `state.latest` with zero blocking on ty
 
 - `link/src/components/actuator/dead-man-jog.tsx`: same `SEND_INTERVAL_MS` 50 → 16 for consistency.
 
-- `link/src/lib/hooks/wt-reducers.ts`: confirm the rAF batching still works at 60 Hz (it should — rAF *is* 60 Hz, so we just stop coalescing).
+- `link/src/lib/hooks/wtReducers.ts`: confirm the rAF batching still works at 60 Hz (it should — rAF *is* 60 Hz, so we just stop coalescing).
 
 ### Deploy: kernel-side IRQ affinity (Pi 5)
 
