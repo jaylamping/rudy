@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { EstopButton } from "@/components/estop-button";
+import { GlobalActuatorHealthBar } from "@/components/global-actuator-health-bar";
 import { LimbQuarantineToaster } from "@/components/limb-quarantine-toaster";
 
 // `/` resolves to `_app.index.tsx` (the Overview dashboard). All the
@@ -64,7 +65,10 @@ export function AppShell() {
         </nav>
       </aside>
       <main className="flex-1 overflow-auto bg-background">
-        <header className="sticky top-0 z-40 flex items-center justify-end gap-4 border-b border-border bg-background/85 px-6 py-3 backdrop-blur">
+        <header className="sticky top-0 z-40 flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border bg-background/85 px-6 py-3 backdrop-blur">
+          <div className="mr-auto min-w-0">
+            <GlobalActuatorHealthBar />
+          </div>
           <EstopButton />
         </header>
         <div className="mx-auto max-w-6xl p-6">

@@ -240,13 +240,14 @@ function BootStateBadge({ motor }: { motor: MotorSummary }) {
     const pos = (bs.mech_pos_rad * RAD_TO_DEG).toFixed(1);
     const lo = (bs.min_rad * RAD_TO_DEG).toFixed(1);
     const hi = (bs.max_rad * RAD_TO_DEG).toFixed(1);
+    const detail = `${pre}At ${pos}° outside [${lo}°, ${hi}°]; manual recovery required`;
     return (
-      <Badge
-        variant="destructive"
-        title={`${pre}At ${pos}° outside [${lo}°, ${hi}°]; manual recovery required`}
-      >
-        {pre}out of band: {pos}°
-      </Badge>
+      <div className="flex max-w-[26rem] flex-wrap items-center justify-end gap-2">
+        <Badge variant="destructive" title={detail}>
+          {pre}out of band: {pos}°
+        </Badge>
+        <AuditLogLink role={motor.role} />
+      </div>
     );
   }
   // Legacy daemon builds may still emit `auto_recovering`; same fields as
@@ -318,6 +319,7 @@ function BootStateBadge({ motor }: { motor: MotorSummary }) {
         >
           {restoreBusy ? "Restoring…" : `Restore (${st} rad)`}
         </Button>
+        <AuditLogLink role={motor.role} />
         {restoreErr ? (
           <span className="max-w-[14rem] text-right text-xs text-destructive">{restoreErr}</span>
         ) : null}
@@ -326,9 +328,13 @@ function BootStateBadge({ motor }: { motor: MotorSummary }) {
   }
   if (bs.kind === "home_failed") {
     const pos = (bs.last_pos_rad * RAD_TO_DEG).toFixed(1);
+    const label = motor.limb
+      ? `${motor.limb}.${motor.role}`
+      : motor.role;
+    const title = `${label} — HomeFailed: ${bs.reason} at ${bs.last_pos_rad.toFixed(3)} rad`;
     return (
-      <div className="flex max-w-[22rem] flex-col items-end gap-1 sm:flex-row sm:items-center sm:gap-2">
-        <Badge variant="warning" title={bs.reason}>
+      <div className="flex max-w-[26rem] flex-col items-end gap-1 sm:flex-row sm:items-center sm:gap-2">
+        <Badge variant="warning" title={title}>
           {pre}home failed @ {pos}°
         </Badge>
         <span className="max-w-[14rem] text-right text-xs text-amber-200/90">
@@ -345,10 +351,26 @@ function BootStateBadge({ motor }: { motor: MotorSummary }) {
         >
           Retry home
         </Link>
+        <AuditLogLink role={motor.role} />
       </div>
     );
   }
   return <Badge variant="outline">{pre}no telemetry</Badge>;
+}
+
+function AuditLogLink({ role }: { role: string }) {
+  return (
+    <Link
+      to="/logs"
+      search={{ target: role }}
+      className={cn(
+        buttonVariants({ variant: "ghost", size: "sm" }),
+        "h-7 whitespace-nowrap text-xs text-muted-foreground hover:text-foreground",
+      )}
+    >
+      Audit log
+    </Link>
+  );
 }
 
 function Stat({

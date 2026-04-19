@@ -2,10 +2,17 @@
 // recency of telemetry, and per-motor temp. Click-through goes to the
 // existing Telemetry route for full charts.
 
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { ArrowRight } from "lucide-react";
 import { api } from "@/lib/api";
+import {
+  bootStateDotClass,
+  bootStateRoleTextClass,
+  bootStateShortLabel,
+  bootStateSortRank,
+} from "@/lib/bootStateUi";
 import { useLiveInterval } from "@/lib/hooks/useLiveInterval";
 import { cn } from "@/lib/utils";
 import type { MotorSummary } from "@/lib/types/MotorSummary";
@@ -29,6 +36,16 @@ export function ActuatorStatusCard({ className }: { className?: string }) {
   });
 
   const motors = q.data ?? [];
+  const sortedMotors = useMemo(
+    () =>
+      [...motors].sort((a, b) => {
+        const d =
+          bootStateSortRank(a.boot_state) - bootStateSortRank(b.boot_state);
+        if (d !== 0) return d;
+        return a.role.localeCompare(b.role);
+      }),
+    [motors],
+  );
   const tally = countByTone(motors);
 
   return (
@@ -69,7 +86,7 @@ export function ActuatorStatusCard({ className }: { className?: string }) {
       )}
 
       <ul>
-        {motors.map((m) => (
+        {sortedMotors.map((m) => (
           <MotorRow key={m.role} motor={m} />
         ))}
       </ul>
@@ -78,9 +95,12 @@ export function ActuatorStatusCard({ className }: { className?: string }) {
 }
 
 function MotorRow({ motor }: { motor: MotorSummary }) {
-  const tone = getTone(motor);
   const fb = motor.latest;
   const ageS = fb ? (Date.now() - Number(fb.t_ms)) / 1000 : null;
+  const bs = motor.boot_state;
+  const bootDot = bootStateDotClass(bs);
+  const roleColor = bootStateRoleTextClass(bs);
+  const bootLabel = bootStateShortLabel(bs);
 
   return (
     <li>
@@ -89,10 +109,21 @@ function MotorRow({ motor }: { motor: MotorSummary }) {
         params={{ role: motor.role }}
         className="-mx-2 flex items-center justify-between rounded-md px-2 py-1.5 text-xs transition-colors hover:bg-accent/40 focus-visible:bg-accent/40 focus-visible:outline-none"
       >
-        <div className="flex items-center gap-2 truncate">
-          <span className={cn("h-2 w-2 shrink-0 rounded-full", toneDot(tone))} />
-          <span className="truncate font-medium">{motor.role}</span>
-          <span className="text-muted-foreground">
+        <div className="flex min-w-0 flex-1 items-center gap-2 truncate">
+          <span
+            className={cn("h-2 w-2 shrink-0 rounded-full", bootDot)}
+            title={`Boot: ${bootLabel}`}
+          />
+          <span
+            className={cn("truncate font-semibold", roleColor)}
+            title={`${motor.role} · ${bootLabel}`}
+          >
+            {motor.role}
+          </span>
+          <span className="shrink-0 text-[0.65rem] font-medium opacity-90">
+            <span className={roleColor}>{bootLabel}</span>
+          </span>
+          <span className="truncate text-muted-foreground">
             0x{motor.can_id.toString(16).padStart(2, "0").toUpperCase()} ·{" "}
             {motor.can_bus}
           </span>
@@ -141,21 +172,6 @@ function countByTone(motors: MotorSummary[]) {
   const c = { ok: 0, warn: 0, crit: 0, stale: 0, missing: 0 };
   for (const m of motors) c[getTone(m)] += 1;
   return c;
-}
-
-function toneDot(t: Tone) {
-  switch (t) {
-    case "ok":
-      return "bg-emerald-400";
-    case "warn":
-      return "bg-amber-400";
-    case "crit":
-      return "bg-rose-400";
-    case "stale":
-      return "bg-amber-500/60";
-    case "missing":
-      return "bg-muted-foreground/40";
-  }
 }
 
 function Pill({
