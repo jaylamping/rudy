@@ -87,7 +87,7 @@ pub async fn jog(
 
     let motor = {
         let inv = state.inventory.read().expect("inventory poisoned");
-        inv.by_role(&role).cloned().ok_or_else(|| {
+        inv.actuator_by_role(&role).cloned().ok_or_else(|| {
             err(
                 StatusCode::NOT_FOUND,
                 "unknown_motor",
@@ -96,14 +96,14 @@ pub async fn jog(
         })?
     };
 
-    if !motor.present {
+    if !motor.common.present {
         return Err(err(
             StatusCode::CONFLICT,
             "motor_absent",
             Some(format!("inventory entry for {role} has present=false")),
         ));
     }
-    if state.cfg.safety.require_verified && !motor.verified {
+    if state.cfg.safety.require_verified && !motor.common.verified {
         return Err(err(
             StatusCode::FORBIDDEN,
             "not_verified",
@@ -299,7 +299,7 @@ pub async fn jog(
             })?;
     }
 
-    watchdog_arm(state.clone(), &motor.role, ttl_ms);
+    watchdog_arm(state.clone(), &motor.common.role, ttl_ms);
 
     state.audit.write(AuditEntry {
         timestamp: Utc::now(),
@@ -372,14 +372,15 @@ async fn watchdog_loop(state: SharedState) {
             continue;
         }
 
-        let inv_snap = state
+        let inv_snap: Vec<crate::inventory::Actuator> = state
             .inventory
             .read()
             .expect("inventory poisoned")
-            .motors
-            .clone();
+            .actuators()
+            .cloned()
+            .collect();
         for role in expired {
-            let Some(motor) = inv_snap.iter().find(|m| m.role == role).cloned() else {
+            let Some(motor) = inv_snap.iter().find(|m| m.common.role == role).cloned() else {
                 continue;
             };
             if let Some(core) = state.real_can.clone() {

@@ -30,12 +30,8 @@ mod common;
 /// them through `inventory.read().by_role(...)`.
 fn set_travel_limits(state: &SharedState, role: &str, min_rad: f32, max_rad: f32) {
     let mut inv = state.inventory.write().expect("inventory poisoned");
-    let m = inv
-        .motors
-        .iter_mut()
-        .find(|m| m.role == role)
-        .unwrap_or_else(|| panic!("inventory missing role {role}"));
-    m.travel_limits = Some(TravelLimits {
+    let a = common::actuator_mut(&mut *inv, role).unwrap_or_else(|| panic!("inventory missing role {role}"));
+    a.common.travel_limits = Some(TravelLimits {
         min_rad,
         max_rad,
         updated_at: None,

@@ -78,7 +78,7 @@ pub struct ControllerTask {
 /// Drive one motion run to completion. Always issues `cmd_stop` and
 /// emits a final `Stopped` status before returning.
 pub async fn run(mut task: ControllerTask) {
-    let role = task.motor.role.clone();
+    let role = task.motor.common.role.clone();
     let kind_str = task.intent_rx.borrow().kind_str();
 
     audit_start(&task);
@@ -148,8 +148,8 @@ pub async fn run(mut task: ControllerTask) {
             .inventory
             .read()
             .expect("inventory poisoned")
-            .by_role(&role)
-            .and_then(|m| m.travel_limits.clone());
+            .actuator_by_role(&role)
+            .and_then(|m| m.common.travel_limits.clone());
 
         // Compute desired velocity from the per-pattern step function.
         let desired_vel = match &intent {
@@ -309,7 +309,7 @@ async fn drive_stop(state: &SharedState, motor: &Motor) -> Result<(), String> {
 fn broadcast_running(task: &ControllerTask, mech_pos_rad: f32, intent: MotionIntent, vel: f32) {
     let snap = MotionStatus {
         run_id: task.run_id.clone(),
-        role: task.motor.role.clone(),
+        role: task.motor.common.role.clone(),
         kind: intent.kind_str().to_string(),
         t_ms: Utc::now().timestamp_millis(),
         state: MotionState::Running,
@@ -324,7 +324,7 @@ fn broadcast_stopped(task: &ControllerTask, mech_pos_rad: f32, reason: &MotionSt
     let intent = task.intent_rx.borrow().clone();
     let snap = MotionStatus {
         run_id: task.run_id.clone(),
-        role: task.motor.role.clone(),
+        role: task.motor.common.role.clone(),
         kind: intent.kind_str().to_string(),
         t_ms: Utc::now().timestamp_millis(),
         state: MotionState::Stopped,
@@ -349,15 +349,15 @@ fn broadcast_stopped(task: &ControllerTask, mech_pos_rad: f32, reason: &MotionSt
             .inventory
             .read()
             .expect("inventory poisoned")
-            .by_role(&task.motor.role)
-            .and_then(|m| m.travel_limits.clone())
+            .actuator_by_role(&task.motor.common.role)
+            .and_then(|m| m.common.travel_limits.clone())
         {
             let _ =
                 task.state
                     .safety_event_tx
                     .send(crate::types::SafetyEvent::TravelLimitViolation {
                         t_ms: Utc::now().timestamp_millis(),
-                        role: task.motor.role.clone(),
+                        role: task.motor.common.role.clone(),
                         attempted_rad: mech_pos_rad,
                         min_rad: limits.min_rad,
                         max_rad: limits.max_rad,
@@ -368,7 +368,7 @@ fn broadcast_stopped(task: &ControllerTask, mech_pos_rad: f32, reason: &MotionSt
     // Boot state may have been lost mid-motion (e.g. fault); leave
     // boot_state where it is — the telemetry classifier will re-evaluate
     // on the next tick.
-    let _ = boot_state::current(&task.state, &task.motor.role);
+    let _ = boot_state::current(&task.state, &task.motor.common.role);
 }
 
 fn audit_start(task: &ControllerTask) {
@@ -378,7 +378,7 @@ fn audit_start(task: &ControllerTask) {
         session_id: None,
         remote: None,
         action: "motion_start".into(),
-        target: Some(task.motor.role.clone()),
+        target: Some(task.motor.common.role.clone()),
         details: serde_json::json!({
             "run_id": task.run_id,
             "kind": intent.kind_str(),
@@ -398,7 +398,7 @@ fn audit_stop(task: &ControllerTask, reason: &MotionStopReason) {
     };
     if matches!(result, AuditResult::Denied) {
         warn!(
-            role = %task.motor.role,
+            role = %task.motor.common.role,
             run_id = %task.run_id,
             reason = reason.label(),
             "motion aborted"
@@ -409,7 +409,7 @@ fn audit_stop(task: &ControllerTask, reason: &MotionStopReason) {
         session_id: None,
         remote: None,
         action: "motion_stop".into(),
-        target: Some(task.motor.role.clone()),
+        target: Some(task.motor.common.role.clone()),
         details: serde_json::json!({
             "run_id": task.run_id,
             "reason": reason.label(),

@@ -1,184 +1,55 @@
-# Per-motor inventory for Rudy's RobStride RS03 actuators.
-#
-# Populate this once per physical motor.  Driver code should refuse to enable a
-# motor whose entry is missing `verified: true` — the intent is that every
-# physical unit has been commissioned through Motor Assistant and had its
-# firmware-level limits audited.
-#
-# Source data:
-#   firmware_version -> Motor Assistant "Read Parameters" -> 0x1003 AppCodeVersion
-#   can_status       -> Motor Assistant -> 0x3041 can_status  (0 = has 240Ω,
-#                       1 = external termination required)
-#   mech_offset      -> value of 0x2005 MechOffset after mechanical-zero step
-#
-# Everything else is filled in by the commissioning workflow (SPA + daemon:
-# docs/operator-guide/commissioning.md; bench tooling: tools/robstride/commission.md).
-#
-# ── Daemon-managed fields (do NOT hand-edit) ────────────────────────────────
-#
-# `commissioned_zero_offset` (float, radians; default null)
-#   The firmware's `add_offset` (parameter 0x702B) recorded at commissioning
-#   time. Written ONLY by `POST /api/motors/:role/commission`, which sequences
-#   type-6 SetZero + type-22 SaveParams + a readback of `add_offset` and stores
-#   the exact value the firmware confirmed it flashed.
-#   On every subsequent boot the daemon reads `add_offset` over CAN and
-#   compares it against the stored value within
-#   `safety.commission_readback_tolerance_rad`. A mismatch surfaces as
-#   `BootState::OffsetChanged { stored, current }` — the daemon refuses motion
-#   and the operator must explicitly re-commission or call
-#   `POST /api/motors/:role/restore_offset` to write the stored value back.
-#   `null` means "this motor has never been commissioned"; the boot
-#   orchestrator skips it with a clear log message and the operator must use
-#   the manual `Verify & Home` flow on every boot, exactly like before this
-#   feature shipped.
-#
-# `predefined_home_rad` (float, radians; default null ≡ 0.0)
-#   Per-motor target angle the boot orchestrator drives toward via the
-#   slow-ramp homer once it confirms the offset is unchanged and the joint is
-#   inside its `travel_limits` band. Set this when a joint's neutral pose
-#   isn't the same as its commissioned zero (e.g. an arm whose comfortable
-#   resting pose differs from the position the operator commissioned it at).
-#   Must be inside `travel_limits`; the
-#   `PUT /api/motors/:role/predefined_home` endpoint enforces that at write
-#   time. `null` means "0.0 rad" — drive to the commissioned neutral on every
-#   boot.
-#
-# Commissioning workflow (operator):
-#   1. Physically position the joint at its desired neutral.
-#   2. POST /api/motors/<role>/commission (the SPA "Commission Zero" button).
-#   3. Verify the response shows the readback `add_offset` ≈ 0.0 rad.
-#   4. Restart the daemon (or power-cycle the motor) to confirm the
-#      orchestrator auto-homes to the predefined neutral on next boot.
-#   5. Optionally PUT /api/motors/<role>/predefined_home with a non-zero
-#      target if "neutral" should differ from "commissioned zero".
-# See `.cursor/plans/quick-home_commissioned_zero_boot.plan.md` for the
-# full design and `docs/operator-guide/commissioning.md` for the walkthrough.
-
-schema_version: 1
-
-motors:
-  # Example entry; duplicate per physical motor.
-  # - serial: "(barcode or scribbled Sharpie label)"
-  #   role: right_shoulder_pitch
-  #   can_bus: can0
-  #   can_id: 0x08
-  #   sourced_from: aliexpress
-  #   verified: false
-  #   firmware_version: unknown
-  #   can_status: unknown
-  #   mech_offset_rad: unknown
-  #   limits_written:
-  #     limit_torque_nm: null
-  #     limit_spd_rad_s: null
-  #     limit_cur_a: null
-  #     can_timeout_counts: null
-  #   limits_saved_to_flash: false
-  #   commissioned_at: null
-  #   notes: ""
-
-  - role: shoulder_actuator_a
-    can_bus: can1                     # Linux iface; NOT the silkscreen label.
-                                      # On the Waveshare 2-CH HAT the screw
-                                      # terminal silkscreened "CAN0" is driven
-                                      # by the MCP2515 that Linux exports as
-                                      # `can1`.  See deploy/pi5/README.md
-                                      # "Gotcha: can0/can1 vs silkscreen labels".
-                                      # Verified 2026-04-17 by candump capturing
-                                      # a full Motor Studio param export on can1
-                                      # while can0 saw nothing.
-    can_id: 0x08
-    sourced_from: unknown
-    verified: false
-    firmware_version: "0.3.1.41"        # was 0.3.1.21 pre-flash
-    firmware_flashed_at: "2026-04-17"
-    firmware_flash_tool: "motor-studio-1.0.3 (docs/vendor/tools/motor-studio-1.0.3)"
-    firmware_notes: >-
-      Flashed 2026-04-17 from 0.3.1.21 (Oct 22 2025 build) to 0.3.1.41
-      (Apr 3 2026 build) using Motor Studio v1.0.3. Bootloader unchanged
-      (Jul 11 2024 build, shared across firmware line). All 0x20xx stored
-      parameters carried over correctly through the flash — 0.3.1.41's
-      "parameter backup storage region" feature did its job. See pre-flash
-      and post-flash dumps in config/actuators/factory-dumps/.
-
-      Between the two dumps, the CAN/power harness was moved from one side
-      of the actuator to the other. The RS03 has two pass-through CAN
-      connectors but only one has the onboard 240Ω terminator in-circuit,
-      so can_status (0x3041) correctly flipped 1 -> 0 across the move.
-      This is a wiring change, not a flash effect.
-    can_status: 0                 # 0x3041 = 0 → onboard terminator IS in-circuit on the currently-wired connector
-    termination_at_motor: true    # onboard 240Ω sits on this side of the actuator
-    # NOTE: can_status flipped 1 -> 0 when wiring was moved from one side of
-    # the actuator to the other between the pre-commission dump and the
-    # post-flash dump. The RS03 has two pass-through CAN connectors but only
-    # one of them has the onboard terminator in-circuit. 0x3041 correctly
-    # reports which side is actively terminating; it is NOT a firmware
-    # semantic change and NOT a flash reset. (See ADR-0002 for the physical
-    # topology detail.)
-    #
-    # Consequence for bus design: the motor is currently acting as "end of
-    # bus" from the terminator's perspective, which is fine while it's the
-    # only motor on the bus. When we add shoulder_actuator_b at 0x09, we
-    # will want:
-    #   - CAN-USB dongle at one end (120 Ω, DIP-2 ON)
-    #   - shoulder_actuator_a in the middle with wires on its NON-terminated
-    #     side (can_status must read 1)
-    #   - shoulder_actuator_b at the far end with wires on its TERMINATED
-    #     side (can_status must read 0)
-    # Re-check can_status on both motors after harness assembly.
-    # TODO(joey): add external 120Ω at the far end of the bus before moving
-    # off the bench (currently single-terminated at the CAN-USB dongle; OK for
-    # commissioning but not for production multi-motor operation at 1 Mbps).
-
-    # Factory/pre-commissioning baseline captured 2026-04-17 (FW 0.3.1.21).
-    # Full export: config/actuators/factory-dumps/shoulder_actuator_a_0x08_fw0.3.1.21_pre-commission.xlsx
+# Polymorphic device inventory (schema v2). See docs/operator-guide/inventory-v2-migration.md
+# Each entry uses `kind: actuator | sensor | battery`; RobStride actuators use `family: { kind: robstride, model: rs03 }`.
+schema_version: 2
+devices:
+- kind: actuator
+  role: shoulder_actuator_a
+  can_bus: can1
+  can_id: 8
+  present: true
+  verified: false
+  commissioned_at: null
+  firmware_version: 0.3.1.41
+  travel_limits: null
+  commissioned_zero_offset: null
+  predefined_home_rad: null
+  limb: null
+  joint_kind: null
+  notes_yaml: |
     baseline:
-      app_build_date: "Oct 22 2025"
-      app_code_name: "z_motor"       # not "rs-03"; see notes
-      mech_offset_rad: 1.410495       # 0x2005 at dump time
-      mech_pos_rad_at_dump: -0.1185   # 0x3016 at dump time (shaft was NOT at zero)
-      kt_nm_per_amp: 1.53             # 0x303c; differs from manual's 2.36 Nm/Arms
-      rated_i_a: 9.0                  # 0x302d; differs from manual's 13 Apk
-      can_master: 253                 # 0x200A; host expected to use CAN_ID 0xFD
-      status1_torque_limit: 0.0       # 0x2007; range [-10, 10], 0 = disabled
-      limit_spd_rad_s: 10.0           # 0x2018 factory-ish
-      limit_cur_a: 30.0               # 0x2019 factory-ish
-      can_timeout_counts: 0           # 0x200B; timeout disabled
-      damper: 0                       # post-power-off damping enabled
-      zero_sta: 0                     # reports 0..2π
+      app_build_date: Oct 22 2025
+      app_code_name: z_motor
+      mech_offset_rad: 1.410495
+      mech_pos_rad_at_dump: -0.1185
+      kt_nm_per_amp: 1.53
+      rated_i_a: 9.0
+      can_master: 253
+      status1_torque_limit: 0.0
+      limit_spd_rad_s: 10.0
+      limit_cur_a: 30.0
+      can_timeout_counts: 0
+      damper: 0
+      zero_sta: 0
       vbus_at_dump_v: 24.57
-      fault_sta: 0                    # no active faults
-      board_temp_c_x10: 259           # 0x301f = 25.9 C
-
-    # Post-flash baseline captured 2026-04-17 (FW 0.3.1.41).
-    # Full export: config/actuators/factory-dumps/shoulder_actuator_a_0x08_fw0.3.1.41_post-flash.xlsx
-    post_flash_baseline:
-      app_build_date: "Apr  3 2026"
-      app_code_name: "z_motor"
-      mech_offset_rad: 0.86018         # 0x2005 — was 1.410495 pre-flash
-      chasu_offset_rad: 3.965724       # 0x2006 — was 4.02344 pre-flash
-      mech_pos_rad: 0.000043           # 0x3016 — shaft now very close to internal zero
-      kt_nm_per_amp: 1.53              # 0x303c — unchanged (per-motor factory cal preserved)
-      rated_i_a: 9.0                   # 0x302d — unchanged
-      can_id: 8                        # 0x2009 — preserved
-      can_master: 253                  # 0x200a — preserved
-      can_timeout_counts: 0            # 0x200b — preserved (still disabled, fix in Step 6)
-      limit_spd_rad_s: 10.0            # 0x2018 — preserved (factory, still need to tighten)
-      limit_cur_a: 30.0                # 0x2019 — preserved (factory, still need to tighten)
-      baud: 1                          # 0x2022 — 1 Mbps preserved
-      zero_sta: 0                      # 0x2023 — preserved
-      damper: 0                        # 0x2026 — preserved (post-power-off damping ON)
-      can_status: 0                    # 0x3041 — flipped 1→0 vs pre-flash because harness
-                                       # was moved to the terminated side of the actuator;
-                                       # NOT a firmware change. See notes below.
-      vbus_v: 24.57                    # 0x300c
-      fault_sta: 0                     # 0x3022
-      warn_sta: 0                      # 0x3023
-      fault8: 50                       # 0x303a — undocumented, persisted from pre-flash
-      mc_over_temp_c_x10: 1450         # 0x303b — 145 °C threshold
-      board_temp_c_x10: 246            # 0x301f — 24.6 °C
-      mcu_temp_c_x10: 221              # 0x3005 — 22.1 °C
-
-    mech_offset_rad: 1.162374           # 0x2005 after accidental factory-reset + re-zero
+      fault_sta: 0
+      board_temp_c_x10: 259
+    can_status: 0
+    enable_disable_verified: false
+    firmware_flash_tool: motor-studio-1.0.3 (docs/vendor/tools/motor-studio-1.0.3)
+    firmware_flashed_at: 2026-04-17
+    firmware_notes: |-
+      Flashed 2026-04-17 from 0.3.1.21 (Oct 22 2025 build) to 0.3.1.41 (Apr 3 2026 build) using Motor Studio v1.0.3. Bootloader unchanged (Jul 11 2024 build, shared across firmware line). All 0x20xx stored parameters carried over correctly through the flash — 0.3.1.41's "parameter backup storage region" feature did its job. See pre-flash and post-flash dumps in config/actuators/factory-dumps/.
+      Between the two dumps, the CAN/power harness was moved from one side of the actuator to the other. The RS03 has two pass-through CAN connectors but only one has the onboard 240Ω terminator in-circuit, so can_status (0x3041) correctly flipped 1 -> 0 across the move. This is a wiring change, not a flash effect.
+    jog_verified: false
+    limit_spd_enforcement_verified: false
+    limits_saved_to_flash: true
+    limits_written:
+      limit_torque_nm: null
+      limit_spd_rad_s: 3.0
+      limit_cur_a: 10.0
+      can_timeout_counts: 20000
+    limits_written_at: 2026-04-17
+    mech_offset_rad: 1.162374
     mech_offset_source: |
       Second zero, set via Motor Studio v0.0.13 on 2026-04-17 after an
       accidental factory-reset click wiped the first zero (1.254796) along
@@ -190,94 +61,6 @@ motors:
       Prior zero (1.254796) is archived in
       config/actuators/factory-dumps/shoulder_actuator_a_0x08_fw0.3.1.41_post-commission.xlsx
       for reference; do not restore it -- the new zero is better aligned.
-    limits_written:
-      # Written 2026-04-17 via Motor Studio v0.0.13 Write Para on this motor.
-      # Values match tools/robstride/commission.md Step 6 commissioning defaults.
-      # Flash persistence CONFIRMED:
-      #  - via Motor Studio param export after one PSU cycle
-      #    (..._step7-verified.xlsx, 2026-04-17 03:21)
-      #  - via Pi-side type-17 read from the 0x70xx namespace after
-      #    a second PSU cycle (2026-04-17 ~04:00).  Same values read
-      #    back by an independent path.
-      limit_torque_nm: null              # NOT YET tightened.  0x700B reads
-                                         # 60.0 Nm (factory ceiling).  RS03
-                                         # manual says 60 Nm is the hardware
-                                         # peak; rated is 20 Nm.  Plan for
-                                         # commissioning: write 15 Nm via
-                                         # type-18 to 0x700B, save, verify.
-      limit_spd_rad_s: 3.0               # 0x2018 limit_spd (stored), readback
-                                         # confirmed via 0x7017 runtime shadow
-      limit_cur_a: 10.0                  # 0x2019 limit_cur (stored), readback
-                                         # confirmed via 0x7018 runtime shadow
-      can_timeout_counts: 20000          # 0x200B CAN_TIMEOUT (stored), readback
-                                         # confirmed via 0x7028 runtime shadow
-                                         # 20000 counts @ 20 kHz = 1.0 s
-    limits_written_at: "2026-04-17"
-    limits_saved_to_flash: true          # Verified 2026-04-17 across PSU cycle:
-                                         #  - once before accidental factory-reset
-                                         #  - once after post-reset re-write
-                                         #    (Motor Studio param export:
-                                         #    ..._step7-verified.xlsx)
-                                         #  - once more from Pi-side type-17 read
-                                         #    of 0x70xx shadow indices (Step 8)
-    pi_comms_verified: true              # 2026-04-17 -- Pi can read all 0x70xx
-                                         # observables via type-17 on can1
-                                         # (silkscreen CAN0).  Reply status bit
-                                         # decoded correctly, values match flash.
-    # Step 9 (tools/robstride/bench_enable_disable.py +
-    #         bench_jog_velocity.py) — flip each to true only after the
-    #         matching script PASS on the Pi; then set verified:true.
-    enable_disable_verified: false       # bench_enable_disable.py --go
-    jog_verified: false                  # bench_jog_velocity.py --go
-    limit_spd_enforcement_verified: false # bench_jog_velocity.py --go --test-overlimit
-    commissioned_at: null                # pending Step 9 (bench jog + limit
-                                         # enforcement test); do not flip
-                                         # verified:true until jog test passes
-
-    post_commission_observations:
-      # Step-7 verification dump after PSU cycle w/ all limits + zero in flash.
-      # (config/actuators/factory-dumps/shoulder_actuator_a_0x08_fw0.3.1.41_step7-verified.xlsx)
-      mech_pos_rad: -0.00017             # 0x3016 -- shaft within ~0.01 deg of
-                                         # true mechanical zero after PSU cycle
-      mech_vel_rad_s: -0.129551          # 0x3017 -- still settling, normal
-      vbus_v: 24.605
-      fault_sta: 0
-      warn_sta: 32                        # 0x3023 bit 5 -- PERSISTENT and
-                                          # intentionally DEFERRED.  See
-                                          # warn_sta_deferred_reason below.
-      warn_sta_theories_ruled_out:
-        - position_near_2pi_wrap         # falsified: bit stays set at mechPos~=0
-        - stale_zero_calibration         # falsified: bit cleared briefly after
-                                         #   factory-reset+rezero, then came back
-                                         #   on next PSU cycle with same zero
-      warn_sta_current_hypothesis: |
-        Best remaining guess: "cogging calibration not run" advisory.  The
-        0.3.1.41 firmware introduced a cogging-calibration procedure
-        (iq_test=1 -> reboot -> calibrate -> max_alve nonzero -> alveolous_open=1)
-        and this motor has never had it run (max_alve still 0, iq_test still 0,
-        alveolous_open still 0 in extract.xls @ 2026-04-17 03:27).  A
-        "please-run-cogging-calibration" advisory bit that stays lit until
-        max_alve becomes nonzero would be consistent with every observation.
-        Not verified -- verification requires running the calibration.
-      warn_sta_deferred_reason: |
-        Deferred 2026-04-17 by user decision.  Rationale:
-          - faultSta = 0 (no active faults)
-          - all safety-critical params in flash and verified
-          - bit is clearly advisory, not interlocking (motor jogged fine in
-            Motor Studio with this warning set)
-          - Pi-side CAN bring-up and driver bench-jog testing are higher-
-            leverage work than chasing a single undocumented warning bit
-            through a Chinese GUI.
-        Revisit when: (a) we run cogging calibration for unrelated reasons
-        (jitter/tracking-error reduction), or (b) warnSta grows new bits,
-        which would indicate a real regression.
-      notes: |
-        Accidental factory-reset on 2026-04-17 wiped MechOffset and the three
-        safety limits (limit_spd, limit_cur, CAN_TIMEOUT) back to factory
-        defaults.  CAN_ID, CAN_MASTER, baud, damper, zero_sta were preserved.
-        Zero + limits re-written same day and verified across a fresh PSU
-        cycle (extract3.xls timestamp 03:21 on 2026-04-17).  All four
-        safety-critical values persisted correctly.  Step 7 DONE.
     notes: |
       Firmware flashed 2026-04-17 from 0.3.1.21 → 0.3.1.41 using Motor Studio
       v1.0.3. The 0.0.13 Motor Assistant that ships on the vendor USB stick
@@ -318,30 +101,97 @@ motors:
       shoulder_actuator_b is added to the bus; at that point move this
       motor's harness to its NON-terminated side and place actuator_b at
       the bus end on ITS terminated side.
-
-  - role: shoulder_actuator_b
-    can_bus: can0
-    can_id: 0x09
-    # Not yet on the bus. With present:false rudydae:
-    #   - skips this motor in the real-CAN telemetry poll loop, so we don't
-    #     pile up unanswered request frames on can0 until the kernel txqueue
-    #     overflows (ENOBUFS / errno 105 on every send),
-    #   - rejects /api/motors/shoulder_actuator_b/{enable,stop,save,set_zero}
-    #     with 409 motor_absent before queueing CAN traffic,
-    #   - still surfaces the entry in /api/motors so the UI can show "absent".
-    # Flip to true (or delete the line) once the physical motor is wired,
-    # bench-jog tested, and ready to be polled.
-    present: false
+    pi_comms_verified: true
+    post_commission_observations:
+      mech_pos_rad: -0.00017
+      mech_vel_rad_s: -0.129551
+      vbus_v: 24.605
+      fault_sta: 0
+      warn_sta: 32
+      warn_sta_theories_ruled_out:
+      - position_near_2pi_wrap
+      - stale_zero_calibration
+      warn_sta_current_hypothesis: |
+        Best remaining guess: "cogging calibration not run" advisory.  The
+        0.3.1.41 firmware introduced a cogging-calibration procedure
+        (iq_test=1 -> reboot -> calibrate -> max_alve nonzero -> alveolous_open=1)
+        and this motor has never had it run (max_alve still 0, iq_test still 0,
+        alveolous_open still 0 in extract.xls @ 2026-04-17 03:27).  A
+        "please-run-cogging-calibration" advisory bit that stays lit until
+        max_alve becomes nonzero would be consistent with every observation.
+        Not verified -- verification requires running the calibration.
+      warn_sta_deferred_reason: |
+        Deferred 2026-04-17 by user decision.  Rationale:
+          - faultSta = 0 (no active faults)
+          - all safety-critical params in flash and verified
+          - bit is clearly advisory, not interlocking (motor jogged fine in
+            Motor Studio with this warning set)
+          - Pi-side CAN bring-up and driver bench-jog testing are higher-
+            leverage work than chasing a single undocumented warning bit
+            through a Chinese GUI.
+        Revisit when: (a) we run cogging calibration for unrelated reasons
+        (jitter/tracking-error reduction), or (b) warnSta grows new bits,
+        which would indicate a real regression.
+      notes: |
+        Accidental factory-reset on 2026-04-17 wiped MechOffset and the three
+        safety limits (limit_spd, limit_cur, CAN_TIMEOUT) back to factory
+        defaults.  CAN_ID, CAN_MASTER, baud, damper, zero_sta were preserved.
+        Zero + limits re-written same day and verified across a fresh PSU
+        cycle (extract3.xls timestamp 03:21 on 2026-04-17).  All four
+        safety-critical values persisted correctly.  Step 7 DONE.
+    post_flash_baseline:
+      app_build_date: Apr  3 2026
+      app_code_name: z_motor
+      mech_offset_rad: 0.86018
+      chasu_offset_rad: 3.965724
+      mech_pos_rad: 0.000043
+      kt_nm_per_amp: 1.53
+      rated_i_a: 9.0
+      can_id: 8
+      can_master: 253
+      can_timeout_counts: 0
+      limit_spd_rad_s: 10.0
+      limit_cur_a: 30.0
+      baud: 1
+      zero_sta: 0
+      damper: 0
+      can_status: 0
+      vbus_v: 24.57
+      fault_sta: 0
+      warn_sta: 0
+      fault8: 50
+      mc_over_temp_c_x10: 1450
+      board_temp_c_x10: 246
+      mcu_temp_c_x10: 221
     sourced_from: unknown
-    verified: false
-    firmware_version: unknown
+    termination_at_motor: true
+  family:
+    kind: robstride
+    model: rs03
+- kind: actuator
+  role: shoulder_actuator_b
+  can_bus: can0
+  can_id: 9
+  present: false
+  verified: false
+  commissioned_at: null
+  firmware_version: unknown
+  travel_limits: null
+  commissioned_zero_offset: null
+  predefined_home_rad: null
+  limb: null
+  joint_kind: null
+  notes_yaml: |
     can_status: unknown
-    mech_offset_rad: unknown
+    limits_saved_to_flash: false
     limits_written:
       limit_torque_nm: null
       limit_spd_rad_s: null
       limit_cur_a: null
       can_timeout_counts: null
-    limits_saved_to_flash: false
-    commissioned_at: null
-    notes: "Placeholder — fill in during Motor Assistant commissioning."
+    mech_offset_rad: unknown
+    notes: Placeholder — fill in during Motor Assistant commissioning.
+    sourced_from: unknown
+  family:
+    kind: robstride
+    model: rs03

@@ -24,9 +24,8 @@ async fn mock_can_publishes_feedback_for_every_inventoried_motor() {
         .inventory
         .read()
         .expect("inventory poisoned")
-        .motors
-        .iter()
-        .map(|m| m.role.clone())
+        .actuators()
+        .map(|m| m.common.role.clone())
         .collect();
 
     // Subscribe BEFORE spawning the producer to guarantee no missed messages

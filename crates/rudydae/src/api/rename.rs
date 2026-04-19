@@ -145,14 +145,14 @@ async fn do_rename(
     // `rename` and on `assign`-of-already-assigned.
     let (was_unassigned, motor_snapshot) = {
         let inv = state.inventory.read().expect("inventory poisoned");
-        let Some(motor) = inv.by_role(&role) else {
+        let Some(motor) = inv.actuator_by_role(&role) else {
             return Err(err(
                 StatusCode::NOT_FOUND,
                 "unknown_motor",
                 Some(format!("no motor with role={role}")),
             ));
         };
-        if inv.by_role(&new_role).is_some() {
+        if inv.actuator_by_role(&new_role).is_some() {
             return Err(err(
                 StatusCode::CONFLICT,
                 "role_in_use",
@@ -160,7 +160,7 @@ async fn do_rename(
             ));
         }
         (
-            motor.limb.is_none() && motor.joint_kind.is_none(),
+            motor.common.limb.is_none() && motor.common.joint_kind.is_none(),
             motor.clone(),
         )
     };
@@ -222,14 +222,17 @@ async fn do_rename(
     let new_inv = tokio::task::spawn_blocking(move || {
         inventory::write_atomic(&inv_path, |inv| {
             let m: &mut Motor = inv
-                .motors
+                .devices
                 .iter_mut()
-                .find(|m| m.role == role_for_closure)
+                .find_map(|d| match d {
+                    inventory::Device::Actuator(a) if a.common.role == role_for_closure => Some(a),
+                    _ => None,
+                })
                 .ok_or_else(|| anyhow::anyhow!("motor disappeared"))?;
-            m.role = new_role_for_closure.clone();
+            m.common.role = new_role_for_closure.clone();
             if let Some((limb, jk)) = &assignment_for_closure {
-                m.limb = Some(limb.clone());
-                m.joint_kind = Some(*jk);
+                m.common.limb = Some(limb.clone());
+                m.common.joint_kind = Some(*jk);
             }
             Ok(())
         })
@@ -314,7 +317,7 @@ async fn do_rename(
             .inventory
             .read()
             .expect("inventory poisoned")
-            .by_role(&new_role)
+            .actuator_by_role(&new_role)
             .cloned();
         match motor_for_enable {
             Some(motor) => {

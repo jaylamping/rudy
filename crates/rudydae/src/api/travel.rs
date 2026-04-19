@@ -15,7 +15,7 @@ use serde::Deserialize;
 
 use crate::audit::{AuditEntry, AuditResult};
 use crate::can::travel::validate_band;
-use crate::inventory::{self, TravelLimits};
+use crate::inventory::{self, Device, TravelLimits};
 use crate::state::SharedState;
 use crate::types::ApiError;
 use crate::util::session_from_headers;
@@ -42,14 +42,19 @@ pub async fn get_travel_limits(
     Path(role): Path<String>,
 ) -> Result<Json<TravelLimits>, (StatusCode, Json<ApiError>)> {
     let inv = state.inventory.read().expect("inventory poisoned");
-    let motor = inv.by_role(&role).ok_or_else(|| {
+    let motor = inv.actuator_by_role(&role).ok_or_else(|| {
         err(
             StatusCode::NOT_FOUND,
             "unknown_motor",
             Some(format!("no motor with role={role}")),
         )
     })?;
-    motor.travel_limits.clone().map(Json).ok_or_else(|| {
+    motor
+        .common
+        .travel_limits
+        .clone()
+        .map(Json)
+        .ok_or_else(|| {
         err(
             StatusCode::NOT_FOUND,
             "no_travel_limits",
@@ -94,7 +99,7 @@ pub async fn put_travel_limits(
     // `unknown_motor` too.
     {
         let inv = state.inventory.read().expect("inventory poisoned");
-        if inv.by_role(&role).is_none() {
+        if inv.actuator_by_role(&role).is_none() {
             return Err(err(
                 StatusCode::NOT_FOUND,
                 "unknown_motor",
@@ -114,12 +119,15 @@ pub async fn put_travel_limits(
     let limits_for_closure = limits.clone();
     let new_inv = tokio::task::spawn_blocking(move || {
         inventory::write_atomic(&path, |inv| {
-            let m = inv.motors.iter_mut().find(|m| m.role == role_for_closure);
-            let Some(m) = m else {
-                anyhow::bail!("motor {role_for_closure} disappeared from inventory");
-            };
-            m.travel_limits = Some(limits_for_closure);
-            Ok(())
+            for d in &mut inv.devices {
+                if let Device::Actuator(a) = d {
+                    if a.common.role == role_for_closure {
+                        a.common.travel_limits = Some(limits_for_closure);
+                        return Ok(());
+                    }
+                }
+            }
+            anyhow::bail!("motor {role_for_closure} disappeared from inventory");
         })
     })
     .await

@@ -143,7 +143,7 @@ pub async fn maybe_run(state: SharedState, role: String) {
         .inventory
         .read()
         .expect("inventory poisoned")
-        .by_role(&role)
+        .actuator_by_role(&role)
         .cloned()
     {
         Some(m) => m,
@@ -156,7 +156,7 @@ pub async fn maybe_run(state: SharedState, role: String) {
 
     // Step 3: skip uncommissioned motors. Their pre-orchestrator
     // behavior (manual Verify & Home on every boot) is unchanged.
-    let Some(stored_offset) = motor.commissioned_zero_offset else {
+    let Some(stored_offset) = motor.common.commissioned_zero_offset else {
         info!(
             role = %role,
             "boot_orchestrator: skipping motor uncommissioned, run POST /commission first",
@@ -236,7 +236,7 @@ pub async fn maybe_run(state: SharedState, role: String) {
     // Step 7: principal-angle band check. If outside band, the classifier
     // has already set OutOfBand; clear attempted so a future
     // OutOfBand → InBand transition retriggers this orchestrator.
-    let limits = motor.travel_limits.clone();
+    let limits = motor.common.travel_limits.clone();
     if let Some(limits) = &limits {
         let principal = wrap_to_pi(mech_pos_rad);
         if principal < limits.min_rad || principal > limits.max_rad {
@@ -254,7 +254,7 @@ pub async fn maybe_run(state: SharedState, role: String) {
     }
 
     // Step 8: transition to AutoHoming and run the slow ramp.
-    let target_rad = motor.predefined_home_rad.unwrap_or(0.0);
+    let target_rad = motor.common.predefined_home_rad.unwrap_or(0.0);
     boot_state::force_set_auto_homing(&state, &role, mech_pos_rad, target_rad);
     audit_auto_homing_started(&state, &role, mech_pos_rad, target_rad);
     info!(

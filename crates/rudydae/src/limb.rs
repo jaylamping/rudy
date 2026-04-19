@@ -1,9 +1,9 @@
 //! Canonical kinematic-chain ordering for `POST /api/home_all`.
 //!
-//! Each motor in inventory.yaml carries an optional `limb` field (free-form
+//! Each actuator in inventory may carry an optional `limb` field (free-form
 //! string like `left_arm`, `right_leg`, `torso`) and an optional
 //! `joint_kind` (constrained enum). The home-all orchestrator groups
-//! motors by `limb` and within each limb sorts by `joint_kind.home_order()`
+//! actuators by `limb` and within each limb sorts by `joint_kind.home_order()`
 //! so the proximal joint always homes before the distal one.
 //!
 //! Ordering ranges leave room to insert new joint kinds without renumbering:
@@ -110,21 +110,21 @@ impl JointKind {
     }
 }
 
-/// Group present motors by `limb`, returning each limb's motors sorted in
-/// proximal-to-distal home order. Motors without `limb` are excluded.
+/// Group present actuators by `limb`, returning each limb's actuators sorted in
+/// proximal-to-distal home order. Actuators without `limb` are excluded.
 pub fn ordered_motors_per_limb(inv: &Inventory) -> BTreeMap<String, Vec<&Motor>> {
     let mut by_limb: BTreeMap<String, Vec<&Motor>> = BTreeMap::new();
-    for m in &inv.motors {
-        if !m.present {
+    for m in inv.actuators() {
+        if !m.common.present {
             continue;
         }
-        let Some(limb) = m.limb.as_ref() else {
+        let Some(limb) = m.common.limb.as_ref() else {
             continue;
         };
         by_limb.entry(limb.clone()).or_default().push(m);
     }
     for motors in by_limb.values_mut() {
-        motors.sort_by_key(|m| m.joint_kind.map(|jk| jk.home_order()).unwrap_or(255));
+        motors.sort_by_key(|m| m.common.joint_kind.map(|jk| jk.home_order()).unwrap_or(255));
     }
     by_limb
 }
@@ -133,17 +133,17 @@ pub fn ordered_motors_per_limb(inv: &Inventory) -> BTreeMap<String, Vec<&Motor>>
 /// `tokio::spawn` without holding a borrow of [`Inventory`].
 pub fn ordered_motors_per_limb_owned(inv: &Inventory) -> BTreeMap<String, Vec<Motor>> {
     let mut by_limb: BTreeMap<String, Vec<Motor>> = BTreeMap::new();
-    for m in &inv.motors {
-        if !m.present {
+    for m in inv.actuators() {
+        if !m.common.present {
             continue;
         }
-        let Some(limb) = m.limb.as_ref() else {
+        let Some(limb) = m.common.limb.as_ref() else {
             continue;
         };
         by_limb.entry(limb.clone()).or_default().push(m.clone());
     }
     for motors in by_limb.values_mut() {
-        motors.sort_by_key(|m| m.joint_kind.map(|jk| jk.home_order()).unwrap_or(255));
+        motors.sort_by_key(|m| m.common.joint_kind.map(|jk| jk.home_order()).unwrap_or(255));
     }
     by_limb
 }

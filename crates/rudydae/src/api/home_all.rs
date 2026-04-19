@@ -76,7 +76,7 @@ async fn drive_predefined_home(
     state: SharedState,
     motor: Motor,
 ) -> Result<(f32, u32), (String, f32)> {
-    let role = motor.role.clone();
+    let role = motor.common.role.clone();
     let bs = boot_state::current(&state, &role);
     match bs {
         BootState::InBand => {}
@@ -104,7 +104,7 @@ async fn drive_predefined_home(
         BootState::HomeFailed { .. } => return Err(("home_failed".into(), f32::NAN)),
     }
 
-    let target_rad = motor.predefined_home_rad.unwrap_or(0.0);
+    let target_rad = motor.common.predefined_home_rad.unwrap_or(0.0);
     if !target_rad.is_finite() {
         return Err((
             "bad_target".into(),
@@ -208,27 +208,27 @@ pub async fn home_all(
     let mut offenders: Vec<(String, &'static str)> = Vec::new();
     for motors in by_limb.values() {
         for m in motors {
-            let bs = boot_state::current(&state, &m.role);
+            let bs = boot_state::current(&state, &m.common.role);
             let ok = match bs {
                 BootState::InBand | BootState::Homed => true,
                 BootState::Unknown => {
-                    offenders.push((m.role.clone(), "not_ready"));
+                    offenders.push((m.common.role.clone(), "not_ready"));
                     false
                 }
                 BootState::OutOfBand { .. } => {
-                    offenders.push((m.role.clone(), "out_of_band"));
+                    offenders.push((m.common.role.clone(), "out_of_band"));
                     false
                 }
                 BootState::OffsetChanged { .. } => {
-                    offenders.push((m.role.clone(), "offset_changed"));
+                    offenders.push((m.common.role.clone(), "offset_changed"));
                     false
                 }
                 BootState::AutoHoming { .. } => {
-                    offenders.push((m.role.clone(), "auto_homing_in_progress"));
+                    offenders.push((m.common.role.clone(), "auto_homing_in_progress"));
                     false
                 }
                 BootState::HomeFailed { .. } => {
-                    offenders.push((m.role.clone(), "home_failed"));
+                    offenders.push((m.common.role.clone(), "home_failed"));
                     false
                 }
             };
@@ -249,20 +249,24 @@ pub async fn home_all(
     let mut torso: Vec<(String, String)> = Vec::new();
     for (limb, motors) in &by_limb {
         for m in motors {
-            if m.joint_kind.map(|jk| jk.is_torso()).unwrap_or(false) {
-                torso.push((limb.clone(), m.role.clone()));
+            if m.common
+                .joint_kind
+                .map(|jk| jk.is_torso())
+                .unwrap_or(false)
+            {
+                torso.push((limb.clone(), m.common.role.clone()));
             }
         }
     }
     torso.sort_by(|(l_a, r_a), (l_b, r_b)| {
         let ord_a = inv
-            .by_role(r_a)
-            .and_then(|m| m.joint_kind)
+            .actuator_by_role(r_a)
+            .and_then(|m| m.common.joint_kind)
             .map(|jk| jk.home_order())
             .unwrap_or(255);
         let ord_b = inv
-            .by_role(r_b)
-            .and_then(|m| m.joint_kind)
+            .actuator_by_role(r_b)
+            .and_then(|m| m.common.joint_kind)
             .map(|jk| jk.home_order())
             .unwrap_or(255);
         (ord_a, l_a.as_str(), r_a.as_str()).cmp(&(ord_b, l_b.as_str(), r_b.as_str()))
@@ -272,7 +276,7 @@ pub async fn home_all(
         if matches!(boot_state::current(&state, role), BootState::Homed) {
             continue;
         }
-        let motor = inv.by_role(role).cloned().ok_or_else(|| {
+        let motor = inv.actuator_by_role(role).cloned().ok_or_else(|| {
             err(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "internal",
@@ -303,21 +307,29 @@ pub async fn home_all(
             let all = motors;
             let drive_queue: Vec<Motor> = all
                 .iter()
-                .filter(|m| !m.joint_kind.map(|jk| jk.is_torso()).unwrap_or(false))
+                .filter(|m| {
+                    !m.common
+                        .joint_kind
+                        .map(|jk| jk.is_torso())
+                        .unwrap_or(false)
+                })
                 .cloned()
                 .collect();
 
             let mut homed: Vec<String> = Vec::new();
             for m in &all {
-                if m.joint_kind.map(|jk| jk.is_torso()).unwrap_or(false)
-                    && matches!(boot_state::current(&state, &m.role), BootState::Homed)
+                if m.common
+                    .joint_kind
+                    .map(|jk| jk.is_torso())
+                    .unwrap_or(false)
+                    && matches!(boot_state::current(&state, &m.common.role), BootState::Homed)
                 {
-                    homed.push(m.role.clone());
+                    homed.push(m.common.role.clone());
                 }
             }
 
             for motor in drive_queue {
-                let role = motor.role.clone();
+                let role = motor.common.role.clone();
                 if matches!(boot_state::current(&state, &role), BootState::Homed) {
                     if !homed.contains(&role) {
                         homed.push(role.clone());

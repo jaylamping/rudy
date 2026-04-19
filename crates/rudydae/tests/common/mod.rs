@@ -15,7 +15,7 @@ use rudydae::config::{
     CanConfig, Config, HttpConfig, LogsConfig, PathsConfig, SafetyConfig, TelemetryConfig,
     WebTransportConfig,
 };
-use rudydae::inventory::Inventory;
+use rudydae::inventory::{Actuator, Device, Inventory};
 use rudydae::reminders::ReminderStore;
 use rudydae::spec::ActuatorSpec;
 use rudydae::state::{AppState, SharedState};
@@ -51,18 +51,28 @@ observables:
 "#;
 
 const INVENTORY_YAML: &str = r#"
-schema_version: 1
-motors:
-  - role: shoulder_actuator_a
+schema_version: 2
+devices:
+  - kind: actuator
+    role: shoulder_actuator_a
     can_bus: can1
     can_id: 0x08
     firmware_version: "1.2.3"
     verified: true
-  - role: shoulder_actuator_b
+    present: true
+    family:
+      kind: robstride
+      model: rs03
+  - kind: actuator
+    role: shoulder_actuator_b
     can_bus: can1
     can_id: 0x09
     firmware_version: "1.2.3"
     verified: false
+    present: true
+    family:
+      kind: robstride
+      model: rs03
 "#;
 
 /// Build a temp-rooted SharedState with mock CAN, no TLS, no WT (so we don't
@@ -132,6 +142,18 @@ pub fn make_state() -> (SharedState, tempfile::TempDir) {
 
     let state = Arc::new(AppState::new(cfg, spec, inv, audit, real_can, reminders));
     (state, dir)
+}
+
+/// Mutate a single actuator row by `role` (test helper; inventory is v2 `devices:`).
+pub fn actuator_mut<'a>(inv: &'a mut Inventory, role: &str) -> Option<&'a mut Actuator> {
+    inv.devices.iter_mut().find_map(|d| {
+        if let Device::Actuator(a) = d {
+            if a.common.role == role {
+                return Some(a);
+            }
+        }
+        None
+    })
 }
 
 /// Non-Linux only: same disk layout as [`make_state`], but
@@ -252,16 +274,21 @@ pub fn make_state_homer_times_out_quickly() -> (SharedState, tempfile::TempDir) 
 pub fn set_travel_limits(state: &SharedState, role: &str, min_rad: f32, max_rad: f32) {
     use rudydae::inventory::TravelLimits;
     let mut inv = state.inventory.write().expect("inventory poisoned");
-    let m = inv
-        .motors
-        .iter_mut()
-        .find(|m| m.role == role)
-        .unwrap_or_else(|| panic!("inventory missing role {role}"));
-    m.travel_limits = Some(TravelLimits {
-        min_rad,
-        max_rad,
-        updated_at: None,
-    });
+    let mut found = false;
+    for d in &mut inv.devices {
+        if let Device::Actuator(a) = d {
+            if a.common.role == role {
+                a.common.travel_limits = Some(TravelLimits {
+                    min_rad,
+                    max_rad,
+                    updated_at: None,
+                });
+                found = true;
+                break;
+            }
+        }
+    }
+    assert!(found, "inventory missing role {role}");
 }
 
 /// Same as `make_state` but with `webtransport.enabled = true` so config_route
@@ -294,7 +321,7 @@ pub fn seed_params(state: &SharedState) {
 
     let mut seeded: BTreeMap<String, ParamSnapshot> = BTreeMap::new();
     let inv = state.inventory.read().expect("inventory poisoned");
-    for motor in &inv.motors {
+    for motor in inv.actuators() {
         let mut values = BTreeMap::new();
         for (name, desc) in state.spec.catalog() {
             let default = match desc.ty.as_str() {
@@ -315,9 +342,9 @@ pub fn seed_params(state: &SharedState) {
             );
         }
         seeded.insert(
-            motor.role.clone(),
+            motor.common.role.clone(),
             ParamSnapshot {
-                role: motor.role.clone(),
+                role: motor.common.role.clone(),
                 values,
             },
         );
@@ -337,13 +364,13 @@ pub fn seed_feedback(state: &SharedState) {
     let now_ms = chrono::Utc::now().timestamp_millis();
     let mut latest = state.latest.write().expect("latest");
     let inv = state.inventory.read().expect("inventory poisoned");
-    for motor in &inv.motors {
+    for motor in inv.actuators() {
         latest.insert(
-            motor.role.clone(),
+            motor.common.role.clone(),
             MotorFeedback {
                 t_ms: now_ms,
-                role: motor.role.clone(),
-                can_id: motor.can_id,
+                role: motor.common.role.clone(),
+                can_id: motor.common.can_id,
                 mech_pos_rad: 0.1,
                 mech_vel_rad_s: 0.0,
                 torque_nm: 0.0,
@@ -363,8 +390,8 @@ pub fn force_homed(state: &SharedState) {
     use rudydae::boot_state::BootState;
     let mut bs = state.boot_state.write().expect("boot_state");
     let inv = state.inventory.read().expect("inventory poisoned");
-    for m in &inv.motors {
-        bs.insert(m.role.clone(), BootState::Homed);
+    for m in inv.actuators() {
+        bs.insert(m.common.role.clone(), BootState::Homed);
     }
 }
 

@@ -14,12 +14,13 @@ pub fn spawn(state: SharedState) {
     // Seed a placeholder parameter snapshot for every inventoried motor so
     // the UI has something to render before the first real read completes.
     let mut seeded = BTreeMap::new();
-    let inventory_snap = state
+    let inventory_snap: Vec<crate::inventory::Actuator> = state
         .inventory
         .read()
         .expect("inventory poisoned")
-        .motors
-        .clone();
+        .actuators()
+        .cloned()
+        .collect();
     for motor in &inventory_snap {
         let mut values = BTreeMap::new();
         for (name, desc) in state.spec.catalog() {
@@ -41,9 +42,9 @@ pub fn spawn(state: SharedState) {
             );
         }
         seeded.insert(
-            motor.role.clone(),
+            motor.common.role.clone(),
             ParamSnapshot {
-                role: motor.role.clone(),
+                role: motor.common.role.clone(),
                 values,
             },
         );

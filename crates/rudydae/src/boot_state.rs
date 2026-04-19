@@ -123,8 +123,8 @@ pub fn classify(state: &SharedState, role: &str, mech_pos_rad: f32) -> ClassifyO
         .inventory
         .read()
         .expect("inventory poisoned")
-        .by_role(role)
-        .and_then(|m| m.travel_limits.clone());
+        .actuator_by_role(role)
+        .and_then(|m| m.common.travel_limits.clone());
 
     // No band on file -> degenerate case: treat as InBand. The enable
     // handler still requires Homed via the BootState ritual; this just

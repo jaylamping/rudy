@@ -30,9 +30,8 @@ pub async fn estop(
         .inventory
         .read()
         .expect("inventory poisoned")
-        .motors
-        .iter()
-        .filter(|m| m.present)
+        .actuators()
+        .filter(|m| m.common.present)
         .cloned()
         .collect();
 
@@ -46,7 +45,7 @@ pub async fn estop(
                 // one CAN bus glitched. The error is already audit-logged
                 // via the broadcast.
                 if core.stop(motor).is_ok() {
-                    stopped.push(motor.role.clone());
+                    stopped.push(motor.common.role.clone());
                 }
             }
             stopped
@@ -56,7 +55,7 @@ pub async fn estop(
     } else {
         // Mock mode: there's nothing to stop, but the audit + broadcast still
         // happen so test harnesses can pin the wire shape.
-        motors.iter().map(|m| m.role.clone()).collect()
+        motors.iter().map(|m| m.common.role.clone()).collect()
     };
 
     for role in &stopped {

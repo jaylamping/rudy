@@ -10,7 +10,7 @@ use chrono::Utc;
 use serde::Deserialize;
 
 use crate::audit::{AuditEntry, AuditResult};
-use crate::inventory;
+use crate::inventory::{self, Device};
 use crate::state::SharedState;
 use crate::types::ApiError;
 use crate::util::session_from_headers;
@@ -34,7 +34,7 @@ pub async fn get_inventory(
     Path(role): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ApiError>)> {
     let inv = state.inventory.read().expect("inventory poisoned");
-    let motor = inv.by_role(&role).ok_or_else(|| {
+    let motor = inv.actuator_by_role(&role).ok_or_else(|| {
         err(
             StatusCode::NOT_FOUND,
             "unknown_motor",
@@ -42,8 +42,7 @@ pub async fn get_inventory(
         )
     })?;
 
-    // serde_json round-trip: this picks up `#[serde(flatten)] extra` so the
-    // SPA sees every field the YAML defines, not just the typed ones.
+    // serde_json round-trip of the actuator record (common + family).
     let value = serde_json::to_value(motor).map_err(|e| {
         err(
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -93,7 +92,7 @@ pub async fn put_verified(
 
     {
         let inv = state.inventory.read().expect("inventory poisoned");
-        if inv.by_role(&role).is_none() {
+        if inv.actuator_by_role(&role).is_none() {
             return Err(err(
                 StatusCode::NOT_FOUND,
                 "unknown_motor",
@@ -107,13 +106,15 @@ pub async fn put_verified(
     let new_verified = body.verified;
     let new_inv = tokio::task::spawn_blocking(move || {
         inventory::write_atomic(&path, |inv| {
-            let m = inv
-                .motors
-                .iter_mut()
-                .find(|m| m.role == role_for_closure)
-                .ok_or_else(|| anyhow::anyhow!("motor disappeared from inventory"))?;
-            m.verified = new_verified;
-            Ok(())
+            for d in &mut inv.devices {
+                if let Device::Actuator(a) = d {
+                    if a.common.role == role_for_closure {
+                        a.common.verified = new_verified;
+                        return Ok(());
+                    }
+                }
+            }
+            anyhow::bail!("motor disappeared from inventory");
         })
     })
     .await

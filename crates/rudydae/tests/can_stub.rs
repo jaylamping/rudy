@@ -32,8 +32,8 @@ async fn non_linux_read_add_offset_returns_zero() {
         .inventory
         .read()
         .expect("inventory poisoned")
-        .motors
-        .first()
+        .actuators()
+        .next()
         .cloned()
         .expect("test inventory must have at least one motor");
 

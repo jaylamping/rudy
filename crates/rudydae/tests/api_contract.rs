@@ -18,7 +18,7 @@ use http_body_util::BodyExt;
 use serde_json::json;
 use tower::ServiceExt;
 
-use rudydae::inventory::TravelLimits;
+use rudydae::inventory::{Device, TravelLimits};
 use rudydae::types::{
     ApiError, MotorFeedback, MotorSummary, ParamSnapshot, Reminder, ServerConfig, ServerFeatures,
     SystemSnapshot, WebTransportAdvert,
@@ -178,8 +178,8 @@ async fn list_motors_matches_motor_summary() {
             .inventory
             .read()
             .expect("inventory poisoned")
-            .motors
-            .len()
+            .actuators()
+            .count()
     );
 
     let by_role: std::collections::BTreeMap<&str, &MotorSummary> =
@@ -782,17 +782,17 @@ async fn put_predefined_home_persists_when_within_band() {
     assert_eq!(j["predefined_home_rad"], json!(0.25));
 
     let inv = rudydae::inventory::Inventory::load(dir.path().join("inventory.yaml")).unwrap();
-    let m = inv.by_role("shoulder_actuator_a").unwrap();
-    assert_eq!(m.predefined_home_rad, Some(0.25_f32));
+    let m = inv.actuator_by_role("shoulder_actuator_a").unwrap();
+    assert_eq!(m.common.predefined_home_rad, Some(0.25_f32));
 
     let in_mem = state
         .inventory
         .read()
         .expect("inventory poisoned")
-        .by_role("shoulder_actuator_a")
+        .actuator_by_role("shoulder_actuator_a")
         .cloned()
         .unwrap();
-    assert_eq!(in_mem.predefined_home_rad, Some(0.25_f32));
+    assert_eq!(in_mem.common.predefined_home_rad, Some(0.25_f32));
 }
 
 /// Values outside the soft travel band are rejected.
@@ -900,9 +900,8 @@ async fn estop_returns_ok_envelope() {
         .inventory
         .read()
         .expect("inventory")
-        .motors
-        .iter()
-        .filter(|m| m.present)
+        .actuators()
+        .filter(|m| m.common.present)
         .count();
     let app = rudydae::build_app(state);
 
@@ -1074,20 +1073,15 @@ async fn enable_homed_but_drifted_outside_band_is_forbidden() {
     let (state, _dir) = common::make_state();
 
     // Configure a band on the motor.
-    let _ = state
-        .inventory
-        .write()
-        .expect("inventory")
-        .motors
-        .iter_mut()
-        .find(|m| m.role == "shoulder_actuator_a")
-        .map(|m| {
-            m.travel_limits = Some(rudydae::inventory::TravelLimits {
-                min_rad: -1.0,
-                max_rad: 1.0,
-                updated_at: None,
-            });
+    {
+        let mut inv = state.inventory.write().expect("inventory");
+        let a = common::actuator_mut(&mut *inv, "shoulder_actuator_a").unwrap();
+        a.common.travel_limits = Some(rudydae::inventory::TravelLimits {
+            min_rad: -1.0,
+            max_rad: 1.0,
+            updated_at: None,
         });
+    }
 
     // Latest cached position is OUTSIDE the band; state insists Homed.
     {
@@ -1205,20 +1199,15 @@ async fn home_when_out_of_band_is_forbidden() {
 #[tokio::test]
 async fn home_target_outside_band_is_forbidden() {
     let (state, _dir) = common::make_state();
-    let _ = state
-        .inventory
-        .write()
-        .expect("inventory")
-        .motors
-        .iter_mut()
-        .find(|m| m.role == "shoulder_actuator_a")
-        .map(|m| {
-            m.travel_limits = Some(rudydae::inventory::TravelLimits {
-                min_rad: -1.0,
-                max_rad: 1.0,
-                updated_at: None,
-            });
+    {
+        let mut inv = state.inventory.write().expect("inventory");
+        let a = common::actuator_mut(&mut *inv, "shoulder_actuator_a").unwrap();
+        a.common.travel_limits = Some(rudydae::inventory::TravelLimits {
+            min_rad: -1.0,
+            max_rad: 1.0,
+            updated_at: None,
         });
+    }
     common::seed_feedback(&state);
     common::set_boot_state(&state, "shoulder_actuator_a", BootState::InBand);
     let app = rudydae::build_app(state);
@@ -1246,20 +1235,15 @@ async fn home_target_outside_band_is_forbidden() {
 #[tokio::test]
 async fn jog_step_too_large_when_not_homed_is_forbidden() {
     let (state, _dir) = common::make_state();
-    let _ = state
-        .inventory
-        .write()
-        .expect("inventory")
-        .motors
-        .iter_mut()
-        .find(|m| m.role == "shoulder_actuator_a")
-        .map(|m| {
-            m.travel_limits = Some(rudydae::inventory::TravelLimits {
-                min_rad: -1.0,
-                max_rad: 1.0,
-                updated_at: None,
-            });
+    {
+        let mut inv = state.inventory.write().expect("inventory");
+        let a = common::actuator_mut(&mut *inv, "shoulder_actuator_a").unwrap();
+        a.common.travel_limits = Some(rudydae::inventory::TravelLimits {
+            min_rad: -1.0,
+            max_rad: 1.0,
+            updated_at: None,
         });
+    }
     common::seed_feedback(&state);
     common::set_boot_state(&state, "shoulder_actuator_a", BootState::InBand);
     let app = rudydae::build_app(state);
@@ -1292,20 +1276,15 @@ async fn jog_step_too_large_when_not_homed_is_forbidden() {
 #[tokio::test]
 async fn jog_refuses_on_stale_feedback() {
     let (state, _dir) = common::make_state();
-    let _ = state
-        .inventory
-        .write()
-        .expect("inventory")
-        .motors
-        .iter_mut()
-        .find(|m| m.role == "shoulder_actuator_a")
-        .map(|m| {
-            m.travel_limits = Some(TravelLimits {
-                min_rad: -1.0,
-                max_rad: 1.0,
-                updated_at: None,
-            });
+    {
+        let mut inv = state.inventory.write().expect("inventory");
+        let a = common::actuator_mut(&mut *inv, "shoulder_actuator_a").unwrap();
+        a.common.travel_limits = Some(TravelLimits {
+            min_rad: -1.0,
+            max_rad: 1.0,
+            updated_at: None,
         });
+    }
     common::set_boot_state(&state, "shoulder_actuator_a", BootState::Homed);
 
     // Seed a deliberately stale row: 500 ms old > the 100 ms default.
@@ -1360,20 +1339,15 @@ async fn jog_refuses_on_stale_feedback() {
 #[tokio::test]
 async fn jog_refuses_with_no_feedback() {
     let (state, _dir) = common::make_state();
-    let _ = state
-        .inventory
-        .write()
-        .expect("inventory")
-        .motors
-        .iter_mut()
-        .find(|m| m.role == "shoulder_actuator_a")
-        .map(|m| {
-            m.travel_limits = Some(TravelLimits {
-                min_rad: -1.0,
-                max_rad: 1.0,
-                updated_at: None,
-            });
+    {
+        let mut inv = state.inventory.write().expect("inventory");
+        let a = common::actuator_mut(&mut *inv, "shoulder_actuator_a").unwrap();
+        a.common.travel_limits = Some(TravelLimits {
+            min_rad: -1.0,
+            max_rad: 1.0,
+            updated_at: None,
         });
+    }
     common::set_boot_state(&state, "shoulder_actuator_a", BootState::Homed);
     // Note: deliberately do NOT call seed_feedback.
     let app = rudydae::build_app(state);
@@ -1610,21 +1584,21 @@ async fn commission_endpoint_writes_inventory() {
     let inv_on_disk = rudydae::inventory::Inventory::load(dir.path().join("inventory.yaml"))
         .expect("re-load inventory");
     let m = inv_on_disk
-        .by_role("shoulder_actuator_a")
+        .actuator_by_role("shoulder_actuator_a")
         .expect("motor present in re-loaded inventory");
-    assert_eq!(m.commissioned_zero_offset, Some(0.0_f32));
-    assert_eq!(m.commissioned_at.as_deref(), Some(commissioned_at));
+    assert_eq!(m.common.commissioned_zero_offset, Some(0.0_f32));
+    assert_eq!(m.common.commissioned_at.as_deref(), Some(commissioned_at));
 
     // In-memory state must also reflect the write.
     let in_memory = state
         .inventory
         .read()
         .expect("inventory poisoned")
-        .by_role("shoulder_actuator_a")
+        .actuator_by_role("shoulder_actuator_a")
         .cloned()
         .unwrap();
-    assert_eq!(in_memory.commissioned_zero_offset, Some(0.0_f32));
-    assert_eq!(in_memory.commissioned_at.as_deref(), Some(commissioned_at));
+    assert_eq!(in_memory.common.commissioned_zero_offset, Some(0.0_f32));
+    assert_eq!(in_memory.common.commissioned_at.as_deref(), Some(commissioned_at));
 
     // SafetyEvent::Commissioned must fire so the dashboard can refresh.
     let evt = tokio::time::timeout(std::time::Duration::from_millis(200), safety_rx.recv())
@@ -1683,11 +1657,11 @@ async fn commission_endpoint_can_failure_leaves_inventory_clean() {
         .inventory
         .read()
         .expect("inventory poisoned")
-        .by_role("shoulder_actuator_a")
+        .actuator_by_role("shoulder_actuator_a")
         .cloned()
         .unwrap();
-    assert_eq!(m.commissioned_zero_offset, None);
-    assert_eq!(m.commissioned_at, None);
+    assert_eq!(m.common.commissioned_zero_offset, None);
+    assert_eq!(m.common.commissioned_at, None);
 }
 
 /// `commission` against an unknown role returns the commission-specific
@@ -1737,10 +1711,8 @@ async fn commission_endpoint_motor_absent_rejected_cleanly() {
     // Mark shoulder_actuator_a as absent.
     {
         let mut inv = state.inventory.write().expect("inventory");
-        let m = inv.motors.iter_mut()
-            .find(|m| m.role == "shoulder_actuator_a")
-            .unwrap();
-        m.present = false;
+        let a = common::actuator_mut(&mut *inv, "shoulder_actuator_a").unwrap();
+        a.common.present = false;
     }
     let app = rudydae::build_app(state.clone());
 
@@ -1812,12 +1784,8 @@ async fn restore_offset_mock_clears_offset_changed() {
 
     {
         let mut inv = state.inventory.write().expect("inventory poisoned");
-        let m = inv
-            .motors
-            .iter_mut()
-            .find(|m| m.role == "shoulder_actuator_a")
-            .expect("fixture motor");
-        m.commissioned_zero_offset = Some(0.05);
+        let a = common::actuator_mut(&mut *inv, "shoulder_actuator_a").expect("fixture motor");
+        a.common.commissioned_zero_offset = Some(0.05);
     }
 
     common::set_boot_state(
@@ -1858,12 +1826,8 @@ async fn restore_offset_rejects_when_not_offset_changed() {
     let app = rudydae::build_app(state.clone());
     {
         let mut inv = state.inventory.write().expect("inventory poisoned");
-        let m = inv
-            .motors
-            .iter_mut()
-            .find(|m| m.role == "shoulder_actuator_a")
-            .expect("fixture motor");
-        m.commissioned_zero_offset = Some(0.05);
+        let a = common::actuator_mut(&mut *inv, "shoulder_actuator_a").expect("fixture motor");
+        a.common.commissioned_zero_offset = Some(0.05);
     }
     common::set_boot_state(&state, "shoulder_actuator_a", BootState::InBand);
 
@@ -1906,11 +1870,11 @@ async fn commission_leaves_sibling_motor_uncommissioned() {
         .inventory
         .read()
         .expect("inventory poisoned")
-        .by_role("shoulder_actuator_b")
+        .actuator_by_role("shoulder_actuator_b")
         .cloned()
         .expect("fixture motor b");
-    assert_eq!(b.commissioned_zero_offset, None);
-    assert_eq!(b.commissioned_at, None);
+    assert_eq!(b.common.commissioned_zero_offset, None);
+    assert_eq!(b.common.commissioned_at, None);
 }
 
 /// `restore_offset` records a successful outcome in the audit log with the
@@ -1923,12 +1887,8 @@ async fn restore_offset_audit_logs_success() {
 
     {
         let mut inv = state.inventory.write().expect("inventory poisoned");
-        let m = inv
-            .motors
-            .iter_mut()
-            .find(|m| m.role == "shoulder_actuator_a")
-            .expect("fixture motor");
-        m.commissioned_zero_offset = Some(0.05);
+        let a = common::actuator_mut(&mut *inv, "shoulder_actuator_a").expect("fixture motor");
+        a.common.commissioned_zero_offset = Some(0.05);
     }
 
     common::set_boot_state(
@@ -1977,12 +1937,8 @@ async fn restore_offset_clears_boot_orchestrator_attempted() {
 
     {
         let mut inv = state.inventory.write().expect("inventory poisoned");
-        let m = inv
-            .motors
-            .iter_mut()
-            .find(|m| m.role == "shoulder_actuator_a")
-            .expect("fixture motor");
-        m.commissioned_zero_offset = Some(0.05);
+        let a = common::actuator_mut(&mut *inv, "shoulder_actuator_a").expect("fixture motor");
+        a.common.commissioned_zero_offset = Some(0.05);
     }
 
     common::set_boot_state(
@@ -2319,12 +2275,8 @@ async fn motion_sweep_starts_and_returns_run_id() {
     common::seed_feedback(&state);
     {
         let mut inv = state.inventory.write().expect("inventory");
-        let m = inv
-            .motors
-            .iter_mut()
-            .find(|m| m.role == "shoulder_actuator_a")
-            .unwrap();
-        m.travel_limits = Some(TravelLimits {
+        let a = common::actuator_mut(&mut *inv, "shoulder_actuator_a").unwrap();
+        a.common.travel_limits = Some(TravelLimits {
             min_rad: -0.5,
             max_rad: 0.5,
             updated_at: None,
@@ -2404,12 +2356,8 @@ async fn motion_sweep_clamps_excessive_speed() {
     common::seed_feedback(&state);
     {
         let mut inv = state.inventory.write().expect("inventory");
-        let m = inv
-            .motors
-            .iter_mut()
-            .find(|m| m.role == "shoulder_actuator_a")
-            .unwrap();
-        m.travel_limits = Some(TravelLimits {
+        let a = common::actuator_mut(&mut *inv, "shoulder_actuator_a").unwrap();
+        a.common.travel_limits = Some(TravelLimits {
             min_rad: -0.5,
             max_rad: 0.5,
             updated_at: None,
@@ -2465,10 +2413,12 @@ async fn limb_quarantine_blocks_sibling_jog() {
     let (state, _dir) = common::make_state();
     {
         let mut inv = state.inventory.write().expect("inventory");
-        for m in &mut inv.motors {
-            m.limb = Some("test_limb".into());
-            if m.role == "shoulder_actuator_b" {
-                m.verified = true;
+        for d in &mut inv.devices {
+            if let Device::Actuator(a) = d {
+                a.common.limb = Some("test_limb".into());
+                if a.common.role == "shoulder_actuator_b" {
+                    a.common.verified = true;
+                }
             }
         }
     }
@@ -2510,10 +2460,12 @@ async fn limb_quarantine_allows_recovery_set_zero() {
     let (state, _dir) = common::make_state();
     {
         let mut inv = state.inventory.write().expect("inventory");
-        for m in &mut inv.motors {
-            m.limb = Some("test_limb".into());
-            if m.role == "shoulder_actuator_b" {
-                m.verified = true;
+        for d in &mut inv.devices {
+            if let Device::Actuator(a) = d {
+                a.common.limb = Some("test_limb".into());
+                if a.common.role == "shoulder_actuator_b" {
+                    a.common.verified = true;
+                }
             }
         }
     }

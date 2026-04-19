@@ -82,7 +82,7 @@ fn require_present(
         .inventory
         .read()
         .expect("inventory poisoned")
-        .by_role(role)
+        .actuator_by_role(role)
         .cloned()
         .ok_or_else(|| {
             err(
@@ -92,7 +92,7 @@ fn require_present(
             )
         })?;
 
-    if !motor.present {
+    if !motor.common.present {
         audit(state, action, role, AuditResult::Denied);
         return Err(err(
             StatusCode::CONFLICT,
@@ -112,7 +112,7 @@ pub async fn enable(
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ApiError>)> {
     let motor = require_present(&state, "enable", &role)?;
 
-    if state.cfg.safety.require_verified && !motor.verified {
+    if state.cfg.safety.require_verified && !motor.common.verified {
         audit(&state, "enable", &role, AuditResult::Denied);
         return Err(err(
             StatusCode::FORBIDDEN,
@@ -131,7 +131,7 @@ pub async fn enable(
     // if telemetry is stale, if the cached position is outside the band
     // we refuse. Check B catches the operational discipline gap when
     // Check A passes.
-    if motor.travel_limits.is_some() {
+    if motor.common.travel_limits.is_some() {
         let cached = state
             .latest
             .read()

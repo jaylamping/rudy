@@ -62,7 +62,7 @@ pub async fn run(
     from_rad: f32,
     target_rad: f32,
 ) -> Result<(f32, u32), (String, f32)> {
-    let role = motor.role.clone();
+    let role = motor.common.role.clone();
     let cfg = state.cfg.safety.clone();
     let tick = Duration::from_millis(cfg.tick_interval_ms.max(5) as u64);
     let timeout = Duration::from_millis(cfg.homer_timeout_ms.max(1_000) as u64);

@@ -54,7 +54,7 @@ pub async fn put_param(
         .inventory
         .read()
         .expect("inventory poisoned")
-        .by_role(&role)
+        .actuator_by_role(&role)
         .cloned()
         .ok_or_else(|| {
             err(
@@ -64,7 +64,7 @@ pub async fn put_param(
             )
         })?;
 
-    if !motor.present {
+    if !motor.common.present {
         state.audit.write(AuditEntry {
             timestamp: Utc::now(),
             session_id: None,
@@ -169,7 +169,7 @@ pub async fn put_param(
         .into(),
         target: Some(format!("{role}.{name}")),
         details: serde_json::json!({
-            "can_id": motor.can_id,
+            "can_id": motor.common.can_id,
             "index": format!("0x{:04X}", desc.index),
             "value": normalized_value,
         }),

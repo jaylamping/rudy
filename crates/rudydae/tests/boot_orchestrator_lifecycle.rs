@@ -16,12 +16,8 @@ const ROLE: &str = "shoulder_actuator_a";
 
 fn set_commissioned_zero(state: &rudydae::state::SharedState, role: &str, rad: f32) {
     let mut inv = state.inventory.write().expect("inventory poisoned");
-    let m = inv
-        .motors
-        .iter_mut()
-        .find(|m| m.role == role)
-        .expect("fixture motor");
-    m.commissioned_zero_offset = Some(rad);
+    let a = common::actuator_mut(&mut *inv, role).expect("fixture motor");
+    a.common.commissioned_zero_offset = Some(rad);
 }
 
 #[tokio::test]

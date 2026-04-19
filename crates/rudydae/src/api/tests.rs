@@ -79,7 +79,7 @@ pub async fn run_test(
     // Cheap synchronous validity checks before we spawn anything.
     let motor = {
         let inv = state.inventory.read().expect("inventory poisoned");
-        inv.by_role(&role).cloned().ok_or_else(|| {
+        inv.actuator_by_role(&role).cloned().ok_or_else(|| {
             err(
                 StatusCode::NOT_FOUND,
                 "unknown_motor",
@@ -87,7 +87,7 @@ pub async fn run_test(
             )
         })?
     };
-    if !motor.present {
+    if !motor.common.present {
         return Err(err(
             StatusCode::CONFLICT,
             "motor_absent",

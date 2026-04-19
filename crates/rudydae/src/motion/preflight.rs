@@ -195,14 +195,14 @@ impl PreflightChecks<'_> {
     pub fn run(&self) -> Result<PreflightOk, PreflightFailure> {
         let motor = {
             let inv = self.state.inventory.read().expect("inventory poisoned");
-            inv.by_role(self.role).cloned()
+            inv.actuator_by_role(self.role).cloned()
         };
         let motor = motor.ok_or(PreflightFailure::UnknownMotor)?;
 
-        if !motor.present {
+        if !motor.common.present {
             return Err(PreflightFailure::Absent);
         }
-        if self.state.cfg.safety.require_verified && !motor.verified {
+        if self.state.cfg.safety.require_verified && !motor.common.verified {
             return Err(PreflightFailure::NotVerified);
         }
 

@@ -87,12 +87,12 @@ impl LinuxCanCore {
             buses.insert(bus_cfg.iface.clone(), bus);
         }
 
-        for motor in &inventory.motors {
-            if !buses.contains_key(&motor.can_bus) {
+        for motor in inventory.actuators() {
+            if !buses.contains_key(&motor.common.can_bus) {
                 bail!(
                     "inventory motor {} uses iface {} but that bus is not configured in [[can.buses]]",
-                    motor.role,
-                    motor.can_bus
+                    motor.common.role,
+                    motor.common.can_bus
                 );
             }
         }
@@ -159,14 +159,14 @@ impl LinuxCanCore {
         value: &serde_json::Value,
         save_after: bool,
     ) -> Result<serde_json::Value> {
-        let handle = self.handle_for(&motor.can_bus)?;
+        let handle = self.handle_for(&motor.common.can_bus)?;
         let normalized: serde_json::Value = match desc.ty.as_str() {
             "float" | "f32" | "f64" => {
                 let v = value
                     .as_f64()
                     .ok_or_else(|| anyhow!("expected numeric JSON value for {}", desc.ty))?
                     as f32;
-                handle.write_param(self.host_id, motor.can_id, desc.index, WriteValue::F32(v))?;
+                handle.write_param(self.host_id, motor.common.can_id, desc.index, WriteValue::F32(v))?;
                 serde_json::json!(v)
             }
             "uint8" | "u8" => {
@@ -174,7 +174,7 @@ impl LinuxCanCore {
                     .as_u64()
                     .ok_or_else(|| anyhow!("expected unsigned integer JSON value"))?;
                 let v = u8::try_from(v).context("u8 parameter out of range")?;
-                handle.write_param(self.host_id, motor.can_id, desc.index, WriteValue::U8(v))?;
+                handle.write_param(self.host_id, motor.common.can_id, desc.index, WriteValue::U8(v))?;
                 serde_json::json!(v)
             }
             "uint16" | "u16" => {
@@ -184,7 +184,7 @@ impl LinuxCanCore {
                 let v = u16::try_from(v).context("u16 parameter out of range")?;
                 handle.write_param(
                     self.host_id,
-                    motor.can_id,
+                    motor.common.can_id,
                     desc.index,
                     WriteValue::U32(v as u32),
                 )?;
@@ -195,40 +195,40 @@ impl LinuxCanCore {
                     .as_u64()
                     .ok_or_else(|| anyhow!("expected unsigned integer JSON value"))?;
                 let v = u32::try_from(v).context("u32 parameter out of range")?;
-                handle.write_param(self.host_id, motor.can_id, desc.index, WriteValue::U32(v))?;
+                handle.write_param(self.host_id, motor.common.can_id, desc.index, WriteValue::U32(v))?;
                 serde_json::json!(v)
             }
             other => bail!("writes for parameter type {other} are not supported"),
         };
 
         if save_after {
-            handle.save_params(self.host_id, motor.can_id)?;
+            handle.save_params(self.host_id, motor.common.can_id)?;
         }
 
         Ok(normalized)
     }
 
     pub fn enable(&self, motor: &Motor) -> Result<()> {
-        let handle = self.handle_for(&motor.can_bus)?;
-        handle.enable(self.host_id, motor.can_id)?;
+        let handle = self.handle_for(&motor.common.can_bus)?;
+        handle.enable(self.host_id, motor.common.can_id)?;
         Ok(())
     }
 
     pub fn stop(&self, motor: &Motor) -> Result<()> {
-        let handle = self.handle_for(&motor.can_bus)?;
-        handle.stop(self.host_id, motor.can_id)?;
+        let handle = self.handle_for(&motor.common.can_bus)?;
+        handle.stop(self.host_id, motor.common.can_id)?;
         Ok(())
     }
 
     pub fn save_to_flash(&self, motor: &Motor) -> Result<()> {
-        let handle = self.handle_for(&motor.can_bus)?;
-        handle.save_params(self.host_id, motor.can_id)?;
+        let handle = self.handle_for(&motor.common.can_bus)?;
+        handle.save_params(self.host_id, motor.common.can_id)?;
         Ok(())
     }
 
     pub fn set_zero(&self, motor: &Motor) -> Result<()> {
-        let handle = self.handle_for(&motor.can_bus)?;
-        handle.set_zero(self.host_id, motor.can_id)?;
+        let handle = self.handle_for(&motor.common.can_bus)?;
+        handle.set_zero(self.host_id, motor.common.can_id)?;
         Ok(())
     }
 
@@ -270,8 +270,8 @@ impl LinuxCanCore {
                     "add_offset not found in actuator spec (looked in firmware_limits and observables)"
                 )
             })?;
-        let handle = self.handle_for(&motor.can_bus)?;
-        let bytes = handle.read_param(self.host_id, motor.can_id, desc.index, PARAM_TIMEOUT)?;
+        let handle = self.handle_for(&motor.common.can_bus)?;
+        let bytes = handle.read_param(self.host_id, motor.common.can_id, desc.index, PARAM_TIMEOUT)?;
         bytes
             .map(f32::from_le_bytes)
             .ok_or_else(|| anyhow!("read_add_offset returned no value (firmware read-fail)"))
@@ -311,8 +311,8 @@ impl LinuxCanCore {
     /// envelope before forwarding so a misbehaving caller can't bypass
     /// the firmware guard via the REST layer.
     pub fn set_velocity_setpoint(&self, motor: &Motor, vel_rad_s: f32) -> Result<()> {
-        let handle = self.handle_for(&motor.can_bus)?;
-        handle.set_velocity(self.host_id, motor.can_id, &motor.role, vel_rad_s)?;
+        let handle = self.handle_for(&motor.common.can_bus)?;
+        handle.set_velocity(self.host_id, motor.common.can_id, &motor.common.role, vel_rad_s)?;
         Ok(())
     }
 
@@ -334,9 +334,8 @@ impl LinuxCanCore {
             .inventory
             .read()
             .expect("inventory poisoned")
-            .motors
-            .iter()
-            .filter(|m| m.present)
+            .actuators()
+            .filter(|m| m.common.present)
             .cloned()
             .collect();
 
@@ -354,17 +353,17 @@ impl LinuxCanCore {
             .map(|v| v as f32);
 
         for motor in motors {
-            if let (Some(t), Some(_)) = (limit_torque_nm, &motor.travel_limits) {
+            if let (Some(t), Some(_)) = (limit_torque_nm, &motor.common.travel_limits) {
                 if let Some(desc) = state.spec.firmware_limits.get("limit_torque") {
                     if let Err(e) = self.write_param(&motor, desc, &serde_json::json!(t), false) {
-                        tracing::warn!(role = %motor.role, error = ?e, "boot-time limit_torque RAM write failed");
+                        tracing::warn!(role = %motor.common.role, error = ?e, "boot-time limit_torque RAM write failed");
                     }
                 }
             }
             if let Some(s) = limit_spd_rad_s {
                 if let Some(desc) = state.spec.firmware_limits.get("limit_spd") {
                     if let Err(e) = self.write_param(&motor, desc, &serde_json::json!(s), false) {
-                        tracing::warn!(role = %motor.role, error = ?e, "boot-time limit_spd RAM write failed");
+                        tracing::warn!(role = %motor.common.role, error = ?e, "boot-time limit_spd RAM write failed");
                     }
                 }
             }
@@ -384,26 +383,25 @@ impl LinuxCanCore {
             .inventory
             .read()
             .expect("inventory poisoned")
-            .motors
-            .iter()
-            .filter(|m| m.present)
+            .actuators()
+            .filter(|m| m.common.present)
             .cloned()
             .collect();
         for motor in &motors {
-            if !self.backoff.should_poll(&motor.role) {
+            if !self.backoff.should_poll(&motor.common.role) {
                 continue;
             }
             match self.read_full_snapshot(state, motor) {
                 Ok(snapshot) => {
-                    self.backoff.record_success(&motor.role);
+                    self.backoff.record_success(&motor.common.role);
                     state
                         .params
                         .write()
                         .expect("params poisoned")
-                        .insert(motor.role.clone(), snapshot);
+                        .insert(motor.common.role.clone(), snapshot);
                 }
                 Err(e) => {
-                    self.backoff.record_failure(&motor.role, &e);
+                    self.backoff.record_failure(&motor.common.role, &e);
                 }
             }
         }
@@ -434,13 +432,12 @@ impl LinuxCanCore {
             .inventory
             .read()
             .expect("inventory poisoned")
-            .motors
-            .iter()
-            .filter(|m| m.present)
+            .actuators()
+            .filter(|m| m.common.present)
             .cloned()
             .collect();
         for motor in &motors {
-            if !self.backoff.should_poll(&motor.role) {
+            if !self.backoff.should_poll(&motor.common.role) {
                 continue;
             }
             // Snapshot wall-clock before the bus round-trips so the
@@ -449,11 +446,11 @@ impl LinuxCanCore {
             let poll_started_ms = Utc::now().timestamp_millis();
             match self.read_aux_observables(state, motor) {
                 Ok(aux) => {
-                    self.backoff.record_success(&motor.role);
+                    self.backoff.record_success(&motor.common.role);
                     self.merge_aux_into_latest(state, motor, poll_started_ms, aux);
                 }
                 Err(e) => {
-                    self.backoff.record_failure(&motor.role, &e);
+                    self.backoff.record_failure(&motor.common.role, &e);
                 }
             }
         }
@@ -477,7 +474,7 @@ impl LinuxCanCore {
             );
         }
         Ok(ParamSnapshot {
-            role: motor.role.clone(),
+            role: motor.common.role.clone(),
             values,
         })
     }
@@ -552,9 +549,9 @@ impl LinuxCanCore {
         {
             let mut params = state.params.write().expect("params poisoned");
             let snapshot = params
-                .entry(motor.role.clone())
+                .entry(motor.common.role.clone())
                 .or_insert_with(|| ParamSnapshot {
-                    role: motor.role.clone(),
+                    role: motor.common.role.clone(),
                     values: BTreeMap::new(),
                 });
             for (name, desc) in state.spec.observables.iter() {
@@ -610,7 +607,7 @@ impl LinuxCanCore {
         let (merged, outcome): (MotorFeedback, MergeOutcome) = {
             let mut latest = state.latest.write().expect("latest poisoned");
             let now_ms = Utc::now().timestamp_millis();
-            match latest.get_mut(&motor.role) {
+            match latest.get_mut(&motor.common.role) {
                 Some(row) => {
                     // vbus / fault_sta are NOT on the type-2 stream;
                     // always overwrite when the read succeeded.
@@ -653,8 +650,8 @@ impl LinuxCanCore {
                     // the next successful poll fills it in.
                     let seeded = MotorFeedback {
                         t_ms: now_ms,
-                        role: motor.role.clone(),
-                        can_id: motor.can_id,
+                        role: motor.common.role.clone(),
+                        can_id: motor.common.can_id,
                         mech_pos_rad: aux.mech_pos.unwrap_or_default(),
                         mech_vel_rad_s: aux.mech_vel.unwrap_or_default(),
                         torque_nm: 0.0,
@@ -663,7 +660,7 @@ impl LinuxCanCore {
                         fault_sta: aux.fault_sta.unwrap_or_default(),
                         warn_sta: 0,
                     };
-                    latest.insert(motor.role.clone(), seeded.clone());
+                    latest.insert(motor.common.role.clone(), seeded.clone());
                     (seeded, MergeOutcome::Seeded)
                 }
             }
@@ -676,8 +673,8 @@ impl LinuxCanCore {
         // doing its job (Type2Won most of the time).
         match outcome {
             MergeOutcome::Type2Won { row_t_ms } => tracing::trace!(
-                role = %motor.role,
-                can_id = motor.can_id,
+                role = %motor.common.role,
+                can_id = motor.common.can_id,
                 outcome = "type2_won",
                 row_t_ms = row_t_ms,
                 poll_started_ms = poll_started_ms,
@@ -688,8 +685,8 @@ impl LinuxCanCore {
                 "aux merge"
             ),
             MergeOutcome::Type17Stamped => tracing::trace!(
-                role = %motor.role,
-                can_id = motor.can_id,
+                role = %motor.common.role,
+                can_id = motor.common.can_id,
                 outcome = "type17_stamped",
                 poll_started_ms = poll_started_ms,
                 aux_pos = ?aux.mech_pos,
@@ -699,8 +696,8 @@ impl LinuxCanCore {
                 "aux merge: type-17 fallback refreshed t_ms (no type-2 this tick)"
             ),
             MergeOutcome::Seeded => tracing::info!(
-                role = %motor.role,
-                can_id = motor.can_id,
+                role = %motor.common.role,
+                can_id = motor.common.can_id,
                 "aux merge: seeded latest row from type-17 (first telemetry)"
             ),
         }
@@ -710,11 +707,11 @@ impl LinuxCanCore {
         // simply hasn't been classified yet because no type-2 arrived
         // since boot) transitions into `OutOfBand`. Mirrors what
         // `bus_worker::apply_type2` does on the type-2 hot path.
-        let classify_outcome = boot_state::classify(state, &motor.role, merged.mech_pos_rad);
+        let classify_outcome = boot_state::classify(state, &motor.common.role, merged.mech_pos_rad);
         let aux_seeded_first_row = matches!(outcome, MergeOutcome::Seeded);
         crate::boot_orchestrator::spawn_if_orchestrator_qualifies(
             state.clone(),
-            motor.role.clone(),
+            motor.common.role.clone(),
             classify_outcome,
             aux_seeded_first_row,
         );
@@ -736,8 +733,8 @@ impl LinuxCanCore {
             .observables
             .get(name)
             .ok_or_else(|| anyhow!("observable {name} not found in actuator spec"))?;
-        let handle = self.handle_for(&motor.can_bus)?;
-        let bytes = handle.read_param(self.host_id, motor.can_id, desc.index, PARAM_TIMEOUT)?;
+        let handle = self.handle_for(&motor.common.can_bus)?;
+        let bytes = handle.read_param(self.host_id, motor.common.can_id, desc.index, PARAM_TIMEOUT)?;
         Ok(bytes.map(f32::from_le_bytes))
     }
 
@@ -752,8 +749,8 @@ impl LinuxCanCore {
             .observables
             .get(name)
             .ok_or_else(|| anyhow!("observable {name} not found in actuator spec"))?;
-        let handle = self.handle_for(&motor.can_bus)?;
-        let bytes = handle.read_param(self.host_id, motor.can_id, desc.index, PARAM_TIMEOUT)?;
+        let handle = self.handle_for(&motor.common.can_bus)?;
+        let bytes = handle.read_param(self.host_id, motor.common.can_id, desc.index, PARAM_TIMEOUT)?;
         Ok(bytes.map(u32::from_le_bytes))
     }
 
@@ -771,25 +768,25 @@ impl LinuxCanCore {
                 .unwrap_or(serde_json::Value::Null));
         }
 
-        let handle = self.handle_for(&motor.can_bus)?;
+        let handle = self.handle_for(&motor.common.can_bus)?;
         match desc.ty.as_str() {
             "float" | "f32" | "f64" => Ok(handle
-                .read_param(self.host_id, motor.can_id, desc.index, PARAM_TIMEOUT)?
+                .read_param(self.host_id, motor.common.can_id, desc.index, PARAM_TIMEOUT)?
                 .map(f32::from_le_bytes)
                 .map(|v| serde_json::json!(v))
                 .unwrap_or(serde_json::Value::Null)),
             "uint8" | "u8" => Ok(handle
-                .read_param(self.host_id, motor.can_id, desc.index, PARAM_TIMEOUT)?
+                .read_param(self.host_id, motor.common.can_id, desc.index, PARAM_TIMEOUT)?
                 .map(|b| b[0])
                 .map(|v| serde_json::json!(v))
                 .unwrap_or(serde_json::Value::Null)),
             "uint16" | "u16" => Ok(handle
-                .read_param(self.host_id, motor.can_id, desc.index, PARAM_TIMEOUT)?
+                .read_param(self.host_id, motor.common.can_id, desc.index, PARAM_TIMEOUT)?
                 .map(u32::from_le_bytes)
                 .map(|v| serde_json::json!(v as u16))
                 .unwrap_or(serde_json::Value::Null)),
             "uint32" | "u32" => Ok(handle
-                .read_param(self.host_id, motor.can_id, desc.index, PARAM_TIMEOUT)?
+                .read_param(self.host_id, motor.common.can_id, desc.index, PARAM_TIMEOUT)?
                 .map(u32::from_le_bytes)
                 .map(|v| serde_json::json!(v))
                 .unwrap_or(serde_json::Value::Null)),

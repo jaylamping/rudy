@@ -85,14 +85,14 @@ pub async fn put_predefined_home(
 
     let (min_rad, max_rad) = {
         let inv = state.inventory.read().expect("inventory poisoned");
-        let motor = inv.by_role(&role).ok_or_else(|| {
+        let motor = inv.actuator_by_role(&role).ok_or_else(|| {
             err(
                 StatusCode::NOT_FOUND,
                 "unknown_motor",
                 Some(format!("no motor with role={role}")),
             )
         })?;
-        let Some(limits) = motor.travel_limits.as_ref() else {
+        let Some(limits) = motor.common.travel_limits.as_ref() else {
             audit(
                 &state,
                 session.clone(),
@@ -137,12 +137,15 @@ pub async fn put_predefined_home(
     let value = body.predefined_home_rad;
     let new_inv = tokio::task::spawn_blocking(move || {
         inventory::write_atomic(&path, |inv| {
-            let m = inv.motors.iter_mut().find(|m| m.role == role_for_closure);
-            let Some(m) = m else {
-                anyhow::bail!("motor {role_for_closure} disappeared from inventory");
-            };
-            m.predefined_home_rad = Some(value);
-            Ok(())
+            for d in &mut inv.devices {
+                if let inventory::Device::Actuator(a) = d {
+                    if a.common.role == role_for_closure {
+                        a.common.predefined_home_rad = Some(value);
+                        return Ok(());
+                    }
+                }
+            }
+            anyhow::bail!("motor {role_for_closure} disappeared from inventory");
         })
     })
     .await

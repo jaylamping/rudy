@@ -84,7 +84,7 @@ pub async fn home(
         .inventory
         .read()
         .expect("inventory poisoned")
-        .by_role(&role)
+        .actuator_by_role(&role)
         .cloned()
         .ok_or_else(|| {
             err(
@@ -93,7 +93,7 @@ pub async fn home(
                 Some(format!("no motor with role={role}")),
             )
         })?;
-    if !motor.present {
+    if !motor.common.present {
         return Err(err(
             StatusCode::CONFLICT,
             "motor_absent",

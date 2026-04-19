@@ -26,18 +26,19 @@ pub fn spawn(state: SharedState) -> Result<()> {
         loop {
             tick.tick().await;
             let t = start.elapsed().as_secs_f32();
-            let motors = state
+            let motors: Vec<crate::inventory::Actuator> = state
                 .inventory
                 .read()
                 .expect("inventory poisoned")
-                .motors
-                .clone();
+                .actuators()
+                .cloned()
+                .collect();
             for (i, motor) in motors.iter().enumerate() {
                 let phase = i as f32 * 0.9;
                 let fb = MotorFeedback {
                     t_ms: Utc::now().timestamp_millis(),
-                    role: motor.role.clone(),
-                    can_id: motor.can_id,
+                    role: motor.common.role.clone(),
+                    can_id: motor.common.can_id,
                     mech_pos_rad: (t * 0.7 + phase).sin() * 0.8,
                     mech_vel_rad_s: (t * 0.7 + phase).cos() * 0.7 * 0.8,
                     torque_nm: (t * 1.3 + phase).sin() * 0.15,
@@ -51,13 +52,13 @@ pub fn spawn(state: SharedState) -> Result<()> {
                     .latest
                     .write()
                     .expect("latest poisoned")
-                    .insert(motor.role.clone(), fb.clone());
+                    .insert(motor.common.role.clone(), fb.clone());
 
                 let classify_outcome =
-                    boot_state::classify(&state, &motor.role, fb.mech_pos_rad);
+                    boot_state::classify(&state, &motor.common.role, fb.mech_pos_rad);
                 crate::boot_orchestrator::spawn_if_orchestrator_qualifies(
                     state.clone(),
-                    motor.role.clone(),
+                    motor.common.role.clone(),
                     classify_outcome,
                     false,
                 );

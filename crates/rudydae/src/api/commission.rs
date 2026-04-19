@@ -160,7 +160,7 @@ pub async fn commission(
         .inventory
         .read()
         .expect("inventory poisoned")
-        .by_role(&role)
+        .actuator_by_role(&role)
         .cloned()
         .ok_or_else(|| {
             let detail = format!("no motor with role={role}");
@@ -179,7 +179,7 @@ pub async fn commission(
                 None,
             )
         })?;
-    if !motor.present {
+    if !motor.common.present {
         let detail = format!("inventory entry for {role} has present=false");
         audit(
             &state,
@@ -277,14 +277,16 @@ pub async fn commission(
     let now_iso_for_closure = now_iso.clone();
     let new_inv = tokio::task::spawn_blocking(move || {
         inventory::write_atomic(&path, |inv| {
-            let m = inv
-                .motors
-                .iter_mut()
-                .find(|m| m.role == role_for_closure)
-                .ok_or_else(|| anyhow::anyhow!("motor disappeared from inventory"))?;
-            m.commissioned_zero_offset = Some(readback_rad);
-            m.commissioned_at = Some(now_iso_for_closure);
-            Ok(())
+            for d in &mut inv.devices {
+                if let inventory::Device::Actuator(a) = d {
+                    if a.common.role == role_for_closure {
+                        a.common.commissioned_zero_offset = Some(readback_rad);
+                        a.common.commissioned_at = Some(now_iso_for_closure);
+                        return Ok(());
+                    }
+                }
+            }
+            anyhow::bail!("motor disappeared from inventory");
         })
     })
     .await

@@ -2,15 +2,5 @@
 
 /**
  * Per-actuator soft travel-limits band (radians).
- *
- * Stored on each [`Motor`] in `config/actuators/inventory.yaml` and enforced
- * by rudydae on every commanded move (jog, future move-to). Semantically
- * this is a software-side inner cap; the firmware-level position envelope
- * remains authoritative.
  */
-export type TravelLimits = { min_rad: number, max_rad: number, 
-/**
- * ISO 8601 timestamp (UTC) of the most recent change. None on entries
- * authored by hand or imported from a pre-rudydae inventory.
- */
-updated_at: string | null, };
+export type TravelLimits = { min_rad: number, max_rad: number, updated_at: string | null, };

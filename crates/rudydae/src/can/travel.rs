@@ -86,8 +86,8 @@ pub fn enforce_position(state: &SharedState, role: &str, target_rad: f32) -> Res
         .inventory
         .read()
         .map_err(|_| anyhow::anyhow!("inventory poisoned"))?
-        .by_role(role)
-        .and_then(|m| m.travel_limits.clone());
+        .actuator_by_role(role)
+        .and_then(|m| m.common.travel_limits.clone());
     let Some(limits) = limits else {
         return Ok(BandCheck::NoLimit);
     };
@@ -141,8 +141,8 @@ pub fn enforce_position_with_path(
         .inventory
         .read()
         .map_err(|_| anyhow::anyhow!("inventory poisoned"))?
-        .by_role(role)
-        .and_then(|m| m.travel_limits.clone());
+        .actuator_by_role(role)
+        .and_then(|m| m.common.travel_limits.clone());
     let Some(limits) = limits else {
         return Ok(BandCheck::NoLimit);
     };
@@ -252,7 +252,7 @@ mod path_check_tests {
         std::fs::write(
             &inv_path,
             format!(
-                "schema_version: 1\nmotors:\n  - role: m\n    can_bus: can0\n    can_id: 1\n    travel_limits:\n      min_rad: {min}\n      max_rad: {max}\n"
+                "schema_version: 2\ndevices:\n  - kind: actuator\n    role: m\n    can_bus: can0\n    can_id: 1\n    present: true\n    family:\n      kind: robstride\n      model: rs03\n    travel_limits:\n      min_rad: {min}\n      max_rad: {max}\n"
             ),
         )
         .unwrap();
@@ -345,7 +345,7 @@ mod path_check_tests {
         let inv_path = dir.path().join("inv.yaml");
         std::fs::write(
             &inv_path,
-            "schema_version: 1\nmotors:\n  - role: m\n    can_bus: can0\n    can_id: 1\n",
+            "schema_version: 2\ndevices:\n  - kind: actuator\n    role: m\n    can_bus: can0\n    can_id: 1\n    present: true\n    family:\n      kind: robstride\n      model: rs03\n",
         )
         .unwrap();
         let cfg = Config {

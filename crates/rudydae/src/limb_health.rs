@@ -29,9 +29,10 @@ pub enum LimbStatus {
 /// Limb grouping key: configured `limb` or the motor's own `role` when unset.
 pub fn effective_limb_id(motor: &Motor) -> String {
     motor
+        .common
         .limb
         .clone()
-        .unwrap_or_else(|| motor.role.clone())
+        .unwrap_or_else(|| motor.common.role.clone())
 }
 
 fn quarantining_boot_state(bs: &BootState) -> bool {
@@ -85,19 +86,19 @@ fn limb_status_inner(
 ) -> LimbStatus {
     let inv = state.inventory.read().expect("inventory poisoned");
     let mut failed = Vec::new();
-    for m in &inv.motors {
-        if !m.present {
+    for m in inv.actuators() {
+        if !m.common.present {
             continue;
         }
         if effective_limb_id(m) != limb_id {
             continue;
         }
-        if exclude_role.is_some_and(|r| r == m.role.as_str()) {
+        if exclude_role.is_some_and(|r| r == m.common.role.as_str()) {
             continue;
         }
-        let bs = boot_state::current(state, &m.role);
+        let bs = boot_state::current(state, &m.common.role);
         if quarantining_boot_state(&bs) {
-            failed.push((m.role.clone(), bs));
+            failed.push((m.common.role.clone(), bs));
         }
     }
     if failed.is_empty() {
@@ -139,7 +140,7 @@ pub fn require_limb_healthy(state: &SharedState, role: &str) -> Result<(), ApiEr
         .inventory
         .read()
         .expect("inventory poisoned")
-        .by_role(role)
+        .actuator_by_role(role)
         .cloned()
         .ok_or_else(|| ApiError {
             error: "unknown_motor".into(),

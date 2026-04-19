@@ -103,7 +103,7 @@ pub async fn restore_offset(
         .inventory
         .read()
         .expect("inventory poisoned")
-        .by_role(&role)
+        .actuator_by_role(&role)
         .cloned()
         .ok_or_else(|| {
             let detail = format!("no motor with role={role}");
@@ -124,7 +124,7 @@ pub async fn restore_offset(
             )
         })?;
 
-    if !motor.present {
+    if !motor.common.present {
         let detail = format!("inventory entry for {role} has present=false");
         audit(
             &state,
@@ -143,7 +143,7 @@ pub async fn restore_offset(
         ));
     }
 
-    let Some(stored_commission) = motor.commissioned_zero_offset else {
+    let Some(stored_commission) = motor.common.commissioned_zero_offset else {
         let detail = "motor has no commissioned_zero_offset; use POST /commission first".to_string();
         audit(
             &state,

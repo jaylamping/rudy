@@ -100,7 +100,11 @@ async fn main() -> Result<()> {
 
     let inv = inventory::Inventory::load(&cfg.paths.inventory)
         .with_context(|| format!("loading inventory {:?}", cfg.paths.inventory))?;
-    info!(motors = inv.motors.len(), "loaded inventory");
+    info!(
+        devices = inv.devices.len(),
+        actuators = inv.actuators().count(),
+        "loaded inventory"
+    );
 
     let audit = audit::AuditLog::open(&cfg.paths.audit_log)
         .with_context(|| format!("opening audit log {:?}", cfg.paths.audit_log))?;

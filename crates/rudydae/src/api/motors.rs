@@ -14,9 +14,8 @@ pub async fn list_motors(State(state): State<SharedState>) -> Json<Vec<MotorSumm
     let latest = state.latest.read().expect("latest poisoned");
     let inv = state.inventory.read().expect("inventory poisoned");
     let out = inv
-        .motors
-        .iter()
-        .map(|m| summary_for(&state, m, latest.get(&m.role).cloned()))
+        .actuators()
+        .map(|m| summary_for(&state, m, latest.get(&m.common.role).cloned()))
         .collect();
     Json(out)
 }
@@ -26,7 +25,7 @@ pub async fn get_motor(
     Path(role): Path<String>,
 ) -> Result<Json<MotorSummary>, (StatusCode, Json<ApiError>)> {
     let inv = state.inventory.read().expect("inventory poisoned");
-    let motor = inv.by_role(&role).ok_or_else(|| {
+    let motor = inv.actuator_by_role(&role).ok_or_else(|| {
         (
             StatusCode::NOT_FOUND,
             Json(ApiError {
@@ -54,18 +53,18 @@ fn summary_for(
     latest: Option<MotorFeedback>,
 ) -> MotorSummary {
     MotorSummary {
-        role: m.role.clone(),
-        can_bus: m.can_bus.clone(),
-        can_id: m.can_id,
-        firmware_version: m.firmware_version.clone(),
-        verified: m.verified,
-        present: m.present,
-        travel_limits: m.travel_limits.clone(),
-        predefined_home_rad: m.predefined_home_rad,
+        role: m.common.role.clone(),
+        can_bus: m.common.can_bus.clone(),
+        can_id: m.common.can_id,
+        firmware_version: m.common.firmware_version.clone(),
+        verified: m.common.verified,
+        present: m.common.present,
+        travel_limits: m.common.travel_limits.clone(),
+        predefined_home_rad: m.common.predefined_home_rad,
         latest,
-        boot_state: boot_state::current(state, &m.role),
-        limb: m.limb.clone(),
-        joint_kind: m.joint_kind,
+        boot_state: boot_state::current(state, &m.common.role),
+        limb: m.common.limb.clone(),
+        joint_kind: m.common.joint_kind,
     }
 }
 

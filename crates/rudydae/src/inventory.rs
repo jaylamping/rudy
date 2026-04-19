@@ -1,136 +1,242 @@
-//! Typed loader for `config/actuators/inventory.yaml`.
+//! Typed loader for `config/actuators/inventory.yaml` (schema v2).
 //!
-//! We only model the fields rudydae enforces or surfaces in the UI; the rest
-//! are tolerated via `#[serde(flatten)]` into a catch-all map so the YAML
-//! can grow without breaking rudydae.
+//! # Taxonomy (three levels)
+//!
+//! 1. **`Device::kind`** — actuator vs sensor vs battery. Drives boot/travel/commission semantics.
+//! 2. **`ActuatorFamily`** — wire protocol family (e.g. RobStride). Dispatches codecs.
+//! 3. **Per-family model** (e.g. [`RobstrideModel`]) — gear ratio, MIT ranges, param layout.
+//!
+//! v1 used a flat `motors:` list; v2 uses `devices:` with tagged [`Device`] entries. Loading v1
+//! files fails with [`InventoryError::SchemaVersionMismatch`]; use `migrate_inventory` once.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 use ts_rs::TS;
 
 use crate::limb::JointKind;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Inventory {
-    #[serde(default)]
-    pub schema_version: Option<u32>,
-    pub motors: Vec<Motor>,
+/// Backwards-compatible name for [`Actuator`] used in CAN/driver call sites during migration.
+pub type Motor = Actuator;
+
+// --- Schema version & errors -------------------------------------------------
+
+const INVENTORY_SCHEMA_V2: u32 = 2;
+
+fn default_schema_v2() -> Option<u32> {
+    Some(INVENTORY_SCHEMA_V2)
 }
 
+/// Structured failure modes for [`Inventory::load`].
+#[derive(Debug, Error)]
+pub enum InventoryError {
+    /// On-disk file is not schema v2 — run the migration tool once.
+    #[error(
+        "inventory schema version mismatch: found {found}, required {required} — {migration_hint}"
+    )]
+    SchemaVersionMismatch {
+        found: u32,
+        required: u32,
+        migration_hint: String,
+    },
+}
+
+// --- Top-level inventory -----------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Inventory {
+    /// Must be `2` for [`Inventory::load`]. Serialized default for new files.
+    #[serde(default = "default_schema_v2")]
+    pub schema_version: Option<u32>,
+    pub devices: Vec<Device>,
+}
+
+// --- Polymorphic device ------------------------------------------------------
+
+/// Inventory row: actuator, sensor, or battery. JSON/YAML uses `kind` as the tag.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[ts(export, export_to = "./")]
+pub enum Device {
+    Actuator(Actuator),
+    Sensor(Sensor),
+    Battery(Battery),
+}
+
+/// RobStride actuator with shared [`ActuatorCommon`] plus a [`ActuatorFamily`] discriminator.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "./")]
-pub struct Motor {
+pub struct Actuator {
+    /// Flattened into the same YAML mapping as `family` (sibling keys under `kind: actuator`).
+    #[serde(flatten)]
+    pub common: ActuatorCommon,
+    pub family: ActuatorFamily,
+}
+
+/// Fields shared by all actuators regardless of vendor family.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "./")]
+pub struct ActuatorCommon {
     pub role: String,
     pub can_bus: String,
     #[serde(with = "crate::util::serde_u8_flex")]
     #[ts(as = "u8")]
     pub can_id: u8,
-    #[serde(default)]
-    pub firmware_version: Option<String>,
+    #[serde(default = "default_true")]
+    pub present: bool,
     #[serde(default)]
     pub verified: bool,
     #[serde(default)]
     pub commissioned_at: Option<String>,
-    /// Whether the physical motor is wired into the bus right now.
-    ///
-    /// Defaults to `true` so existing inventory entries keep behaving as before.
-    /// Set to `false` for placeholder entries (motor planned but not yet on the
-    /// bus) or for temporarily-removed motors. Affects:
-    ///
-    ///   * Real-CAN telemetry: rudydae skips polling absent motors so an
-    ///     unanswered iface doesn't fill the SocketCAN txqueue and start
-    ///     returning ENOBUFS (errno 105) on every send.
-    ///   * Control plane: enable / stop / save / set_zero on an absent motor
-    ///     are rejected at the API layer with a clean `409 Conflict` rather
-    ///     than queuing CAN frames that will never get an ACK.
-    ///   * Mock CAN + the REST `/api/motors` listing still include absent
-    ///     motors so the UI can show them with an "absent" badge.
-    #[serde(default = "default_true")]
-    pub present: bool,
-    /// Per-motor soft travel-limits band, in radians. None ≡ "use the spec
-    /// default" (which is currently the full RS03 ±2-turn envelope from
-    /// `protocol.position_min_rad / position_max_rad`).
-    ///
-    /// Edited via `PUT /api/motors/:role/travel_limits`; persisted by
-    /// rewriting `inventory.yaml` atomically (see `inventory::write_atomic`).
-    /// Enforced by `crate::can::travel::enforce_travel_band` on every
-    /// commanded move (jog now, future move-to).
+    #[serde(default)]
+    pub firmware_version: Option<String>,
     #[serde(default)]
     pub travel_limits: Option<TravelLimits>,
-    /// Firmware `add_offset` (parameter 0x702B) recorded at commissioning
-    /// time, in radians. `None` means "this motor has never been
-    /// commissioned via `POST /api/motors/:role/commission`" — the boot
-    /// orchestrator skips uncommissioned motors with a clear log message
-    /// and they continue to require the manual `Verify & Home` flow on
-    /// every boot, exactly as before.
-    ///
-    /// Once set, every boot the daemon reads `add_offset` over CAN and
-    /// compares against this value within
-    /// `cfg.safety.commission_readback_tolerance_rad`. Mismatch surfaces
-    /// as `BootState::OffsetChanged { stored, current }` (Class-1
-    /// shenanigan detection) and refuses motion until the operator either
-    /// re-commissions or restores via
-    /// `POST /api/motors/:role/restore_offset`.
-    ///
-    /// Written ONLY by `POST /api/motors/:role/commission`; never edited
-    /// by hand. The endpoint sequences type-6 SetZero + type-22 SaveParams
-    /// + a readback of `add_offset` and stores the readback value here so
-    /// the on-disk record is exactly what the firmware confirmed it
-    /// flashed. See [the commissioned-zero plan][1].
-    ///
-    /// [1]: ../../../.cursor/plans/quick-home_commissioned_zero_boot.plan.md
     #[serde(default)]
     pub commissioned_zero_offset: Option<f32>,
-    /// Per-motor target angle for the boot orchestrator's auto-home flow,
-    /// in radians. `None` is interpreted as `0.0` by the orchestrator —
-    /// "drive this joint to its commissioned neutral on every boot."
-    ///
-    /// Set this when a particular joint's neutral pose isn't the same as
-    /// its commissioned zero (e.g. an arm whose comfortable resting pose
-    /// differs from the position where the operator commissioned it).
-    /// Must be inside `travel_limits`; the eventual
-    /// `PUT /api/motors/:role/predefined_home` endpoint enforces that
-    /// invariant at write time.
-    ///
-    /// Read by `boot_orchestrator::maybe_run` (lands in Phase C of the
-    /// commissioned-zero plan) and by the eventual real `home_all`
-    /// implementation. Independent of `travel_limits`: the band is the
-    /// safe envelope, this is the goal pose inside it.
     #[serde(default)]
     pub predefined_home_rad: Option<f32>,
-    /// Free-form limb identifier (`left_arm`, `right_leg`, `torso`, `head`).
-    /// Optional today: motors without `limb` are skipped by `POST /home_all`.
-    /// Once set, the role becomes a derived identifier of the form
-    /// `{limb}.{joint_kind}`; see [`Self::canonical_role`].
     #[serde(default)]
     pub limb: Option<String>,
-    /// Canonical position in the kinematic chain. When set, `limb` must
-    /// also be set and `role` must equal `{limb}.{joint_kind.as_snake_case}`.
     #[serde(default)]
     pub joint_kind: Option<JointKind>,
-    /// Everything else in the YAML entry. Preserved for server-side logic
-    /// but opaque to the UI (hence ts(skip)).
+    /// YAML fragment (string) preserving v1 `extra` map entries so nothing is silently dropped.
+    #[serde(default)]
+    pub notes_yaml: Option<String>,
+}
+
+/// Protocol family inside actuators. Extensible (new vendor → new variant).
+///
+/// Internally tagged (`kind`) so serde YAML/JSON round-trips cleanly with `Device`'s own `kind`
+/// field (ts-rs-compatible; avoids mixed untagged/tagged enum deserialization issues).
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[ts(export, export_to = "./")]
+pub enum ActuatorFamily {
+    Robstride { model: RobstrideModel },
+}
+
+/// Concrete RobStride SKU; drives `config/actuators/robstride_rs0X.yaml` lookup.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export, export_to = "./")]
+pub enum RobstrideModel {
+    Rs01,
+    Rs02,
+    Rs03,
+    Rs04,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "./")]
+pub struct Sensor {
     #[serde(flatten)]
-    #[ts(skip)]
-    pub extra: BTreeMap<String, serde_yaml::Value>,
+    pub common: SensorCommon,
+    pub family: SensorFamily,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "./")]
+pub struct SensorCommon {
+    pub role: String,
+    pub can_bus: String,
+    #[serde(with = "crate::util::serde_u8_flex")]
+    #[ts(as = "u8")]
+    pub can_id: u8,
+    #[serde(default = "default_true")]
+    pub present: bool,
+    #[serde(default)]
+    pub verified: bool,
+    #[serde(default)]
+    pub commissioned_at: Option<String>,
+    #[serde(default)]
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[ts(export, export_to = "./")]
+pub enum SensorFamily {
+    Motion { model: MotionSensorModel },
+    Force { model: ForceSensorModel },
+    Gyro { model: GyroSensorModel },
+    Camera { model: CameraModel },
+    Lidar { model: LidarModel },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export, export_to = "./")]
+pub enum MotionSensorModel {
+    Bno085,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export, export_to = "./")]
+pub enum ForceSensorModel {
+    Placeholder,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export, export_to = "./")]
+pub enum GyroSensorModel {
+    Placeholder,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export, export_to = "./")]
+pub enum CameraModel {
+    Placeholder,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export, export_to = "./")]
+pub enum LidarModel {
+    Placeholder,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "./")]
+pub struct Battery {
+    #[serde(flatten)]
+    pub common: BatteryCommon,
+    pub family: BatteryFamily,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "./")]
+pub struct BatteryCommon {
+    pub role: String,
+    pub can_bus: String,
+    #[serde(with = "crate::util::serde_u8_flex")]
+    #[ts(as = "u8")]
+    pub can_id: u8,
+    #[serde(default = "default_true")]
+    pub present: bool,
+    #[serde(default)]
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[ts(export, export_to = "./")]
+pub enum BatteryFamily {
+    Placeholder,
 }
 
 /// Per-actuator soft travel-limits band (radians).
-///
-/// Stored on each [`Motor`] in `config/actuators/inventory.yaml` and enforced
-/// by rudydae on every commanded move (jog, future move-to). Semantically
-/// this is a software-side inner cap; the firmware-level position envelope
-/// remains authoritative.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "./")]
 pub struct TravelLimits {
     pub min_rad: f32,
     pub max_rad: f32,
-    /// ISO 8601 timestamp (UTC) of the most recent change. None on entries
-    /// authored by hand or imported from a pre-rudydae inventory.
     #[serde(default)]
     pub updated_at: Option<String>,
 }
@@ -139,34 +245,49 @@ fn default_true() -> bool {
     true
 }
 
-impl Motor {
-    /// Canonical role derived from `limb` + `joint_kind`. Returns `None`
-    /// when either field is absent — those motors are "ungrouped" and
-    /// must be assigned via `POST /api/motors/:role/assign` before they
-    /// can participate in `home_all`.
+impl Actuator {
+    /// `{limb}.{joint_kind}` when both are set.
     pub fn canonical_role(&self) -> Option<String> {
         Some(format!(
             "{}.{}",
-            self.limb.as_ref()?,
-            self.joint_kind?.as_snake_case()
+            self.common.limb.as_ref()?,
+            self.common.joint_kind?.as_snake_case()
         ))
     }
 }
 
-/// Validate `role` matches the canonical form `[a-z][a-z_]*\.[a-z][a-z_]*`.
-/// Used at inventory load time and at the API boundary so a malformed role
-/// can never propagate through the system.
-///
-/// Existing legacy roles (e.g. `shoulder_actuator_a` from before the canonical
-/// naming scheme) are accepted by this validator — see
-/// [`Inventory::validate_strict`] for the stricter check that requires
-/// canonical form.
+impl Device {
+    pub fn role(&self) -> &str {
+        match self {
+            Device::Actuator(a) => &a.common.role,
+            Device::Sensor(s) => &s.common.role,
+            Device::Battery(b) => &b.common.role,
+        }
+    }
+
+    pub fn can_bus(&self) -> &str {
+        match self {
+            Device::Actuator(a) => &a.common.can_bus,
+            Device::Sensor(s) => &s.common.can_bus,
+            Device::Battery(b) => &b.common.can_bus,
+        }
+    }
+
+    pub fn can_id(&self) -> u8 {
+        match self {
+            Device::Actuator(a) => a.common.can_id,
+            Device::Sensor(s) => s.common.can_id,
+            Device::Battery(b) => b.common.can_id,
+        }
+    }
+}
+
+// --- Role validation (same rules as v1) --------------------------------------
+
 pub fn validate_role_format(role: &str) -> Result<()> {
     if role.is_empty() {
         return Err(anyhow!("role is empty"));
     }
-    // Legacy form: just `[a-z][a-z_0-9]*` (snake_case identifier).
-    // Canonical form: `[a-z][a-z_]*\.[a-z][a-z_]*` — exactly one dot.
     let bytes = role.as_bytes();
     if !bytes[0].is_ascii_lowercase() {
         return Err(anyhow!("role {role} must start with a lowercase letter"));
@@ -187,8 +308,6 @@ pub fn validate_role_format(role: &str) -> Result<()> {
     Ok(())
 }
 
-/// Stricter validation: requires the role to be in canonical
-/// `{limb}.{joint_kind}` form. Used by the rename / assign endpoints.
 pub fn validate_canonical_role(role: &str) -> Result<()> {
     validate_role_format(role)?;
     if !role.contains('.') {
@@ -208,77 +327,228 @@ impl Inventory {
         let path = path.as_ref();
         let text =
             std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-        let inv: Inventory = serde_yaml::from_str(&text)
+        let raw: serde_yaml::Value = serde_yaml::from_str(&text)
+            .with_context(|| format!("parsing YAML in {}", path.display()))?;
+        let schema = raw
+            .get("schema_version")
+            .and_then(|v| v.as_u64())
+            .map(|u| u as u32)
+            .unwrap_or(1);
+        if schema != INVENTORY_SCHEMA_V2 {
+            return Err(InventoryError::SchemaVersionMismatch {
+                found: schema,
+                required: INVENTORY_SCHEMA_V2,
+                migration_hint: "run `cargo run --bin migrate_inventory` (see docs/operator-guide/inventory-v2-migration.md)".into(),
+            }
+            .into());
+        }
+        let inv: Inventory = serde_yaml::from_value(raw)
             .with_context(|| format!("parsing YAML in {}", path.display()))?;
         inv.validate()
             .with_context(|| format!("validating {}", path.display()))?;
         Ok(inv)
     }
 
-    /// Cross-motor sanity checks. Run on every load and after any atomic
-    /// rewrite. Catches the "operator hand-edited inventory.yaml
-    /// inconsistently" case at the earliest possible moment.
     pub fn validate(&self) -> Result<()> {
         let mut roles: BTreeSet<&str> = BTreeSet::new();
-        for m in &self.motors {
-            validate_role_format(&m.role)
-                .with_context(|| format!("motor {} has invalid role format", m.role))?;
-            if !roles.insert(m.role.as_str()) {
-                return Err(anyhow!("duplicate role: {}", m.role));
+        let mut seen_ids: BTreeSet<(String, u8)> = BTreeSet::new();
+
+        for d in &self.devices {
+            let role = d.role();
+            validate_role_format(role).with_context(|| format!("device {role} has invalid role format"))?;
+            if !roles.insert(role) {
+                return Err(anyhow!("duplicate role: {role}"));
             }
-            if m.joint_kind.is_some() && m.limb.is_none() {
-                return Err(anyhow!("motor {} has joint_kind set without limb", m.role));
+            let bus = d.can_bus().to_string();
+            let id = d.can_id();
+            if !seen_ids.insert((bus.clone(), id)) {
+                return Err(anyhow!(
+                    "duplicate (can_bus, can_id): ({bus}, 0x{id:02x}) — two devices share the same bus address"
+                ));
             }
-            if let (Some(_), Some(_)) = (&m.limb, m.joint_kind) {
-                if let Some(canonical) = m.canonical_role() {
-                    if m.role != canonical {
+
+            if let Device::Actuator(a) = d {
+                if a.common.joint_kind.is_some() && a.common.limb.is_none() {
+                    return Err(anyhow!(
+                        "actuator {} has joint_kind set without limb",
+                        a.common.role
+                    ));
+                }
+                if let (Some(_), Some(_)) = (&a.common.limb, a.common.joint_kind) {
+                    if let Some(canonical) = a.canonical_role() {
+                        if a.common.role != canonical {
+                            return Err(anyhow!(
+                                "actuator {} has limb+joint_kind but role does not match canonical form `{}`",
+                                a.common.role,
+                                canonical
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut seen_joints: BTreeSet<(String, JointKind)> = BTreeSet::new();
+        for d in &self.devices {
+            if let Device::Actuator(a) = d {
+                if let (Some(limb), Some(jk)) = (&a.common.limb, a.common.joint_kind) {
+                    let key = (limb.clone(), jk);
+                    if !seen_joints.insert(key) {
                         return Err(anyhow!(
-                            "motor {} has limb+joint_kind but role does not match canonical form `{}`",
-                            m.role,
-                            canonical
+                            "duplicate joint_kind {:?} within limb {} (actuator {})",
+                            jk,
+                            limb,
+                            a.common.role
                         ));
                     }
                 }
             }
         }
-        // Per-limb uniqueness on (limb, joint_kind).
-        let mut seen: BTreeSet<(String, JointKind)> = BTreeSet::new();
-        for m in &self.motors {
-            if let (Some(limb), Some(jk)) = (&m.limb, m.joint_kind) {
-                let key = (limb.clone(), jk);
-                if !seen.insert(key) {
-                    return Err(anyhow!(
-                        "duplicate joint_kind {:?} within limb {} (motor {})",
-                        jk,
-                        limb,
-                        m.role
-                    ));
-                }
-            }
-        }
+
         Ok(())
     }
 
-    pub fn by_role(&self, role: &str) -> Option<&Motor> {
-        self.motors.iter().find(|m| m.role == role)
+    /// Any device with this role (actuator, sensor, or battery).
+    pub fn by_role(&self, role: &str) -> Option<&Device> {
+        self.devices.iter().find(|d| d.role() == role)
     }
 
-    #[allow(dead_code)]
-    pub fn by_can_id(&self, can_id: u8) -> Option<&Motor> {
-        self.motors.iter().find(|m| m.can_id == can_id)
+    /// First actuator with this role, if the entry is an actuator.
+    pub fn actuator_by_role(&self, role: &str) -> Option<&Actuator> {
+        self.by_role(role).and_then(|d| match d {
+            Device::Actuator(a) => Some(a),
+            _ => None,
+        })
+    }
+
+    pub fn by_can_id(&self, bus: &str, can_id: u8) -> Option<&Device> {
+        self.devices
+            .iter()
+            .find(|d| d.can_bus() == bus && d.can_id() == can_id)
+    }
+
+    pub fn actuators(&self) -> impl Iterator<Item = &Actuator> {
+        self.devices.iter().filter_map(|d| match d {
+            Device::Actuator(a) => Some(a),
+            _ => None,
+        })
+    }
+
+    pub fn sensors(&self) -> impl Iterator<Item = &Sensor> {
+        self.devices.iter().filter_map(|d| match d {
+            Device::Sensor(s) => Some(s),
+            _ => None,
+        })
+    }
+
+    pub fn batteries(&self) -> impl Iterator<Item = &Battery> {
+        self.devices.iter().filter_map(|d| match d {
+            Device::Battery(b) => Some(b),
+            _ => None,
+        })
     }
 }
 
-/// Atomic YAML rewrite: read the on-disk inventory, hand the parsed value to
-/// `mutate`, then write the result to a sibling tempfile and rename it into
-/// place. Either the rename succeeds and the new file is fully visible, or
-/// it fails and the original file is untouched.
-///
-/// Used by the per-motor PUT endpoints (`travel_limits`, `verified`) so a
-/// crash mid-write can never produce a half-written `inventory.yaml`.
-///
-/// Returns the post-mutation `Inventory` so callers can refresh in-memory
-/// state without a re-read.
+/// Group present actuators by `limb`, sorted proximal-to-distal. Skips actuators without `limb`.
+pub fn ordered_actuators_per_limb(inv: &Inventory) -> BTreeMap<String, Vec<&Actuator>> {
+    let mut by_limb: BTreeMap<String, Vec<&Actuator>> = BTreeMap::new();
+    for a in inv.actuators() {
+        if !a.common.present {
+            continue;
+        }
+        let Some(limb) = a.common.limb.as_ref() else {
+            continue;
+        };
+        by_limb.entry(limb.clone()).or_default().push(a);
+    }
+    for actuators in by_limb.values_mut() {
+        actuators.sort_by_key(|a| {
+            a.common
+                .joint_kind
+                .map(|jk| jk.home_order())
+                .unwrap_or(255)
+        });
+    }
+    by_limb
+}
+
+// --- v1 migration -------------------------------------------------------------
+
+/// v1 `motors:` row (flat + `extra` map). Used only by [`migrate_v1_yaml_to_v2_inventory`].
+#[derive(Debug, Deserialize)]
+pub(crate) struct LegacyMotorV1 {
+    pub role: String,
+    pub can_bus: String,
+    #[serde(with = "crate::util::serde_u8_flex")]
+    pub can_id: u8,
+    #[serde(default)]
+    pub firmware_version: Option<String>,
+    #[serde(default)]
+    pub verified: bool,
+    #[serde(default)]
+    pub commissioned_at: Option<String>,
+    #[serde(default = "default_true")]
+    pub present: bool,
+    #[serde(default)]
+    pub travel_limits: Option<TravelLimits>,
+    #[serde(default)]
+    pub commissioned_zero_offset: Option<f32>,
+    #[serde(default)]
+    pub predefined_home_rad: Option<f32>,
+    #[serde(default)]
+    pub limb: Option<String>,
+    #[serde(default)]
+    pub joint_kind: Option<JointKind>,
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, serde_yaml::Value>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LegacyInventoryV1 {
+    motors: Vec<LegacyMotorV1>,
+}
+
+/// Convert v1 YAML text to a v2 [`Inventory`] (in memory). Used by `migrate_inventory` and tests.
+pub fn migrate_v1_yaml_to_v2_inventory(yaml: &str) -> Result<Inventory> {
+    let v1: LegacyInventoryV1 =
+        serde_yaml::from_str(yaml).context("parse legacy v1 inventory YAML")?;
+    let mut devices = Vec::with_capacity(v1.motors.len());
+    for m in v1.motors {
+        let notes_yaml = if m.extra.is_empty() {
+            None
+        } else {
+            Some(serde_yaml::to_string(&m.extra).context("serialize v1 extra to YAML string")?)
+        };
+        let common = ActuatorCommon {
+            role: m.role,
+            can_bus: m.can_bus,
+            can_id: m.can_id,
+            present: m.present,
+            verified: m.verified,
+            commissioned_at: m.commissioned_at,
+            firmware_version: m.firmware_version,
+            travel_limits: m.travel_limits,
+            commissioned_zero_offset: m.commissioned_zero_offset,
+            predefined_home_rad: m.predefined_home_rad,
+            limb: m.limb,
+            joint_kind: m.joint_kind,
+            notes_yaml,
+        };
+        devices.push(Device::Actuator(Actuator {
+            common,
+            family: ActuatorFamily::Robstride {
+                model: RobstrideModel::Rs03,
+            },
+        }));
+    }
+    let inv = Inventory {
+        schema_version: Some(INVENTORY_SCHEMA_V2),
+        devices,
+    };
+    inv.validate().context("validate migrated inventory")?;
+    Ok(inv)
+}
+
 pub fn write_atomic(
     path: &Path,
     mutate: impl FnOnce(&mut Inventory) -> Result<()>,
@@ -286,6 +556,7 @@ pub fn write_atomic(
     let mut inv = Inventory::load(path)
         .with_context(|| format!("re-reading {} for write_atomic", path.display()))?;
     mutate(&mut inv)?;
+
     inv.validate()
         .context("post-mutation inventory validation failed")?;
 
@@ -297,7 +568,6 @@ pub fn write_atomic(
         .and_then(|n| n.to_str())
         .unwrap_or("inventory.yaml");
 
-    // tempfile in the *same* directory so the rename is atomic on POSIX.
     let mut tmp = tempfile::Builder::new()
         .prefix(&format!(".{file_stem}."))
         .suffix(".tmp")
@@ -313,22 +583,12 @@ pub fn write_atomic(
             .context("fsync inventory tempfile")?;
     }
 
-    // `persist` does the rename. On Windows it can fail if the target is
-    // open; rudydae never holds a handle to inventory.yaml between writes.
     tmp.persist(path)
         .with_context(|| format!("rename tempfile -> {}", path.display()))?;
     Ok(inv)
 }
 
-/// One-shot bootstrap: if `inventory` does not exist on disk and `seed`
-/// does, copy seed → inventory. Run once at startup before the typed
-/// loader. Lets the Pi ship a baseline inventory in the read-only release
-/// tree (`/opt/rudy/config/actuators/inventory.yaml`) while `rudydae` reads
-/// and writes the live, operator-mutable copy from `/var/lib/rudy/`.
-///
-/// Idempotent. Once `inventory` exists, this never overwrites it — even if
-/// the seed has been updated by a release. Operator edits win, by design.
-/// To pick up a refreshed seed, the operator must `rm` the live file first.
+/// Seed copy helper (unchanged contract from v1).
 pub fn ensure_seeded(inventory: &Path, seed: Option<&Path>) -> Result<()> {
     if inventory.exists() {
         return Ok(());
@@ -360,195 +620,93 @@ mod tests {
     use super::*;
 
     #[test]
-    fn validate_role_format_accepts_legacy_and_canonical() {
-        assert!(validate_role_format("shoulder_actuator_a").is_ok());
-        assert!(validate_role_format("left_arm.shoulder_pitch").is_ok());
-    }
-
-    #[test]
-    fn validate_role_format_rejects_dashes_uppercase_double_dot() {
-        assert!(validate_role_format("Bad-Role").is_err());
-        assert!(validate_role_format("Bad_Role").is_err());
-        assert!(validate_role_format("too.many.dots").is_err());
-        assert!(validate_role_format("").is_err());
-        assert!(validate_role_format("9starts_with_digit").is_err());
-    }
-
-    #[test]
-    fn validate_canonical_role_requires_dot() {
-        assert!(validate_canonical_role("shoulder_actuator_a").is_err());
-        assert!(validate_canonical_role("left_arm.shoulder_pitch").is_ok());
-        assert!(validate_canonical_role(".shoulder_pitch").is_err());
-        assert!(validate_canonical_role("left_arm.").is_err());
-    }
-
-    #[test]
-    fn motor_canonical_role_uses_snake_case_joint_kind() {
-        let m = Motor {
-            role: "left_arm.shoulder_pitch".into(),
-            can_bus: "can0".into(),
-            can_id: 1,
-            firmware_version: None,
-            verified: false,
-            commissioned_at: None,
-            present: true,
-            travel_limits: None,
-            commissioned_zero_offset: None,
-            predefined_home_rad: None,
-            limb: Some("left_arm".into()),
-            joint_kind: Some(JointKind::ShoulderPitch),
-            extra: BTreeMap::new(),
-        };
-        assert_eq!(
-            m.canonical_role().as_deref(),
-            Some("left_arm.shoulder_pitch")
-        );
-    }
-
-    #[test]
-    fn validate_rejects_duplicate_joint_kind_in_same_limb() {
+    fn validate_rejects_duplicate_can_id_same_bus() {
         let inv = Inventory {
-            schema_version: Some(1),
-            motors: vec![
-                Motor {
-                    role: "left_arm.shoulder_pitch".into(),
-                    can_bus: "can0".into(),
-                    can_id: 1,
-                    firmware_version: None,
-                    verified: false,
-                    commissioned_at: None,
-                    present: true,
-                    travel_limits: None,
-                    commissioned_zero_offset: None,
-                    predefined_home_rad: None,
-                    limb: Some("left_arm".into()),
-                    joint_kind: Some(JointKind::ShoulderPitch),
-                    extra: BTreeMap::new(),
-                },
-                Motor {
-                    role: "left_arm.shoulder_pitch_dup".into(),
-                    can_bus: "can0".into(),
-                    can_id: 2,
-                    firmware_version: None,
-                    verified: false,
-                    commissioned_at: None,
-                    present: true,
-                    travel_limits: None,
-                    commissioned_zero_offset: None,
-                    predefined_home_rad: None,
-                    limb: Some("left_arm".into()),
-                    joint_kind: Some(JointKind::ShoulderPitch),
-                    extra: BTreeMap::new(),
-                },
+            schema_version: Some(2),
+            devices: vec![
+                Device::Actuator(Actuator {
+                    common: ActuatorCommon {
+                        role: "a.m1".into(),
+                        can_bus: "can0".into(),
+                        can_id: 8,
+                        present: true,
+                        verified: false,
+                        commissioned_at: None,
+                        firmware_version: None,
+                        travel_limits: None,
+                        commissioned_zero_offset: None,
+                        predefined_home_rad: None,
+                        limb: None,
+                        joint_kind: None,
+                        notes_yaml: None,
+                    },
+                    family: ActuatorFamily::Robstride {
+                        model: RobstrideModel::Rs03,
+                    },
+                }),
+                Device::Actuator(Actuator {
+                    common: ActuatorCommon {
+                        role: "a.m2".into(),
+                        can_bus: "can0".into(),
+                        can_id: 8,
+                        present: true,
+                        verified: false,
+                        commissioned_at: None,
+                        firmware_version: None,
+                        travel_limits: None,
+                        commissioned_zero_offset: None,
+                        predefined_home_rad: None,
+                        limb: None,
+                        joint_kind: None,
+                        notes_yaml: None,
+                    },
+                    family: ActuatorFamily::Robstride {
+                        model: RobstrideModel::Rs03,
+                    },
+                }),
             ],
         };
         assert!(inv.validate().is_err());
     }
 
     #[test]
-    fn validate_rejects_role_mismatching_canonical_form() {
-        let inv = Inventory {
-            schema_version: Some(1),
-            motors: vec![Motor {
-                role: "wrong.shoulder_pitch".into(),
-                can_bus: "can0".into(),
-                can_id: 1,
-                firmware_version: None,
-                verified: false,
-                commissioned_at: None,
-                present: true,
-                travel_limits: None,
-                commissioned_zero_offset: None,
-                predefined_home_rad: None,
-                limb: Some("left_arm".into()),
-                joint_kind: Some(JointKind::ShoulderPitch),
-                extra: BTreeMap::new(),
-            }],
-        };
-        assert!(inv.validate().is_err());
+    fn load_rejects_v1_schema() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let p = dir.path().join("inv.yaml");
+        std::fs::write(
+            &p,
+            r"
+schema_version: 1
+motors:
+  - role: x
+    can_bus: can0
+    can_id: 1
+",
+        )
+        .expect("write");
+        let err = Inventory::load(&p).expect_err("v1 must be refused");
+        assert!(err.to_string().contains("schema version mismatch"));
     }
 
-    /// Pre-Phase-B.1 inventory.yaml entries don't have
-    /// `commissioned_zero_offset` or `predefined_home_rad` keys at all.
-    /// The new fields must default to `None` (preserving the
-    /// "uncommissioned, orchestrator skips it" migration story
-    /// described in the commissioned-zero plan) when absent from the
-    /// YAML — and the parsed result must round-trip cleanly so a future
-    /// `write_atomic` doesn't introduce explicit `null` keys for fields
-    /// the operator never touched.
     #[test]
-    fn motor_yaml_without_commissioning_fields_defaults_to_none() {
-        let yaml = r#"
+    fn migration_preserves_extra_as_notes_yaml() {
+        let v1 = r#"
 schema_version: 1
 motors:
   - role: shoulder_actuator_a
     can_bus: can1
-    can_id: 0x08
-    verified: true
+    can_id: 8
+    verified: false
+    sourced_from: bench
 "#;
-        let inv: Inventory = serde_yaml::from_str(yaml).expect("parse");
-        let m = &inv.motors[0];
-        assert!(m.commissioned_zero_offset.is_none(),
-            "missing key must deserialize to None, got {:?}",
-            m.commissioned_zero_offset);
-        assert!(m.predefined_home_rad.is_none(),
-            "missing key must deserialize to None, got {:?}",
-            m.predefined_home_rad);
-    }
-
-    /// A commissioned motor's YAML record carries the readback value the
-    /// `commission` endpoint stored. Both fields round-trip through
-    /// serde_yaml correctly so `write_atomic` (which re-serializes the
-    /// in-memory `Inventory` after every mutation) won't truncate or
-    /// re-quantize them.
-    #[test]
-    fn motor_yaml_roundtrips_commissioning_fields() {
-        let yaml = r#"
-schema_version: 1
-motors:
-  - role: left_arm.shoulder_pitch
-    can_bus: can0
-    can_id: 1
-    verified: true
-    limb: left_arm
-    joint_kind: shoulder_pitch
-    commissioned_zero_offset: 0.123456
-    predefined_home_rad: -0.5
-"#;
-        let inv: Inventory = serde_yaml::from_str(yaml).expect("parse");
-        let m = &inv.motors[0];
-        assert_eq!(m.commissioned_zero_offset, Some(0.123456_f32));
-        assert_eq!(m.predefined_home_rad, Some(-0.5_f32));
-
-        // Round-trip: re-serialize and re-parse; the values must survive
-        // unchanged (this is what `write_atomic` will do on every
-        // commission / restore_offset call).
-        let reserialized = serde_yaml::to_string(&inv).expect("serialize");
-        let inv2: Inventory = serde_yaml::from_str(&reserialized).expect("re-parse");
-        assert_eq!(inv2.motors[0].commissioned_zero_offset, Some(0.123456_f32));
-        assert_eq!(inv2.motors[0].predefined_home_rad, Some(-0.5_f32));
-    }
-
-    #[test]
-    fn validate_accepts_legacy_motor_without_limb() {
-        let inv = Inventory {
-            schema_version: Some(1),
-            motors: vec![Motor {
-                role: "shoulder_actuator_a".into(),
-                can_bus: "can1".into(),
-                can_id: 8,
-                firmware_version: None,
-                verified: false,
-                commissioned_at: None,
-                present: true,
-                travel_limits: None,
-                commissioned_zero_offset: None,
-                predefined_home_rad: None,
-                limb: None,
-                joint_kind: None,
-                extra: BTreeMap::new(),
-            }],
-        };
-        assert!(inv.validate().is_ok());
+        let inv = migrate_v1_yaml_to_v2_inventory(v1).expect("migrate");
+        let a = inv.actuator_by_role("shoulder_actuator_a").expect("actuator");
+        assert!(a.common.notes_yaml.is_some());
+        assert!(a
+            .common
+            .notes_yaml
+            .as_ref()
+            .expect("notes")
+            .contains("sourced_from"));
     }
 }
