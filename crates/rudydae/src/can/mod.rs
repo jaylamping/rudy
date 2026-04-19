@@ -71,6 +71,21 @@ impl RealCanHandle {
         anyhow::bail!("real CAN is only available on Linux targets")
     }
 
+    /// Mock-CAN equivalent of [`linux::LinuxCanCore::read_add_offset`].
+    ///
+    /// Per the commissioned-zero plan, the mock equivalent returns
+    /// `Ok(0.0)` so contract tests that exercise the commission
+    /// endpoint and boot orchestrator on non-Linux dev hosts (mac /
+    /// Windows) don't need a real CAN bus. This is *only* useful for
+    /// macOS-style developer tests that hold a `RealCanHandle` directly
+    /// — the production daemon path uses `state.real_can = None` for
+    /// mock mode, and call sites short-circuit before reaching this
+    /// stub. See `crates/rudydae/src/can/mod.rs` `non_linux_stub_tests`
+    /// for the test that pins this behavior.
+    pub fn read_add_offset(&self, _state: &SharedState, _motor: &Motor) -> Result<f32> {
+        Ok(0.0)
+    }
+
     pub fn set_velocity_setpoint(&self, _motor: &Motor, _vel_rad_s: f32) -> Result<()> {
         anyhow::bail!("real CAN is only available on Linux targets")
     }

@@ -233,6 +233,51 @@ impl LinuxCanCore {
         Ok(())
     }
 
+    /// Read the firmware's current `add_offset` (parameter 0x702B) for
+    /// `motor` and return the value in radians.
+    ///
+    /// `add_offset` is the float that `set_zero` (type-6) rewrites in
+    /// firmware RAM and that `commission` (type-6 + type-22) saves to
+    /// flash. Reading it back over CAN is the daemon's only durable
+    /// way to know what the firmware *thinks* the joint's neutral is —
+    /// the eventual `commission` endpoint uses it for the post-save
+    /// readback verification, and the boot orchestrator uses it on every
+    /// boot for the Class-1 shenanigan check ("did someone re-zero this
+    /// motor while we were powered off?").
+    ///
+    /// `Ok(value)` on success. The error path covers two cases:
+    ///
+    /// 1. the firmware returned a read-fail status (the underlying
+    ///    `BusHandle::read_param` returns `Ok(None)`), surfaced here as
+    ///    `read_add_offset returned no value`. The caller should treat
+    ///    this as a transient CAN failure and retry rather than as
+    ///    "the offset is zero" — those are very different facts.
+    /// 2. any lower-level CAN error (timeout, ENOBUFS, malformed reply)
+    ///    propagates from `BusHandle::read_param` unchanged.
+    ///
+    /// The spec lookup goes through `firmware_limits.add_offset` (where
+    /// `config/actuators/robstride_rs03.yaml` defines it); the fallback
+    /// to `observables.add_offset` is forward-compat for any future
+    /// spec reorganization that promotes it. Hardcoding `0x702B` would
+    /// duplicate the source-of-truth that lives in the YAML.
+    pub fn read_add_offset(&self, state: &SharedState, motor: &Motor) -> Result<f32> {
+        let desc = state
+            .spec
+            .firmware_limits
+            .get("add_offset")
+            .or_else(|| state.spec.observables.get("add_offset"))
+            .ok_or_else(|| {
+                anyhow!(
+                    "add_offset not found in actuator spec (looked in firmware_limits and observables)"
+                )
+            })?;
+        let handle = self.handle_for(&motor.can_bus)?;
+        let bytes = handle.read_param(self.host_id, motor.can_id, desc.index, PARAM_TIMEOUT)?;
+        bytes
+            .map(f32::from_le_bytes)
+            .ok_or_else(|| anyhow!("read_add_offset returned no value (firmware read-fail)"))
+    }
+
     /// Velocity-mode setpoint. The worker thread implements smart
     /// re-arm: on the first frame after `state.enabled` does NOT
     /// contain the role, the worker writes `RUN_MODE = 2` + sends
