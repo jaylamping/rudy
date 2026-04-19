@@ -36,8 +36,8 @@ export function AppShell() {
     <div className="flex h-full min-h-screen">
       <aside className="flex w-56 shrink-0 flex-col border-r border-border bg-card">
         <div className="border-b border-border px-4 py-4">
-          <div className="text-sm font-semibold">Rudy</div>
-          <div className="text-xs text-muted-foreground">operator console</div>
+          <div className="text-lg font-semibold">Rudy</div>
+          <div className="text-xs text-muted-foreground pt-2">console</div>
         </div>
         <nav className="flex-1 space-y-0.5 p-2">
           {NAV.map(({ to, label, Icon, exact }) => {

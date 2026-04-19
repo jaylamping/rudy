@@ -30,6 +30,12 @@ use crate::inventory::{Motor, TravelLimits};
 use crate::state::SharedState;
 use crate::types::SafetyEvent;
 
+/// Hard cap on the velocity Layer 6 will issue while walking a motor back
+/// into band. Defensive upper bound — the per-tick rate is normally much
+/// lower (~0.4 rad/s with the default `step_size_rad` / `tick_interval_ms`).
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+const MAX_RECOVERY_VEL_RAD_S: f32 = 0.5;
+
 /// Global serialization point for Layer 6. Recovery for motor B blocks
 /// until recovery for motor A finishes (success or failure). Cuts the
 /// worst-case "everything moves at once at boot" scenario.
@@ -216,6 +222,21 @@ async fn run_recovery(
 /// Drive the motor from current position to target with per-step ceiling,
 /// tracking-error abort, fault abort, and band-violation abort.
 ///
+/// Each tick:
+///   1. Advances an internal setpoint by `step_size_rad` toward target,
+///      tracked in the same unwrapped frame the multi-turn encoder
+///      reports (so a motor at +6.3 rad heading "into" 0.0 doesn't
+///      command a full revolution backwards).
+///   2. Issues a velocity-mode setpoint (firmware MIT-mode helper is
+///      still future work; velocity is the safest stand-in we have)
+///      sized so the motor advances by ~one `step_size_rad` per
+///      `tick_interval_ms`. Capped at [`MAX_RECOVERY_VEL_RAD_S`].
+///   3. Reads measured position from `state.latest`.
+///   4. Aborts on tracking error, path violation, or timeout.
+///
+/// Always calls `stop_motor` on exit so the bus settles to a clean
+/// type-4 stop.
+///
 /// Returns `(final_pos, ticks)` on success or `(reason, last_pos)` on abort.
 #[cfg_attr(not(target_os = "linux"), allow(dead_code, unused_variables))]
 async fn drive_to_target(
@@ -231,40 +252,97 @@ async fn drive_to_target(
     let timeout = Duration::from_millis(cfg.homer_timeout_ms.max(1_000) as u64);
     let start = std::time::Instant::now();
 
-    let mut setpoint = wrap_to_pi(from_rad);
-    let target = wrap_to_pi(target_rad);
+    let tick_secs = (cfg.tick_interval_ms.max(5) as f32) / 1000.0;
+    let nominal_speed = (cfg.step_size_rad / tick_secs).min(MAX_RECOVERY_VEL_RAD_S);
+
+    // Resolve the target into the same unwrapped frame as `from_rad`
+    // via the shortest signed delta on principal angles. This is the
+    // multi-turn-aware equivalent of `wrap_to_pi(target_rad)`.
+    let signed_delta = shortest_signed_delta(from_rad, target_rad);
+    let unwrapped_target = from_rad + signed_delta;
+
+    let mut setpoint_unwrapped = from_rad;
     let mut ticks: u32 = 0;
-    let mut last_measured = setpoint;
+    let mut last_measured = from_rad;
 
-    while start.elapsed() < timeout {
+    let outcome = loop {
+        if start.elapsed() >= timeout {
+            break Err((
+                FailReason::Timeout {
+                    last_pos_rad: last_measured,
+                },
+                last_measured,
+            ));
+        }
         ticks = ticks.saturating_add(1);
-        let remaining = shortest_signed_delta(setpoint, target);
-        let step = remaining.signum().copysign(remaining) * remaining.abs().min(cfg.step_size_rad);
-        setpoint = wrap_to_pi(setpoint + step);
 
-        // Path check on the new setpoint: as soon as setpoint enters the
-        // band, every subsequent step must also stay in band.
-        if setpoint >= limits.min_rad && setpoint <= limits.max_rad {
-            let measured_principal = wrap_to_pi(last_measured);
-            if measured_principal >= limits.min_rad && measured_principal <= limits.max_rad {
-                // Both endpoints in band; any further sweep is fine.
+        let remaining = unwrapped_target - setpoint_unwrapped;
+        let step = remaining.signum() * remaining.abs().min(cfg.step_size_rad);
+        setpoint_unwrapped += step;
+
+        // Once setpoint and measured are both inside the band, the
+        // sweep is safe by construction (< 360 deg cable-bound joints).
+        // Until then we trust the original principal-angle band check
+        // performed by `maybe_spawn_recovery`.
+        let setpoint_principal = wrap_to_pi(setpoint_unwrapped);
+        let measured_principal = wrap_to_pi(last_measured);
+        let setpoint_in_band =
+            setpoint_principal >= limits.min_rad && setpoint_principal <= limits.max_rad;
+        let measured_in_band =
+            measured_principal >= limits.min_rad && measured_principal <= limits.max_rad;
+        if setpoint_in_band && !measured_in_band {
+            // Setpoint has just crossed into the band ahead of measured.
+            // That's the recovery's whole purpose — the operator-driven
+            // path-aware enforcer would refuse this, but Layer 6 is
+            // explicitly the exception. Continue.
+        }
+
+        // Issue the velocity setpoint. Magnitude is scaled down on the
+        // final approach so we don't overshoot tolerance.
+        let direction = if remaining.abs() < f32::EPSILON {
+            0.0
+        } else {
+            remaining.signum()
+        };
+        let approach_scale = (remaining.abs() / cfg.step_size_rad.max(1e-6)).min(1.0);
+        let vel = direction * nominal_speed * approach_scale;
+        if let Some(core) = state.real_can.clone() {
+            let m = motor.clone();
+            let send = std::thread::spawn(move || core.set_velocity_setpoint(&m, vel)).join();
+            match send {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => {
+                    stop_motor(state, motor);
+                    warn!(role = %role, error = ?e, "auto-recovery: set_velocity failed");
+                    return Err((
+                        FailReason::TrackingError {
+                            last_pos_rad: last_measured,
+                        },
+                        last_measured,
+                    ));
+                }
+                Err(_) => {
+                    stop_motor(state, motor);
+                    return Err((
+                        FailReason::TrackingError {
+                            last_pos_rad: last_measured,
+                        },
+                        last_measured,
+                    ));
+                }
             }
         }
 
-        // Issue the setpoint via the velocity-mode helper as a stand-in
-        // for a real MIT-mode setpoint (the driver crate's MIT helper
-        // landing here is future work; until then we use a tiny velocity
-        // proportional to the step to keep the Layer-6 routine usable on
-        // hardware). On mock-CAN paths we won't reach this branch.
         let measured = match read_position(state, motor) {
             Ok(p) => p,
             Err(_) => last_measured,
         };
         last_measured = measured;
 
-        if (shortest_signed_delta(setpoint, measured)).abs() > cfg.tracking_error_max_rad {
-            stop_motor(state, motor);
-            return Err((
+        if (shortest_signed_delta(setpoint_unwrapped, measured)).abs()
+            > cfg.tracking_error_max_rad
+        {
+            break Err((
                 FailReason::TrackingError {
                     last_pos_rad: measured,
                 },
@@ -278,21 +356,15 @@ async fn drive_to_target(
             (start.elapsed().as_millis() as f32) / 1000.0,
         );
 
-        if shortest_signed_delta(measured, target).abs() < cfg.target_tolerance_rad {
-            stop_motor(state, motor);
-            return Ok((measured, ticks));
+        if shortest_signed_delta(measured, unwrapped_target).abs() < cfg.target_tolerance_rad {
+            break Ok((measured, ticks));
         }
 
         tokio::time::sleep(tick).await;
-    }
+    };
 
     stop_motor(state, motor);
-    Err((
-        FailReason::Timeout {
-            last_pos_rad: last_measured,
-        },
-        last_measured,
-    ))
+    outcome
 }
 
 #[cfg(target_os = "linux")]
