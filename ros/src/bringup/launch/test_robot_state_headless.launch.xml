@@ -14,8 +14,16 @@
   <let name="robot_description"
     value="$(command 'xacro $(find-pkg-share description)/urdf/robot.urdf.xacro')"/>
 
+  <!--
+    `type="str"` short-circuits launch_xml's default YAML parse of the
+    value attribute. Without it, an XML comment like
+    `RS03 caps: 60 Nm, 50 rad/s` inside the URDF trips
+    `yaml.safe_load() failed: mapping values are not allowed here`
+    because the colon-space looks like a YAML mapping key. See
+    ros2/launch#729.
+  -->
   <node pkg="robot_state_publisher" exec="robot_state_publisher" output="screen">
-    <param name="robot_description" value="$(var robot_description)"/>
+    <param name="robot_description" type="str" value="$(var robot_description)"/>
   </node>
 
   <node pkg="joint_state_publisher" exec="joint_state_publisher" output="screen"/>
