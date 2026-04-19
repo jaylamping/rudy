@@ -111,6 +111,27 @@ export const api = {
         body: JSON.stringify({ confirm_advanced: true }),
       },
     ),
+  // Flash-persistent commissioning. Sequences type-6 + type-22 + a
+  // readback of `add_offset` over CAN, then writes the readback value
+  // into `inventory.yaml` as `commissioned_zero_offset` so the boot
+  // orchestrator can verify it on every boot. This is the supported
+  // path for "set this joint's neutral and persist it"; raw `setZero`
+  // is RAM-only.
+  //
+  // Failures return a commission-specific JSON envelope:
+  // `{ error: "commission_failed", detail: "step N (...): ...",
+  //    readback_rad: number | null }`. The SPA can pull
+  // `err.body.readback_rad` to render "firmware reported X rad" toasts
+  // when a readback step fails.
+  commissionMotor: (role: string) =>
+    apiFetch<{
+      ok: boolean;
+      role: string;
+      offset_rad: number;
+      commissioned_at: string;
+    }>(`/api/motors/${encodeURIComponent(role)}/commission`, {
+      method: "POST",
+    }),
   // Travel limits (added by the actuator-detail page work).
   getTravelLimits: (role: string) =>
     apiFetch<import("@/lib/types/TravelLimits").TravelLimits>(

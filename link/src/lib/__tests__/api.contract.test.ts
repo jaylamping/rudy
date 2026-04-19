@@ -109,6 +109,12 @@ describe("REST contract — URL + method per call", () => {
       "POST",
     ],
     [
+      "POST /api/motors/:role/commission",
+      () => api.commissionMotor("shoulder_actuator_a"),
+      "/api/motors/shoulder_actuator_a/commission",
+      "POST",
+    ],
+    [
       "POST /api/motors/:role/motion/sweep",
       () =>
         api.motion.sweep("shoulder_actuator_a", {

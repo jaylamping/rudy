@@ -280,6 +280,23 @@ pub enum SafetyEvent {
         old_role: String,
         new_role: String,
     },
+    /// `POST /api/motors/:role/commission` completed successfully:
+    /// firmware accepted type-6 SetZero + type-22 SaveParams, and the
+    /// daemon read back `add_offset` (0x702B) and recorded it in
+    /// `inventory.yaml` as `commissioned_zero_offset`. The boot
+    /// orchestrator will use this stored value on every subsequent boot
+    /// for the Class-1 shenanigan check (re-read `add_offset` over CAN
+    /// and compare against this baseline within
+    /// `safety.commission_readback_tolerance_rad`).
+    ///
+    /// Subscribers (the dashboard) should refresh the actuator list so
+    /// the UI flips the motor from "Not commissioned" → "Commissioned"
+    /// without waiting for the next polling cycle.
+    Commissioned {
+        t_ms: i64,
+        role: String,
+        offset_rad: f32,
+    },
 }
 
 /// One operator reminder. File-backed in `.rudyd/reminders.json`.

@@ -10,6 +10,7 @@ use axum::{
 
 use crate::state::SharedState;
 
+mod commission;
 mod config_route;
 mod control;
 mod estop;
@@ -40,6 +41,7 @@ pub fn router(state: SharedState) -> Router<SharedState> {
         .route("/motors/:role/enable", post(control::enable))
         .route("/motors/:role/stop", post(control::stop))
         .route("/motors/:role/set_zero", post(control::set_zero))
+        .route("/motors/:role/commission", post(commission::commission))
         .route(
             "/motors/:role/travel_limits",
             get(travel::get_travel_limits).put(travel::put_travel_limits),

@@ -1448,6 +1448,197 @@ async fn set_zero_without_confirm_advanced_returns_400() {
     }
 }
 
+/// Successful commission against a mock-CAN backend writes the readback
+/// value into `inventory.yaml` (mock readback = 0.0 per the documented
+/// `RealCanHandle` stub contract) and bumps `commissioned_at` to a
+/// fresh ISO 8601 timestamp. The response body matches the typed
+/// `CommissionResp { ok, role, offset_rad, commissioned_at }` shape.
+///
+/// Specifically pins:
+///
+/// - the wire response shape (`ok: true`, `role`, `offset_rad`,
+///   `commissioned_at`);
+/// - that the on-disk `inventory.yaml` is rewritten atomically and the
+///   in-memory `state.inventory` matches what hit the disk;
+/// - that `commissioned_at` is parseable as ISO 8601;
+/// - that a `SafetyEvent::Commissioned` fires on the broadcast channel
+///   (so the dashboard can refresh without polling).
+#[tokio::test]
+async fn commission_endpoint_writes_inventory() {
+    let (state, dir) = common::make_state();
+    let app = rudydae::build_app(state.clone());
+
+    // Subscribe BEFORE the request to guarantee no missed safety event.
+    let mut safety_rx = state.safety_event_tx.subscribe();
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/motors/shoulder_actuator_a/commission")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let body: serde_json::Value = body_json(resp).await;
+    assert_eq!(body["ok"], serde_json::Value::Bool(true));
+    assert_eq!(body["role"], serde_json::Value::String("shoulder_actuator_a".into()));
+    // Mock-CAN readback is 0.0 by stub contract.
+    assert_eq!(body["offset_rad"].as_f64(), Some(0.0));
+    let commissioned_at = body["commissioned_at"].as_str().expect("commissioned_at must be a string");
+    chrono::DateTime::parse_from_rfc3339(commissioned_at)
+        .expect("commissioned_at must be ISO 8601 RFC 3339");
+
+    // On-disk inventory.yaml must match the in-memory state.
+    let inv_on_disk = rudydae::inventory::Inventory::load(dir.path().join("inventory.yaml"))
+        .expect("re-load inventory");
+    let m = inv_on_disk
+        .by_role("shoulder_actuator_a")
+        .expect("motor present in re-loaded inventory");
+    assert_eq!(m.commissioned_zero_offset, Some(0.0_f32));
+    assert_eq!(m.commissioned_at.as_deref(), Some(commissioned_at));
+
+    // In-memory state must also reflect the write.
+    let in_memory = state
+        .inventory
+        .read()
+        .expect("inventory poisoned")
+        .by_role("shoulder_actuator_a")
+        .cloned()
+        .unwrap();
+    assert_eq!(in_memory.commissioned_zero_offset, Some(0.0_f32));
+    assert_eq!(in_memory.commissioned_at.as_deref(), Some(commissioned_at));
+
+    // SafetyEvent::Commissioned must fire so the dashboard can refresh.
+    let evt = tokio::time::timeout(std::time::Duration::from_millis(200), safety_rx.recv())
+        .await
+        .expect("safety event must fire within 200ms")
+        .expect("safety_event_tx must not be closed");
+    match evt {
+        rudydae::types::SafetyEvent::Commissioned { role, offset_rad, .. } => {
+            assert_eq!(role, "shoulder_actuator_a");
+            assert_eq!(offset_rad, 0.0);
+        }
+        other => panic!("expected SafetyEvent::Commissioned, got {other:?}"),
+    }
+}
+
+/// `commission` against an unknown role returns the commission-specific
+/// error envelope (`error: "commission_failed"`, `detail` mentioning the
+/// failing step, `readback_rad: null`) — NOT the generic ApiError shape.
+/// Critically the on-disk inventory.yaml must NOT be touched.
+#[tokio::test]
+async fn commission_endpoint_unknown_role_leaves_inventory_clean() {
+    let (state, dir) = common::make_state();
+    let app = rudydae::build_app(state.clone());
+
+    let inv_path = dir.path().join("inventory.yaml");
+    let inv_before = std::fs::read_to_string(&inv_path).expect("read inventory");
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/motors/no_such_role/commission")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+
+    let body: serde_json::Value = body_json(resp).await;
+    assert_eq!(body["error"], serde_json::Value::String("commission_failed".into()));
+    let detail = body["detail"].as_str().unwrap_or("");
+    assert!(detail.starts_with("step 2"), "detail must name failing step; got {detail:?}");
+    assert!(detail.contains("unknown_motor"), "detail must mention unknown_motor; got {detail:?}");
+    assert!(body["readback_rad"].is_null(), "no readback was performed; got {body}");
+
+    // Inventory file must be byte-identical to the pre-request snapshot.
+    let inv_after = std::fs::read_to_string(&inv_path).expect("re-read inventory");
+    assert_eq!(inv_before, inv_after, "rejected commission must not touch inventory.yaml");
+}
+
+/// `commission` against an absent motor (inventory.yaml has
+/// `present: false`) returns 409 with the commission-specific envelope
+/// and leaves the inventory file untouched. Mirrors the
+/// `motor_absent` rejection that every other CAN-talking endpoint uses,
+/// but routed through the commission failure shape.
+#[tokio::test]
+async fn commission_endpoint_motor_absent_rejected_cleanly() {
+    let (state, dir) = common::make_state();
+    // Mark shoulder_actuator_a as absent.
+    {
+        let mut inv = state.inventory.write().expect("inventory");
+        let m = inv.motors.iter_mut()
+            .find(|m| m.role == "shoulder_actuator_a")
+            .unwrap();
+        m.present = false;
+    }
+    let app = rudydae::build_app(state.clone());
+
+    let inv_path = dir.path().join("inventory.yaml");
+    let inv_before = std::fs::read_to_string(&inv_path).expect("read inventory");
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/motors/shoulder_actuator_a/commission")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CONFLICT);
+    let body: serde_json::Value = body_json(resp).await;
+    assert_eq!(body["error"], serde_json::Value::String("commission_failed".into()));
+    let detail = body["detail"].as_str().unwrap_or("");
+    assert!(detail.starts_with("step 2"), "detail must name failing step; got {detail:?}");
+    assert!(detail.contains("motor_absent"), "detail must mention motor_absent; got {detail:?}");
+    assert!(body["readback_rad"].is_null());
+
+    let inv_after = std::fs::read_to_string(&inv_path).expect("re-read inventory");
+    assert_eq!(inv_before, inv_after, "rejected commission must not touch inventory.yaml");
+}
+
+/// `commission` records its outcome in the audit log, including the
+/// readback value on success. Same JSONL log we exercised in the
+/// set_zero audit test.
+#[tokio::test]
+async fn commission_endpoint_audit_logs_readback() {
+    let (state, dir) = common::make_state();
+    let app = rudydae::build_app(state.clone());
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/motors/shoulder_actuator_a/commission")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let raw = std::fs::read_to_string(dir.path().join("audit.jsonl"))
+        .expect("audit log must exist");
+    let last = raw
+        .lines()
+        .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+        .filter(|e| e.get("action").and_then(|v| v.as_str()) == Some("commission"))
+        .last()
+        .expect("audit log must contain a commission entry");
+    assert_eq!(last["result"].as_str(), Some("ok"));
+    assert_eq!(last["target"].as_str(), Some("shoulder_actuator_a"));
+    assert_eq!(last["details"]["step"].as_str(), Some("ok"));
+    assert_eq!(last["details"]["readback_rad"].as_f64(), Some(0.0));
+}
+
 /// Rename of an enabled motor used to refuse with 409 `motor_active` and
 /// force the operator to context-switch to the Controls tab to click Stop.
 /// The daemon now does that round-trip itself: stop on the bus, perform
@@ -1908,6 +2099,7 @@ fn endpoint_inventory_documented() {
         "POST   /api/motors/:role/stop",
         "POST   /api/motors/:role/save",
         "POST   /api/motors/:role/set_zero",
+        "POST   /api/motors/:role/commission",
         "GET    /api/motors/:role/travel_limits",
         "PUT    /api/motors/:role/travel_limits",
         "POST   /api/motors/:role/jog",
