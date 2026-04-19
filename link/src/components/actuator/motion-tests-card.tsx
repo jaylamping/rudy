@@ -34,10 +34,21 @@ import type { MotionStatus } from "@/lib/types/MotionStatus";
 const RAD_TO_DEG = 180 / Math.PI;
 const DEG_TO_RAD = Math.PI / 180;
 
-// Daemon-side hard cap (see MAX_MOTION_VEL_RAD_S in api/motion.rs).
+// Daemon-side hard cap (see MAX_PATTERN_VEL_RAD_S in api/motion.rs).
 // Mirrored here so the slider can't request something that would clamp
-// silently on the wire.
-const MAX_VEL_RAD_S = 0.5;
+// silently on the wire. The dead-man jog UI uses a tighter cap (0.5)
+// because it's free-running; the bounded sweep/wave patterns can run
+// faster safely because they self-reverse inside the travel band.
+const MAX_VEL_RAD_S = 2.0;
+
+// Mirrors `default_turnaround_rad` in `crates/rudydae/src/motion/intent.rs`.
+// Used only to render the operator-facing "reverses Xdeg before each
+// edge at this speed" hint in the sweep subtitle — the daemon is the
+// source of truth for the actual inset that gets baked into the intent.
+const SWEEP_BASE_INSET_RAD = 0.05;
+const OVERSHOOT_S = 0.25;
+const sweepInsetRad = (speedRadS: number) =>
+  SWEEP_BASE_INSET_RAD + Math.abs(speedRadS) * OVERSHOOT_S;
 
 type PatternId = "wave" | "sweep";
 
@@ -357,7 +368,7 @@ export function MotionTestsCard({ motor }: { motor: MotorSummary }) {
           title="Sweep travel limits"
           subtitle={
             limits
-              ? `Continuously travels between the configured min (${(limits.min_rad * RAD_TO_DEG).toFixed(1)}°) and max (${(limits.max_rad * RAD_TO_DEG).toFixed(1)}°), reversing just shy of each edge.`
+              ? `Continuously travels between min (${(limits.min_rad * RAD_TO_DEG).toFixed(1)}°) and max (${(limits.max_rad * RAD_TO_DEG).toFixed(1)}°), reversing ~${(sweepInsetRad(sweepSpeedRad[0]) * RAD_TO_DEG).toFixed(1)}° before each edge to absorb motor overshoot at this speed.`
               : "Configure soft travel limits above to enable this pattern."
           }
           running={active === "sweep"}

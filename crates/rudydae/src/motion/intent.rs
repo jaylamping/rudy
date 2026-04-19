@@ -44,8 +44,12 @@ pub enum MotionIntent {
         /// here; the controller alternates the sign at each band edge.
         speed_rad_s: f32,
         /// Inset from each band edge at which the controller flips
-        /// direction. Defaults to `0.05` (~2.9 deg) when the REST handler
-        /// omits it. Larger values trade range for a softer turnaround.
+        /// direction. When the REST handler omits it, the daemon picks
+        /// `SWEEP_BASE_INSET_RAD + speed_rad_s * OVERSHOOT_S` so the
+        /// buffer scales with the motor's brake distance — a 0.5 rad/s
+        /// sweep gets ~10° of headroom, a 0.05 rad/s sweep ~3.6°. See
+        /// [`default_turnaround_rad`]. Larger values trade range for a
+        /// softer turnaround.
         turnaround_rad: f32,
     },
     /// Symmetric oscillation around `center_rad` with `amplitude_rad`
@@ -55,8 +59,9 @@ pub enum MotionIntent {
         center_rad: f32,
         amplitude_rad: f32,
         speed_rad_s: f32,
-        /// Same role as `Sweep::turnaround_rad`; defaults to `0.02`
-        /// (~1.1 deg) when omitted.
+        /// Same role as `Sweep::turnaround_rad`; defaults to
+        /// `WAVE_BASE_INSET_RAD + speed_rad_s * OVERSHOOT_S` when
+        /// omitted. See [`default_turnaround_rad`].
         turnaround_rad: f32,
     },
     /// Hold-to-jog: drive at `vel_rad_s` for as long as the operator's
@@ -176,15 +181,46 @@ impl MotionStopReason {
     }
 }
 
+/// Base turnaround inset, in rad. Covers the algorithmic margin (the
+/// step function flips direction when `pos >= edge - inset`, so we need
+/// at least one tick's worth of headroom even at v=0). Sized to match
+/// the original fixed defaults so a low-speed sweep behaves exactly as
+/// before this scaling was introduced.
+pub const SWEEP_BASE_INSET_RAD: f32 = 0.05;
+pub const WAVE_BASE_INSET_RAD: f32 = 0.02;
+
+/// Per-rad/s overshoot allowance, in seconds. Multiplied by the
+/// commanded speed to estimate how far the motor will coast past the
+/// turnaround threshold before the velocity loop reverses it. Tuned for
+/// the RS03 at default gains; if you measure actual overshoot from
+/// `MotionStatus { state = stopped, reason = "travel_limit_violation" }`
+/// frames, scale this up so the motor stops *inside* the travel band
+/// rather than asymptotically approaching the edge.
+///
+/// Physical intuition: at v rad/s with deceleration ~1/T_OVERSHOOT, the
+/// stopping distance is roughly v * T_OVERSHOOT / 2. We use the larger
+/// `v * T_OVERSHOOT` form to be conservative (assumes a slower brake).
+pub const OVERSHOOT_S: f32 = 0.25;
+
 /// Resolve the default turnaround inset for a given pattern when the
 /// REST handler / client frame omits it. Centralised so the SPA doesn't
 /// have to know the magic numbers.
-pub fn default_turnaround_rad(kind: &MotionIntent) -> f32 {
-    match kind {
-        MotionIntent::Sweep { .. } => 0.05,
-        MotionIntent::Wave { .. } => 0.02,
-        MotionIntent::Jog { .. } => 0.0,
-    }
+///
+/// `speed_rad_s` is the magnitude of the commanded velocity; the
+/// returned inset grows linearly with speed so a fast sweep gets a
+/// proportionally larger brake-distance buffer. This is the fix for the
+/// "controller exits with `travel_limit_violation` because the motor
+/// coasts past the band edge after the direction flip" failure mode —
+/// see `docs/decisions/0004-operator-console.md` and the discussion in
+/// the original PR if you're tempted to revert to a fixed value.
+pub fn default_turnaround_rad(kind: &MotionIntent, speed_rad_s: f32) -> f32 {
+    let speed = speed_rad_s.abs();
+    let base = match kind {
+        MotionIntent::Sweep { .. } => SWEEP_BASE_INSET_RAD,
+        MotionIntent::Wave { .. } => WAVE_BASE_INSET_RAD,
+        MotionIntent::Jog { .. } => return 0.0,
+    };
+    base + speed * OVERSHOOT_S
 }
 
 #[cfg(test)]
@@ -254,5 +290,78 @@ mod tests {
         assert_eq!(r.detail(), "ENOBUFS");
         let r = MotionStopReason::Operator;
         assert_eq!(r.detail(), "operator");
+    }
+
+    #[test]
+    fn default_turnaround_scales_with_speed() {
+        let sweep = MotionIntent::Sweep {
+            speed_rad_s: 0.0,
+            turnaround_rad: 0.0,
+        };
+        // At v=0 the formula collapses to the algorithmic base inset —
+        // identical to the previous fixed default, so a slow-speed sweep
+        // doesn't lose any range.
+        let zero = default_turnaround_rad(&sweep, 0.0);
+        assert!((zero - SWEEP_BASE_INSET_RAD).abs() < 1e-6);
+        // At 0.5 rad/s (the previous UI cap) the inset is base + half a
+        // second of brake distance ≈ 0.175 rad ≈ 10°.
+        let mid = default_turnaround_rad(&sweep, 0.5);
+        assert!((mid - (SWEEP_BASE_INSET_RAD + 0.5 * OVERSHOOT_S)).abs() < 1e-6);
+        // At 2.0 rad/s (the new UI cap) the inset is ~0.55 rad ≈ 31° —
+        // big, but a fast sweep on a stiff actuator genuinely needs that
+        // much headroom to stop inside the band.
+        let fast = default_turnaround_rad(&sweep, 2.0);
+        assert!((fast - (SWEEP_BASE_INSET_RAD + 2.0 * OVERSHOOT_S)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn default_turnaround_uses_per_pattern_base() {
+        // Wave gets a tighter base inset than sweep (oscillation is
+        // usually around a fixed center, the band edges are a backstop
+        // not the operating envelope).
+        let sweep = default_turnaround_rad(
+            &MotionIntent::Sweep {
+                speed_rad_s: 0.0,
+                turnaround_rad: 0.0,
+            },
+            0.0,
+        );
+        let wave = default_turnaround_rad(
+            &MotionIntent::Wave {
+                center_rad: 0.0,
+                amplitude_rad: 0.0,
+                speed_rad_s: 0.0,
+                turnaround_rad: 0.0,
+            },
+            0.0,
+        );
+        assert!(sweep > wave);
+        assert!((sweep - SWEEP_BASE_INSET_RAD).abs() < 1e-6);
+        assert!((wave - WAVE_BASE_INSET_RAD).abs() < 1e-6);
+    }
+
+    #[test]
+    fn default_turnaround_is_always_zero_for_jog() {
+        // Jog has no turnaround concept; the dead-man timeout is what
+        // bounds the motion. Pinned so a future refactor that adds an
+        // inset field to MotionIntent::Jog has to opt in deliberately.
+        let v = default_turnaround_rad(&MotionIntent::Jog { vel_rad_s: 0.5 }, 0.5);
+        assert_eq!(v, 0.0);
+    }
+
+    #[test]
+    fn default_turnaround_treats_negative_speed_as_magnitude() {
+        // The formula is direction-agnostic; a sweep with `speed_rad_s =
+        // -0.5` (which clamp_speed wouldn't produce, but a future
+        // caller might) must not produce a negative inset that would
+        // expand the band rather than shrink it.
+        let sweep = MotionIntent::Sweep {
+            speed_rad_s: 0.0,
+            turnaround_rad: 0.0,
+        };
+        let pos = default_turnaround_rad(&sweep, 0.5);
+        let neg = default_turnaround_rad(&sweep, -0.5);
+        assert!((pos - neg).abs() < 1e-6);
+        assert!(neg > 0.0);
     }
 }

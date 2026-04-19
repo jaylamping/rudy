@@ -21,12 +21,17 @@ export type MotionIntent = { "kind": "sweep",
 speed_rad_s: number, 
 /**
  * Inset from each band edge at which the controller flips
- * direction. Defaults to `0.05` (~2.9 deg) when the REST handler
- * omits it. Larger values trade range for a softer turnaround.
+ * direction. When the REST handler omits it, the daemon picks
+ * `SWEEP_BASE_INSET_RAD + speed_rad_s * OVERSHOOT_S` so the
+ * buffer scales with the motor's brake distance — a 0.5 rad/s
+ * sweep gets ~10° of headroom, a 0.05 rad/s sweep ~3.6°. See
+ * [`default_turnaround_rad`]. Larger values trade range for a
+ * softer turnaround.
  */
 turnaround_rad: number, } | { "kind": "wave", center_rad: number, amplitude_rad: number, speed_rad_s: number, 
 /**
- * Same role as `Sweep::turnaround_rad`; defaults to `0.02`
- * (~1.1 deg) when omitted.
+ * Same role as `Sweep::turnaround_rad`; defaults to
+ * `WAVE_BASE_INSET_RAD + speed_rad_s * OVERSHOOT_S` when
+ * omitted. See [`default_turnaround_rad`].
  */
 turnaround_rad: number, } | { "kind": "jog", vel_rad_s: number, };

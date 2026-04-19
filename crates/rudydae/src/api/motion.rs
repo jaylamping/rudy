@@ -34,11 +34,20 @@ use crate::state::SharedState;
 use crate::types::ApiError;
 use crate::util::session_from_headers;
 
-/// Soft cap aligned with `bench_tool::MAX_TARGET_VEL_RAD_S`. Motion
-/// requests above this are clamped before the registry sees them; the
-/// controller's per-tick preflight is the second line of defense if the
-/// firmware envelope is wider than this.
-const MAX_MOTION_VEL_RAD_S: f32 = 0.5;
+/// Soft cap for the bounded patterns (sweep, wave). These run inside a
+/// configured `travel_limits` band and self-reverse, so they can safely
+/// run faster than the dead-man jog cap. Still well below the firmware
+/// `LIMIT_SPD_EXPECTED = 3.0` rad/s envelope so a clamp here is the
+/// last reasonable line of defense before the firmware takes over.
+const MAX_PATTERN_VEL_RAD_S: f32 = 2.0;
+
+/// Soft cap for the (unbounded) jog path. Matches
+/// `bench_tool::MAX_TARGET_VEL_RAD_S` and the standalone REST `/jog`
+/// endpoint. Kept tighter than [`MAX_PATTERN_VEL_RAD_S`] because jog
+/// has no automatic reversal — the only thing stopping the motor is the
+/// operator's dead-man heartbeat plus the band check, and 0.5 rad/s is
+/// a comfortable maximum for a finger-held control.
+const MAX_JOG_VEL_RAD_S: f32 = 0.5;
 
 fn err(status: StatusCode, error: &str, detail: Option<String>) -> (StatusCode, Json<ApiError>) {
     (
@@ -86,11 +95,11 @@ fn ensure_lock(
     Ok(session)
 }
 
-fn clamp_speed(speed: f32) -> f32 {
+fn clamp_speed(speed: f32, max_abs: f32) -> f32 {
     if !speed.is_finite() {
         return 0.0;
     }
-    speed.clamp(-MAX_MOTION_VEL_RAD_S, MAX_MOTION_VEL_RAD_S)
+    speed.clamp(-max_abs, max_abs)
 }
 
 #[derive(Debug, Deserialize)]
@@ -165,17 +174,20 @@ pub async fn start_sweep(
     Json(body): Json<SweepBody>,
 ) -> Result<Json<StartResp>, (StatusCode, Json<ApiError>)> {
     let session = ensure_lock(&state, &headers)?;
-    let speed = clamp_speed(body.speed_rad_s).abs();
+    let speed = clamp_speed(body.speed_rad_s, MAX_PATTERN_VEL_RAD_S).abs();
     let intent = MotionIntent::Sweep {
         speed_rad_s: speed,
         turnaround_rad: body
             .turnaround_rad
             .filter(|v| v.is_finite() && *v >= 0.0)
             .unwrap_or_else(|| {
-                default_turnaround_rad(&MotionIntent::Sweep {
-                    speed_rad_s: speed,
-                    turnaround_rad: 0.0,
-                })
+                default_turnaround_rad(
+                    &MotionIntent::Sweep {
+                        speed_rad_s: speed,
+                        turnaround_rad: 0.0,
+                    },
+                    speed,
+                )
             }),
     };
     start(&state, session, &role, intent, speed).await
@@ -189,7 +201,7 @@ pub async fn start_wave(
     Json(body): Json<WaveBody>,
 ) -> Result<Json<StartResp>, (StatusCode, Json<ApiError>)> {
     let session = ensure_lock(&state, &headers)?;
-    let speed = clamp_speed(body.speed_rad_s).abs();
+    let speed = clamp_speed(body.speed_rad_s, MAX_PATTERN_VEL_RAD_S).abs();
     if !body.center_rad.is_finite() || !body.amplitude_rad.is_finite() {
         return Err(err(
             StatusCode::BAD_REQUEST,
@@ -198,6 +210,22 @@ pub async fn start_wave(
         ));
     }
     let amp = body.amplitude_rad.abs();
+    // Cap the auto-computed wave inset at half the amplitude. Without
+    // this, a 0.5 rad/s wave with 0.05 rad amplitude would auto-pick a
+    // 0.145 rad inset, collapsing the oscillation window and silently
+    // stalling the controller (wave::step returns 0 vel when
+    // upper <= lower). Half-amplitude leaves room for at least one
+    // direction reversal at the requested speed.
+    let auto_inset = default_turnaround_rad(
+        &MotionIntent::Wave {
+            center_rad: 0.0,
+            amplitude_rad: 0.0,
+            speed_rad_s: speed,
+            turnaround_rad: 0.0,
+        },
+        speed,
+    )
+    .min(amp * 0.5);
     let intent = MotionIntent::Wave {
         center_rad: body.center_rad,
         amplitude_rad: amp,
@@ -205,14 +233,7 @@ pub async fn start_wave(
         turnaround_rad: body
             .turnaround_rad
             .filter(|v| v.is_finite() && *v >= 0.0)
-            .unwrap_or_else(|| {
-                default_turnaround_rad(&MotionIntent::Wave {
-                    center_rad: 0.0,
-                    amplitude_rad: 0.0,
-                    speed_rad_s: 0.0,
-                    turnaround_rad: 0.0,
-                })
-            }),
+            .unwrap_or(auto_inset),
     };
     start(&state, session, &role, intent, speed).await
 }
@@ -238,7 +259,7 @@ pub async fn start_or_update_jog(
             Some("vel_rad_s must be finite".into()),
         ));
     }
-    let vel = clamp_speed(body.vel_rad_s);
+    let vel = clamp_speed(body.vel_rad_s, MAX_JOG_VEL_RAD_S);
     let intent = MotionIntent::Jog { vel_rad_s: vel };
 
     // Hot path: already-running jog → just push the new intent (which

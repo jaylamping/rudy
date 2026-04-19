@@ -1665,9 +1665,11 @@ async fn motion_stop_when_idle_returns_false() {
 }
 
 /// `POST /api/motors/:role/motion/sweep` clamps a speed beyond
-/// `MAX_MOTION_VEL_RAD_S` (0.5) silently. The SPA mirrors this constant,
+/// `MAX_PATTERN_VEL_RAD_S` (2.0) silently. The SPA mirrors this constant,
 /// so a regression here surfaces as the slider top end no longer
-/// matching the actual cap.
+/// matching the actual cap. Note this is intentionally HIGHER than the
+/// jog cap (0.5) — sweep self-reverses inside the travel band, so it's
+/// safe at speeds the dead-man jog wouldn't be.
 #[tokio::test]
 async fn motion_sweep_clamps_excessive_speed() {
     let (state, _dir) = common::make_state();
@@ -1688,7 +1690,9 @@ async fn motion_sweep_clamps_excessive_speed() {
     }
     let app = rudydae::build_app(state);
 
-    let body = serde_json::to_vec(&json!({"speed_rad_s": 5.0})).unwrap();
+    // Request 10 rad/s — well above the 2.0 sweep cap and the 3.0
+    // firmware envelope. The handler must clamp to MAX_PATTERN_VEL_RAD_S.
+    let body = serde_json::to_vec(&json!({"speed_rad_s": 10.0})).unwrap();
     let resp = app
         .clone()
         .oneshot(
@@ -1705,8 +1709,14 @@ async fn motion_sweep_clamps_excessive_speed() {
     let payload: serde_json::Value = body_json(resp).await;
     let clamped = payload["clamped_speed_rad_s"].as_f64().unwrap();
     assert!(
-        clamped <= 0.5 + 1e-6,
-        "expected clamped speed <= 0.5, got {clamped}"
+        clamped <= 2.0 + 1e-6,
+        "expected clamped speed <= 2.0, got {clamped}"
+    );
+    // And clamping must actually have taken effect (i.e. the test isn't
+    // just passing because the request was below the cap).
+    assert!(
+        clamped >= 2.0 - 1e-6,
+        "expected clamp to saturate at 2.0, got {clamped}"
     );
 
     let _ = app
