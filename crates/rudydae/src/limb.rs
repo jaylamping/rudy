@@ -129,6 +129,25 @@ pub fn ordered_motors_per_limb(inv: &Inventory) -> BTreeMap<String, Vec<&Motor>>
     by_limb
 }
 
+/// Like [`ordered_motors_per_limb`] but clones each [`Motor`] so callers can
+/// `tokio::spawn` without holding a borrow of [`Inventory`].
+pub fn ordered_motors_per_limb_owned(inv: &Inventory) -> BTreeMap<String, Vec<Motor>> {
+    let mut by_limb: BTreeMap<String, Vec<Motor>> = BTreeMap::new();
+    for m in &inv.motors {
+        if !m.present {
+            continue;
+        }
+        let Some(limb) = m.limb.as_ref() else {
+            continue;
+        };
+        by_limb.entry(limb.clone()).or_default().push(m.clone());
+    }
+    for motors in by_limb.values_mut() {
+        motors.sort_by_key(|m| m.joint_kind.map(|jk| jk.home_order()).unwrap_or(255));
+    }
+    by_limb
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

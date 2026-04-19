@@ -19,13 +19,17 @@ use axum::{extract::State, http::StatusCode, Json};
 use chrono::Utc;
 use serde::Serialize;
 use tokio::task::JoinSet;
+use tracing::warn;
 
 use crate::audit::{AuditEntry, AuditResult};
 use crate::boot_state::{self, BootState};
-use crate::limb::ordered_motors_per_limb;
+use crate::can::slow_ramp;
+use crate::can::travel::{enforce_position_with_path, BandCheck};
+use crate::inventory::Motor;
+use crate::limb::ordered_motors_per_limb_owned;
 use crate::limb_health;
 use crate::state::SharedState;
-use crate::types::ApiError;
+use crate::types::{ApiError, SafetyEvent};
 use crate::util::session_from_headers;
 
 #[derive(Debug, Serialize)]
@@ -53,6 +57,123 @@ fn err(status: StatusCode, error: &str, detail: Option<String>) -> (StatusCode, 
     )
 }
 
+fn last_measured(state: &SharedState, role: &str, fallback: f32) -> f32 {
+    state
+        .latest
+        .read()
+        .expect("latest poisoned")
+        .get(role)
+        .map(|f| f.mech_pos_rad)
+        .filter(|p| p.is_finite())
+        .unwrap_or(fallback)
+}
+
+/// Slow-ramp to [`Motor::predefined_home_rad`] (or 0.0). Caller must skip
+/// motors already [`BootState::Homed`]. On success does **not** transition
+/// boot state — the orchestrator emits [`SafetyEvent::Homed`] and calls
+/// [`boot_state::mark_homed`].
+async fn drive_predefined_home(
+    state: SharedState,
+    motor: Motor,
+) -> Result<(f32, u32), (String, f32)> {
+    let role = motor.role.clone();
+    let bs = boot_state::current(&state, &role);
+    match bs {
+        BootState::InBand => {}
+        BootState::Homed => {
+            return Err((
+                "already_homed".into(),
+                last_measured(&state, &role, 0.0),
+            ));
+        }
+        BootState::Unknown => return Err(("not_ready".into(), f32::NAN)),
+        BootState::OutOfBand {
+            mech_pos_rad,
+            min_rad,
+            max_rad,
+        } => {
+            return Err((
+                format!(
+                    "out_of_band at {mech_pos_rad:.3} rad outside [{min_rad:.3}, {max_rad:.3}]"
+                ),
+                mech_pos_rad,
+            ));
+        }
+        BootState::AutoRecovering { .. } => {
+            return Err(("auto_recovery_in_progress".into(), f32::NAN));
+        }
+        BootState::OffsetChanged { .. } => return Err(("offset_changed".into(), f32::NAN)),
+        BootState::AutoHoming { .. } => return Err(("auto_homing_in_progress".into(), f32::NAN)),
+        BootState::HomeFailed { .. } => return Err(("home_failed".into(), f32::NAN)),
+    }
+
+    let target_rad = motor.predefined_home_rad.unwrap_or(0.0);
+    if !target_rad.is_finite() {
+        return Err((
+            "bad_target".into(),
+            last_measured(&state, &role, 0.0),
+        ));
+    }
+
+    let current_pos = state
+        .latest
+        .read()
+        .expect("latest poisoned")
+        .get(&role)
+        .map(|f| f.mech_pos_rad)
+        .ok_or_else(|| ("no_telemetry".into(), f32::NAN))?;
+
+    let check = match enforce_position_with_path(&state, &role, current_pos, target_rad) {
+        Ok(c) => c,
+        Err(e) => return Err((format!("internal: {e:#}"), current_pos)),
+    };
+    match check {
+        BandCheck::OutOfBand {
+            min_rad,
+            max_rad,
+            attempted_rad,
+        } => {
+            return Err((
+                format!(
+                    "target {attempted_rad:.3} rad outside [{min_rad:.3}, {max_rad:.3}]"
+                ),
+                current_pos,
+            ));
+        }
+        BandCheck::PathViolation { .. } => {
+            return Err(("path_violation".into(), current_pos));
+        }
+        BandCheck::NoLimit | BandCheck::InBand { .. } => {}
+    }
+
+    slow_ramp::run(state, motor, current_pos, target_rad).await
+}
+
+fn apply_home_success(state: &SharedState, role: &str, final_pos: f32, ticks: u32) {
+    boot_state::mark_homed(state, role);
+    let _ = state.safety_event_tx.send(SafetyEvent::Homed {
+        t_ms: Utc::now().timestamp_millis(),
+        role: role.to_string(),
+        final_pos_rad: final_pos,
+        samples_count: ticks,
+    });
+}
+
+fn apply_home_failure(state: &SharedState, role: &str, reason: String, last_pos_rad: f32) {
+    let lp = if last_pos_rad.is_finite() {
+        last_pos_rad
+    } else {
+        0.0
+    };
+    boot_state::force_set_home_failed(state, role, reason.clone(), lp);
+    let _ = state.safety_event_tx.send(SafetyEvent::HomeFailed {
+        t_ms: Utc::now().timestamp_millis(),
+        role: role.to_string(),
+        reason,
+        last_pos_rad: lp,
+    });
+}
+
 pub async fn home_all(
     State(state): State<SharedState>,
     headers: axum::http::HeaderMap,
@@ -67,7 +188,7 @@ pub async fn home_all(
     }
 
     let inv = state.inventory.read().expect("inventory poisoned").clone();
-    let by_limb = ordered_motors_per_limb(&inv);
+    let by_limb = ordered_motors_per_limb_owned(&inv);
 
     if by_limb.is_empty() {
         return Err(err(
@@ -130,8 +251,8 @@ pub async fn home_all(
         return Err(err(StatusCode::CONFLICT, "preflight_failed", Some(detail)));
     }
 
-    // Torso pre-phase: sequential across all torso joints in any limb.
-    let mut results: BTreeMap<String, LimbResult> = BTreeMap::new();
+    // Torso pre-phase: sequential across all torso joints (global sort by
+    // home_order, then limb, then role).
     let mut torso: Vec<(String, String)> = Vec::new();
     for (limb, motors) in &by_limb {
         for m in motors {
@@ -140,34 +261,98 @@ pub async fn home_all(
             }
         }
     }
-    for (_, role) in &torso {
-        // Reuse the homer by calling it directly via boot_state transitions
-        // — for now in mock mode we just transition the state. Real-CAN
-        // homing is the same code path as `home::run_homer`; refactoring
-        // it into a free function that this orchestrator can call is the
-        // logical next step but kept out of scope for the orchestrator
-        // skeleton.
-        boot_state::mark_homed(&state, role);
+    torso.sort_by(|(l_a, r_a), (l_b, r_b)| {
+        let ord_a = inv
+            .by_role(r_a)
+            .and_then(|m| m.joint_kind)
+            .map(|jk| jk.home_order())
+            .unwrap_or(255);
+        let ord_b = inv
+            .by_role(r_b)
+            .and_then(|m| m.joint_kind)
+            .map(|jk| jk.home_order())
+            .unwrap_or(255);
+        (ord_a, l_a.as_str(), r_a.as_str()).cmp(&(ord_b, l_b.as_str(), r_b.as_str()))
+    });
+
+    for (_limb, role) in &torso {
+        if matches!(boot_state::current(&state, role), BootState::Homed) {
+            continue;
+        }
+        let motor = inv.by_role(role).cloned().ok_or_else(|| {
+            err(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "internal",
+                Some(format!("inventory missing role {role} during home_all")),
+            )
+        })?;
+        match drive_predefined_home(state.clone(), motor).await {
+            Ok((final_pos, ticks)) => apply_home_success(&state, role, final_pos, ticks),
+            Err((reason, last_pos)) => {
+                apply_home_failure(&state, role, reason.clone(), last_pos);
+                let lp = if last_pos.is_finite() { last_pos } else { 0.0 };
+                return Err(err(
+                    StatusCode::CONFLICT,
+                    "home_all_aborted",
+                    Some(format!("torso phase {role}: {reason} at {lp:.3} rad")),
+                ));
+            }
+        }
     }
 
-    // Per-limb parallel.
+    // Per-limb parallel (non-torso motors only; torso was handled above).
+    let mut results: BTreeMap<String, LimbResult> = BTreeMap::new();
     let mut joinset: JoinSet<(String, LimbResult)> = JoinSet::new();
     for (limb, motors) in by_limb {
         let limb_name = limb.clone();
         let state = state.clone();
-        let roles: Vec<String> = motors.iter().map(|m| m.role.clone()).collect();
         joinset.spawn(async move {
-            let mut homed = Vec::new();
-            for role in &roles {
-                if boot_state::current(&state, role) == BootState::Homed {
-                    homed.push(role.clone());
+            let all = motors;
+            let drive_queue: Vec<Motor> = all
+                .iter()
+                .filter(|m| !m.joint_kind.map(|jk| jk.is_torso()).unwrap_or(false))
+                .cloned()
+                .collect();
+
+            let mut homed: Vec<String> = Vec::new();
+            for m in &all {
+                if m.joint_kind.map(|jk| jk.is_torso()).unwrap_or(false)
+                    && matches!(boot_state::current(&state, &m.role), BootState::Homed)
+                {
+                    homed.push(m.role.clone());
+                }
+            }
+
+            for motor in drive_queue {
+                let role = motor.role.clone();
+                if matches!(boot_state::current(&state, &role), BootState::Homed) {
+                    if !homed.contains(&role) {
+                        homed.push(role.clone());
+                    }
                     continue;
                 }
-                // Mock: transition the state to Homed. On real hardware
-                // this would invoke the slow-ramp homer.
-                boot_state::mark_homed(&state, role);
-                homed.push(role.clone());
+                match drive_predefined_home(state.clone(), motor).await {
+                    Ok((final_pos, ticks)) => {
+                        apply_home_success(&state, &role, final_pos, ticks);
+                        if !homed.contains(&role) {
+                            homed.push(role.clone());
+                        }
+                    }
+                    Err((reason, last_pos)) => {
+                        apply_home_failure(&state, &role, reason.clone(), last_pos);
+                        return (
+                            limb_name,
+                            LimbResult {
+                                status: "failed",
+                                homed,
+                                failed_at: Some(role),
+                                failure_reason: Some(reason),
+                            },
+                        );
+                    }
+                }
             }
+
             (
                 limb_name,
                 LimbResult {
@@ -180,8 +365,11 @@ pub async fn home_all(
         });
     }
     while let Some(res) = joinset.join_next().await {
-        if let Ok((limb, lr)) = res {
-            results.insert(limb, lr);
+        match res {
+            Ok((limb, lr)) => {
+                results.insert(limb, lr);
+            }
+            Err(e) => warn!(error = %e, "home_all limb task panicked or was cancelled"),
         }
     }
 
