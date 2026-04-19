@@ -406,3 +406,95 @@ permission system, and the dialogs exist to let the operator say "yes, I
 meant to" without the cognitive overhead of typing a phrase that nobody
 else is around to be tricked by. If a second human ever joins this
 project, revisit — the multi-operator UX is git-recoverable.
+
+## Addendum 2026-04-19: server-owned closed-loop motion
+
+The original `D6` "Dead-man jog" line ("Holding a jog key sends commands at
+≥ 20 Hz; releasing causes `rudydae` to issue `cmd_stop`") described an
+SPA-driven loop. We are amending that pattern.
+
+### Convention
+
+**Any closed-loop motion the daemon can run autonomously MUST run on the
+daemon. The browser expresses *intent* (one POST or one frame on a
+WebTransport bidi stream) and observes *status* (the `motion_status` WT
+broadcast). It does NOT drive the per-tick velocity loop.**
+
+This is encoded as a doc-comment on
+[`crates/rudydae/src/motion/mod.rs`](../../crates/rudydae/src/motion/mod.rs)
+so it's discoverable from the code itself; this addendum is the policy
+counterpart for code review.
+
+### Why we changed posture
+
+Operating the original SPA-driven sweep produced visible / audible
+"jitter every 0.1–0.25 s" because:
+
+1. The SPA fired `POST /api/motors/:role/jog` at ~60 Hz with
+   `ttl_ms: 100`.
+2. Any HTTP latency spike >100 ms tripped the daemon's per-motor TTL
+   watchdog, which issued `cmd_stop`.
+3. The next jog frame had to re-enable: `RUN_MODE` + `cmd_enable` +
+   `SPD_REF`. That re-arm sequence is what produced the audible "jolt"
+   on each lapse.
+4. Browser garbage collection, route switches, and tab backgrounding
+   all silently produce >100 ms gaps. The motor was effectively being
+   start-stopped at the gap rate rather than driven smoothly.
+
+A daemon-side controller eliminates the round-trip from the velocity
+loop entirely. The bus_worker's smart re-arm logic (only `RUN_MODE` +
+`cmd_enable` on the *first* tick, `SPD_REF` thereafter) can finally
+deliver the smooth motion it was designed for, because the loop never
+restarts mid-motion.
+
+### Module layout
+
+* [`crates/rudydae/src/motion/`](../../crates/rudydae/src/motion/) —
+  `intent`, `preflight`, `sweep`, `wave`, `controller`, `registry`.
+* [`crates/rudydae/src/api/motion.rs`](../../crates/rudydae/src/api/motion.rs) —
+  REST surface: `POST /motors/:role/motion/{sweep,wave,jog,stop}` and
+  `GET /motors/:role/motion`.
+* [`crates/rudydae/src/wt_router.rs`](../../crates/rudydae/src/wt_router.rs) —
+  client-to-server WebTransport bidi protocol carrying `ClientFrame`s
+  (Subscribe / MotionJog / MotionHeartbeat / MotionStop) as
+  length-prefixed CBOR. EOF without `MotionStop` is treated as
+  `MotionStopReason::ClientGone` so a torn QUIC session can't leave a
+  motor running.
+* [`link/src/lib/wt/clientStream.ts`](../../link/src/lib/wt/clientStream.ts) —
+  SPA helper that opens / sends on / closes a single bidi stream. Used
+  by the dead-man jog; the slider drag during a held press is one
+  re-emitted `MotionJog` per heartbeat tick rather than a separate
+  protocol message.
+
+### Per-motor concurrency
+
+`MotionRegistry` enforces "one controller per motor at a time." A
+fresh `start()` for a role with an active controller cleanly
+supersedes the previous one (`MotionStopReason::Superseded`) with a
+bounded join. Two motors can run independent patterns concurrently.
+
+### REST + WT: choosing a transport for new motion surfaces
+
+| Surface                          | Transport                             |
+| -------------------------------- | ------------------------------------- |
+| Pattern start (sweep / wave)     | REST POST                             |
+| Pattern stop                     | REST POST                             |
+| Hold-to-jog dead-man (interactive) | WT bidi stream (`ClientFrame::MotionJog` + heartbeat); REST `motion/jog` is the fallback when WT is disabled |
+| Pattern status (live + final)    | WT broadcast `motion_status` (Datagram) with replay-on-mount via `GET /motion` |
+
+Adding a new pattern: see the "Adding a new pattern" checklist in
+[`motion/mod.rs`](../../crates/rudydae/src/motion/mod.rs).
+
+### Migration / deprecation
+
+* `POST /api/motors/:role/jog` is kept for scripted use (CLI tooling,
+  smoke tests). The SPA's old `setInterval`-driven jog loop in
+  `motion-tests-card.tsx` and `dead-man-jog.tsx` is replaced; one
+  release of soak time later the leftover `api.jog` call sites in
+  those two files can be removed.
+* The original D6 "Dead-man jog" wording is amended only in mechanism
+  (server-owned loop, WT bidi stream as preferred dead-man transport).
+  The safety promise — "release / disconnect causes `rudydae` to
+  issue `cmd_stop`" — is unchanged and is now enforced by both the
+  controller's heartbeat watchdog (250 ms) and the bidi stream's
+  EOF-as-`ClientGone` path.

@@ -485,6 +485,17 @@ declare_wt_streams! {
         transport: Stream,
         /// E-stop / control-lock / travel-band events. Reliable.
     },
+    MotionStatus => crate::motion::MotionStatus {
+        kind: "motion_status",
+        transport: Datagram,
+        /// Live status from a server-side motion controller (sweep / wave /
+        /// jog). Datagram tier because the controller refreshes at the bus's
+        /// native cadence; one missed snapshot is harmless because the next
+        /// one arrives ~16 ms later. The terminal `state = stopped` snapshot
+        /// is broadcast once per run and is the operator's "stop confirmed"
+        /// signal — if it's lost in transit the SPA falls back to the
+        /// `GET /motors/:role/motion` 204 to confirm.
+    },
 }
 
 /// Wire envelope for every WebTransport frame, datagram or stream.
@@ -562,4 +573,5 @@ pub enum WtFrame {
     SystemSnapshot(SystemSnapshot),
     TestProgress(TestProgress),
     SafetyEvent(SafetyEvent),
+    MotionStatus(crate::motion::MotionStatus),
 }

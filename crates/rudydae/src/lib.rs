@@ -15,6 +15,7 @@ pub mod can;
 pub mod config;
 pub mod inventory;
 pub mod limb;
+pub mod motion;
 pub mod reminders;
 pub mod server;
 pub mod spec;
@@ -24,6 +25,7 @@ pub mod telemetry;
 pub mod types;
 pub mod util;
 pub mod wt;
+pub mod wt_client;
 pub mod wt_router;
 
 pub use state::{AppState, SharedState};

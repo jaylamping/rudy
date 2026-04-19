@@ -112,11 +112,84 @@ export const api = {
     ),
   // Hold-to-jog. The TTL is also a server-side watchdog: if no follow-up
   // jog frame arrives within ttl_ms the daemon issues `cmd_stop`.
+  //
+  // Kept for scripted use and as a manual fallback; the SPA itself drives
+  // closed-loop motion through the `/motion/*` endpoints (sweep / wave)
+  // or, for hold-to-jog, the WebTransport bidi stream — see
+  // `crates/rudydae/src/motion/` for the rationale.
   jog: (role: string, body: { vel_rad_s: number; ttl_ms: number }) =>
     apiFetch<{ ok: boolean }>(
       `/api/motors/${encodeURIComponent(role)}/jog`,
       { method: "POST", body: JSON.stringify(body) },
     ),
+  // Server-side closed-loop motion. The SPA POSTs intent once per run
+  // and observes the `motion_status` WT stream until `state === "stopped"`.
+  // No per-frame heartbeat from the browser — see the convention doc in
+  // `crates/rudydae/src/motion/mod.rs`.
+  motion: {
+    /** GET → 200 snapshot, or 204 if the role has no active motion. */
+    current: async (role: string) => {
+      const path = `/api/motors/${encodeURIComponent(role)}/motion`;
+      const headers = new Headers();
+      headers.set("X-Rudy-Session", sessionId());
+      const res = await fetch(path, { headers });
+      if (res.status === 204) return null;
+      const text = await res.text();
+      const body: unknown = text ? JSON.parse(text) : null;
+      if (!res.ok) {
+        throw new ApiError(
+          (body as { error?: string })?.error ?? res.statusText,
+          res.status,
+          body,
+        );
+      }
+      return body as {
+        run_id: string;
+        role: string;
+        kind: string;
+        started_at_ms: number;
+        intent: import("@/lib/types/MotionIntent").MotionIntent;
+      };
+    },
+    sweep: (
+      role: string,
+      body: { speed_rad_s: number; turnaround_rad?: number },
+    ) =>
+      apiFetch<{ run_id: string; clamped_speed_rad_s: number }>(
+        `/api/motors/${encodeURIComponent(role)}/motion/sweep`,
+        { method: "POST", body: JSON.stringify(body) },
+      ),
+    wave: (
+      role: string,
+      body: {
+        center_rad: number;
+        amplitude_rad: number;
+        speed_rad_s: number;
+        turnaround_rad?: number;
+      },
+    ) =>
+      apiFetch<{ run_id: string; clamped_speed_rad_s: number }>(
+        `/api/motors/${encodeURIComponent(role)}/motion/wave`,
+        { method: "POST", body: JSON.stringify(body) },
+      ),
+    /**
+     * Start (or refresh velocity + heartbeat of) a server-side jog. Used
+     * as the REST fallback when the WebTransport bidi stream is unavailable;
+     * the preferred transport for hold-to-jog is the bidi stream so
+     * heartbeats don't pay HTTP overhead.
+     */
+    jog: (role: string, body: { vel_rad_s: number }) =>
+      apiFetch<{ run_id: string; clamped_speed_rad_s: number }>(
+        `/api/motors/${encodeURIComponent(role)}/motion/jog`,
+        { method: "POST", body: JSON.stringify(body) },
+      ),
+    /** Stop any active motion for the role. Idempotent. */
+    stop: (role: string) =>
+      apiFetch<{ stopped: boolean }>(
+        `/api/motors/${encodeURIComponent(role)}/motion/stop`,
+        { method: "POST" },
+      ),
+  },
   // Slow-ramp homer. Validates current position is in band, then rolls
   // setpoints toward `target_rad` (default 0.0) at low torque/speed under
   // a tracking-error abort. On success transitions BootState -> Homed and

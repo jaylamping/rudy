@@ -10,6 +10,7 @@ use crate::boot_state::BootState;
 use crate::can::RealCanHandle;
 use crate::config::Config;
 use crate::inventory::Inventory;
+use crate::motion::{MotionRegistry, MotionStatus};
 use crate::reminders::ReminderStore;
 use crate::spec::ActuatorSpec;
 use crate::system::SystemPoller;
@@ -76,6 +77,20 @@ pub struct AppState {
     /// Reliable WT stream so the dashboard never misses an e-stop pulse.
     pub safety_event_tx: broadcast::Sender<SafetyEvent>,
 
+    /// Live snapshots from server-side motion controllers (sweep / wave /
+    /// jog). One sender; the WT listener subscribes per-session and
+    /// forwards each snapshot as a `WtFrame::MotionStatus` datagram. The
+    /// SPA's "running: sweep on shoulder_a" badge reads off this stream
+    /// instead of polling.
+    pub motion_status_tx: broadcast::Sender<MotionStatus>,
+
+    /// Per-motor active-motion registry. Single source of truth for
+    /// "which controller (if any) is driving motor X right now." Both
+    /// the REST `/motion/*` endpoints and the WT bidi router enter
+    /// through here so the per-motor concurrency invariant
+    /// (one controller per motor) is enforced in exactly one place.
+    pub motion: MotionRegistry,
+
     /// Control-lock state: which session id (if any) is allowed to issue
     /// mutating commands (enable / jog / param write / save).
     pub control_lock: RwLock<Option<ControlLockHolder>>,
@@ -133,6 +148,7 @@ impl AppState {
         let (system_tx, _) = broadcast::channel::<SystemSnapshot>(8);
         let (test_progress_tx, _) = broadcast::channel::<TestProgress>(256);
         let (safety_event_tx, _) = broadcast::channel::<SafetyEvent>(64);
+        let (motion_status_tx, _) = broadcast::channel::<MotionStatus>(256);
         Self {
             cfg,
             spec,
@@ -146,6 +162,8 @@ impl AppState {
             system_tx,
             test_progress_tx,
             safety_event_tx,
+            motion_status_tx,
+            motion: MotionRegistry::new(),
             control_lock: RwLock::new(None),
             system: Mutex::new(SystemPoller::new()),
             reminders,

@@ -41,6 +41,13 @@ function installFetchSpy() {
     }
     captured = { url, method, body, headers };
     const status = nextResponse.status ?? 200;
+    // 204 No Content disallows a body per the Fetch spec; constructing
+    // `new Response(body, {status: 204})` throws. Mirror the daemon's
+    // behavior by sending null on 204 so callers exercising the
+    // `api.motion.current` 204 branch see what they'd see in prod.
+    if (status === 204) {
+      return new Response(null, { status });
+    }
     const responseBody =
       nextResponse.body === undefined ? { ok: true } : nextResponse.body;
     return new Response(JSON.stringify(responseBody), {
@@ -101,6 +108,38 @@ describe("REST contract — URL + method per call", () => {
       "/api/motors/shoulder_actuator_a/set_zero",
       "POST",
     ],
+    [
+      "POST /api/motors/:role/motion/sweep",
+      () =>
+        api.motion.sweep("shoulder_actuator_a", {
+          speed_rad_s: 0.1,
+        }),
+      "/api/motors/shoulder_actuator_a/motion/sweep",
+      "POST",
+    ],
+    [
+      "POST /api/motors/:role/motion/wave",
+      () =>
+        api.motion.wave("shoulder_actuator_a", {
+          center_rad: 0,
+          amplitude_rad: 0.2,
+          speed_rad_s: 0.1,
+        }),
+      "/api/motors/shoulder_actuator_a/motion/wave",
+      "POST",
+    ],
+    [
+      "POST /api/motors/:role/motion/jog",
+      () => api.motion.jog("shoulder_actuator_a", { vel_rad_s: 0.25 }),
+      "/api/motors/shoulder_actuator_a/motion/jog",
+      "POST",
+    ],
+    [
+      "POST /api/motors/:role/motion/stop",
+      () => api.motion.stop("shoulder_actuator_a"),
+      "/api/motors/shoulder_actuator_a/motion/stop",
+      "POST",
+    ],
   ];
 
   for (const [name, call, expectedUrl, expectedMethod] of cases) {
@@ -110,6 +149,34 @@ describe("REST contract — URL + method per call", () => {
       expect(captured?.method).toBe(expectedMethod);
     });
   }
+});
+
+describe("GET /api/motors/:role/motion", () => {
+  it("returns null when the server replies 204", async () => {
+    nextResponse = { status: 204, body: "" };
+    // The fetch spy returns "" as the body; the api.motion.current path
+    // checks status === 204 first and returns null.
+    const result = await api.motion.current("shoulder_actuator_a");
+    expect(captured?.url).toBe("/api/motors/shoulder_actuator_a/motion");
+    expect(captured?.method).toBe("GET");
+    expect(result).toBeNull();
+  });
+
+  it("parses the JSON snapshot when the server replies 200", async () => {
+    nextResponse = {
+      status: 200,
+      body: {
+        run_id: "abc",
+        role: "shoulder_actuator_a",
+        kind: "sweep",
+        started_at_ms: 1000,
+        intent: { kind: "sweep", speed_rad_s: 0.1, turnaround_rad: 0.05 },
+      },
+    };
+    const result = await api.motion.current("shoulder_actuator_a");
+    expect(result?.run_id).toBe("abc");
+    expect(result?.kind).toBe("sweep");
+  });
 });
 
 describe("PUT /api/motors/:role/params/:name", () => {

@@ -28,27 +28,31 @@
 //!   "one writer, many readers" model honest.
 
 use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 
 use anyhow::Result;
 use serde::Serialize;
 use tokio::sync::broadcast::error::RecvError;
 use tracing::{debug, trace, warn};
 use wtransport::Connection;
-use wtransport::SendStream;
+use wtransport::{RecvStream, SendStream};
 
+use crate::motion::{MotionIntent, MotionStatus};
 use crate::state::SharedState;
 use crate::types::{
     MotorFeedback, SafetyEvent, SystemSnapshot, TestProgress, WtEnvelope, WtKind, WtPayload,
     WtSubscribe, WtSubscribeFilters, WtTransport,
 };
+use crate::wt_client::ClientFrame;
 
 /// Per-session router: owns subscriptions, sequence counters, the lazily-
 /// opened reliable stream handle, and a CBOR scratch buffer reused across
 /// frames.
 pub struct SessionRouter {
-    /// Filter state. Mutable: `apply_subscribe` rewrites it on the bidi
-    /// stream message arrival. Default = "everything".
-    filter: SubscriptionFilter,
+    /// Filter state. Mutable: per-stream tasks call `apply_subscribe` on
+    /// inbound `ClientFrame::Subscribe` and the broadcast fan-out below
+    /// reads it via the `Arc<RwLock<_>>` clone. Default = "everything".
+    filter: Arc<RwLock<SubscriptionFilter>>,
 
     /// Per-kind monotonically-increasing sequence. Allocated lazily on
     /// first send; reset on reconnect (a new `SessionRouter` is built per
@@ -67,7 +71,7 @@ pub struct SessionRouter {
 }
 
 #[derive(Debug, Clone, Default)]
-struct SubscriptionFilter {
+pub struct SubscriptionFilter {
     /// `None` ≡ "all kinds" (default at session open). `Some(set)` is the
     /// explicit narrow filter from the most recent `WtSubscribe`.
     kinds: Option<Vec<WtKind>>,
@@ -107,17 +111,23 @@ impl Default for SessionRouter {
 impl SessionRouter {
     pub fn new() -> Self {
         Self {
-            filter: SubscriptionFilter::default(),
+            filter: Arc::new(RwLock::new(SubscriptionFilter::default())),
             seq: HashMap::new(),
             reliable_stream: None,
             scratch: Vec::with_capacity(256),
         }
     }
 
+    /// Clone the filter handle so per-stream tasks can update it from
+    /// outside the broadcast fan-out loop.
+    pub fn filter_handle(&self) -> Arc<RwLock<SubscriptionFilter>> {
+        self.filter.clone()
+    }
+
     /// Replace the active filter with one parsed from a client `WtSubscribe`
     /// message. Empty `kinds` ≡ "all" (matches the default behavior).
-    pub fn apply_subscribe(&mut self, sub: WtSubscribe) {
-        self.filter = SubscriptionFilter {
+    pub fn apply_subscribe(filter: &Arc<RwLock<SubscriptionFilter>>, sub: WtSubscribe) {
+        let new = SubscriptionFilter {
             kinds: if sub.kinds.is_empty() {
                 None
             } else {
@@ -125,27 +135,38 @@ impl SessionRouter {
             },
             sub: sub.filters,
         };
-        debug!("wt: applied subscription filter {:?}", self.filter);
+        debug!("wt: applied subscription filter {:?}", new);
+        *filter.write().expect("filter poisoned") = new;
     }
 
     /// Should this kind+payload pair be forwarded to the peer?
     /// Cheap; called per frame on the hot path.
     pub fn allows_motor_feedback(&self, fb: &MotorFeedback) -> bool {
-        self.filter.allows_kind(WtKind::MotorFeedback) && self.filter.allows_motor(&fb.role)
+        let f = self.filter.read().expect("filter poisoned");
+        f.allows_kind(WtKind::MotorFeedback) && f.allows_motor(&fb.role)
     }
 
     pub fn allows_system_snapshot(&self) -> bool {
-        self.filter.allows_kind(WtKind::SystemSnapshot)
+        let f = self.filter.read().expect("filter poisoned");
+        f.allows_kind(WtKind::SystemSnapshot)
     }
 
     pub fn allows_test_progress(&self, p: &TestProgress) -> bool {
-        self.filter.allows_kind(WtKind::TestProgress)
-            && self.filter.allows_motor(&p.role)
-            && self.filter.allows_run(&p.run_id)
+        let f = self.filter.read().expect("filter poisoned");
+        f.allows_kind(WtKind::TestProgress) && f.allows_motor(&p.role) && f.allows_run(&p.run_id)
     }
 
     pub fn allows_safety_event(&self) -> bool {
-        self.filter.allows_kind(WtKind::SafetyEvent)
+        let f = self.filter.read().expect("filter poisoned");
+        f.allows_kind(WtKind::SafetyEvent)
+    }
+
+    /// `motion_status` reuses the `motor_roles` filter so a per-detail-page
+    /// subscriber can narrow to one role without inventing a new filter
+    /// dimension. Empty roles ≡ all roles.
+    pub fn allows_motion_status(&self, ms: &MotionStatus) -> bool {
+        let f = self.filter.read().expect("filter poisoned");
+        f.allows_kind(WtKind::MotionStatus) && f.allows_motor(&ms.role)
     }
 
     /// Encode `payload` in a `WtEnvelope`, allocate the next sequence
@@ -249,143 +270,311 @@ impl SessionRouter {
 /// fold it away if the count grows.
 pub async fn run_session(connection: Connection, state: SharedState) -> Result<()> {
     let mut router = SessionRouter::new();
+    let filter_handle = router.filter_handle();
     let mut feedback_rx = state.feedback_tx.subscribe();
     let mut system_rx = state.system_tx.subscribe();
     let mut tests_rx = state.test_progress_tx.subscribe();
     let mut safety_rx = state.safety_event_tx.subscribe();
+    let mut motion_rx = state.motion_status_tx.subscribe();
 
-    // Concurrent tasks: the WT session can simultaneously
-    //   (a) accept a bidi stream carrying one `WtSubscribe`, and
-    //   (b) push frames to the peer.
-    // We share `&mut router` across these via a single-tasking select loop.
-    let mut subscribe_fut = Box::pin(read_subscribe(&connection));
-
-    loop {
-        tokio::select! {
-            // (a) Subscription updates from the client.
-            res = &mut subscribe_fut => {
-                match res {
-                    Ok(Some(sub)) => {
-                        router.apply_subscribe(sub);
-                        // Re-arm: a client may renegotiate at any time by
-                        // opening a new bidi stream with a new `WtSubscribe`.
-                        subscribe_fut = Box::pin(read_subscribe(&connection));
-                    }
-                    Ok(None) => {
-                        // Peer closed the bidi stream without sending; arm
-                        // for the next attempt.
-                        subscribe_fut = Box::pin(read_subscribe(&connection));
-                    }
+    // Spawn an accept loop for inbound bidi streams. Each accepted
+    // stream becomes its own task running [`run_client_stream`]; that
+    // task owns the lifetime of any motion it spawned (so a tab close
+    // ≡ stream EOF ≡ MotionStopReason::ClientGone).
+    //
+    // Wrap the connection in `Arc` so the accept task and the broadcast
+    // fan-out below can both reach it (the latter via `&*connection`).
+    let connection = Arc::new(connection);
+    let accept_task = {
+        let connection = connection.clone();
+        let state = state.clone();
+        let filter = filter_handle.clone();
+        tokio::spawn(async move {
+            loop {
+                let stream = match connection.accept_bi().await {
+                    Ok(s) => s,
                     Err(e) => {
-                        debug!("wt: subscribe stream error (continuing with current filter): {e:#}");
-                        subscribe_fut = Box::pin(read_subscribe(&connection));
+                        debug!("wt: accept_bi loop ending: {e:#}");
+                        return;
                     }
-                }
+                };
+                let state = state.clone();
+                let filter = filter.clone();
+                tokio::spawn(async move {
+                    let (send, recv) = stream;
+                    if let Err(e) = run_client_stream(send, recv, state, filter).await {
+                        debug!("wt: client stream ended: {e:#}");
+                    }
+                });
             }
+        })
+    };
 
+    let conn_ref = connection.as_ref();
+    let res: Result<()> = loop {
+        tokio::select! {
             // (b1) Motor feedback fan-out.
             res = feedback_rx.recv() => match res {
                 Ok(fb) => {
                     if router.allows_motor_feedback(&fb) {
-                        if let Err(e) = router.send::<MotorFeedback>(&connection, WtKind::MotorFeedback, fb).await {
+                        if let Err(e) = router.send::<MotorFeedback>(conn_ref, WtKind::MotorFeedback, fb).await {
                             debug!("wt: motor_feedback send failed; closing session: {e:#}");
-                            break;
+                            break Ok(());
                         }
                     }
                 }
                 Err(RecvError::Lagged(n)) => {
                     debug!("wt: feedback receiver lagged {n}");
                 }
-                Err(RecvError::Closed) => break,
+                Err(RecvError::Closed) => break Ok(()),
             },
 
             // (b2) System snapshot fan-out.
             res = system_rx.recv() => match res {
                 Ok(snap) => {
                     if router.allows_system_snapshot() {
-                        if let Err(e) = router.send::<SystemSnapshot>(&connection, WtKind::SystemSnapshot, snap).await {
+                        if let Err(e) = router.send::<SystemSnapshot>(conn_ref, WtKind::SystemSnapshot, snap).await {
                             debug!("wt: system_snapshot send failed; closing session: {e:#}");
-                            break;
+                            break Ok(());
                         }
                     }
                 }
                 Err(RecvError::Lagged(n)) => {
                     debug!("wt: system receiver lagged {n}");
                 }
-                Err(RecvError::Closed) => break,
+                Err(RecvError::Closed) => break Ok(()),
             },
 
             // (b3) Bench-test progress fan-out (reliable).
             res = tests_rx.recv() => match res {
                 Ok(p) => {
                     if router.allows_test_progress(&p) {
-                        if let Err(e) = router.send::<TestProgress>(&connection, WtKind::TestProgress, p).await {
+                        if let Err(e) = router.send::<TestProgress>(conn_ref, WtKind::TestProgress, p).await {
                             debug!("wt: test_progress send failed; closing session: {e:#}");
-                            break;
+                            break Ok(());
                         }
                     }
                 }
                 Err(RecvError::Lagged(n)) => {
                     debug!("wt: tests receiver lagged {n}");
                 }
-                Err(RecvError::Closed) => break,
+                Err(RecvError::Closed) => break Ok(()),
             },
 
             // (b4) Safety-event fan-out (reliable).
             res = safety_rx.recv() => match res {
                 Ok(ev) => {
                     if router.allows_safety_event() {
-                        if let Err(e) = router.send::<SafetyEvent>(&connection, WtKind::SafetyEvent, ev).await {
+                        if let Err(e) = router.send::<SafetyEvent>(conn_ref, WtKind::SafetyEvent, ev).await {
                             debug!("wt: safety_event send failed; closing session: {e:#}");
-                            break;
+                            break Ok(());
                         }
                     }
                 }
                 Err(RecvError::Lagged(n)) => {
                     debug!("wt: safety receiver lagged {n}");
                 }
-                Err(RecvError::Closed) => break,
+                Err(RecvError::Closed) => break Ok(()),
             },
+
+            // (b5) Live motion-status fan-out (datagram). Filtered by
+            // motor role via the existing `motor_roles` sub-filter so a
+            // detail page can narrow to one motor without a new filter
+            // dimension.
+            res = motion_rx.recv() => match res {
+                Ok(ms) => {
+                    if router.allows_motion_status(&ms) {
+                        if let Err(e) = router.send::<MotionStatus>(conn_ref, WtKind::MotionStatus, ms).await {
+                            debug!("wt: motion_status send failed; closing session: {e:#}");
+                            break Ok(());
+                        }
+                    }
+                }
+                Err(RecvError::Lagged(n)) => {
+                    debug!("wt: motion receiver lagged {n}");
+                }
+                Err(RecvError::Closed) => break Ok(()),
+            },
+        }
+    };
+
+    accept_task.abort();
+    res
+}
+
+/// Drive one inbound bidi stream to completion.
+///
+/// Each accepted bidi stream is its own task. The task reads
+/// length-prefixed CBOR `ClientFrame`s in a loop and dispatches each
+/// one. The task tracks the (one) role it has spawned a motion for, so
+/// that an EOF without a preceding `MotionStop` can issue a clean
+/// `MotionStopReason::ClientGone` stop on the operator's behalf.
+///
+/// The send half of the bidi stream is currently unused (no per-frame
+/// ack); it stays open so future replies (e.g. "intent rejected, here's
+/// why") can be added without re-litigating the protocol.
+async fn run_client_stream(
+    _send: SendStream,
+    recv: RecvStream,
+    state: SharedState,
+    filter: Arc<RwLock<SubscriptionFilter>>,
+) -> Result<()> {
+    let mut owned_role: Option<String> = None;
+    let result = read_client_frames(recv, &state, &filter, &mut owned_role).await;
+
+    if let Some(role) = owned_role {
+        // EOF (or error) without a `MotionStop` first → treat as client
+        // gone. `stop()` is idempotent so a stop frame that *did* arrive
+        // before we noticed the stream closing isn't double-counted.
+        if state.motion.stop(&role).await {
+            debug!(role = %role, "wt: bidi stream closed; stopped owned motion");
         }
     }
 
-    Ok(())
+    result
 }
 
-/// Wait for the client to open a bidi stream and send one `WtSubscribe`
-/// (CBOR). Returns `Ok(None)` if the stream closes with no body (peer just
-/// wants the default "everything").
-async fn read_subscribe(connection: &Connection) -> Result<Option<WtSubscribe>> {
-    let (mut _send, mut recv) = connection
-        .accept_bi()
-        .await
-        .map_err(|e| anyhow::anyhow!("accept_bi failed: {e}"))?;
+/// Per-frame loop. Returns `Ok(())` on clean EOF, `Err` on framing /
+/// decode error or QUIC-level I/O failure.
+async fn read_client_frames(
+    mut recv: RecvStream,
+    state: &SharedState,
+    filter: &Arc<RwLock<SubscriptionFilter>>,
+    owned_role: &mut Option<String>,
+) -> Result<()> {
+    /// Cap on a single frame body. ClientFrames are small (largest is a
+    /// `Subscribe` carrying a few kinds + a few roles); 8 KiB matches the
+    /// previous one-shot subscribe cap.
+    const MAX_FRAME_BYTES: usize = 8 * 1024;
+    /// Cap on total bytes per stream lifetime. A jog session that runs
+    /// for 8 hours at 5 Hz × ~64 bytes/frame is ~6 MiB; budget 64 MiB so
+    /// a stuck-finger jog can run for a day without tripping the cap,
+    /// but a malicious client can't stream forever.
+    const MAX_STREAM_BYTES: usize = 64 * 1024 * 1024;
 
-    // Bound the read so a malicious client can't OOM us with a giant
-    // pseudo-subscribe. WtSubscribe is small (kinds + tiny filter struct);
-    // 8 KiB is generous.
-    const MAX_SUBSCRIBE_BYTES: usize = 8 * 1024;
-    let mut buf = Vec::with_capacity(256);
+    let mut total_read: usize = 0;
+    let mut buffered: Vec<u8> = Vec::with_capacity(256);
     let mut chunk = [0u8; 1024];
+
     loop {
         match recv.read(&mut chunk).await {
             Ok(Some(n)) if n > 0 => {
-                if buf.len() + n > MAX_SUBSCRIBE_BYTES {
+                total_read += n;
+                if total_read > MAX_STREAM_BYTES {
                     return Err(anyhow::anyhow!(
-                        "WtSubscribe payload exceeds {MAX_SUBSCRIBE_BYTES} bytes"
+                        "client stream exceeded {MAX_STREAM_BYTES} bytes"
                     ));
                 }
-                buf.extend_from_slice(&chunk[..n]);
+                buffered.extend_from_slice(&chunk[..n]);
             }
             Ok(_) => break, // None or 0 -> stream finished
-            Err(e) => return Err(anyhow::anyhow!("subscribe stream read: {e}")),
+            Err(e) => return Err(anyhow::anyhow!("client stream read: {e}")),
+        }
+
+        // Drain as many complete length-prefixed frames as the buffer
+        // currently holds.
+        while buffered.len() >= 4 {
+            let len = u32::from_be_bytes([
+                buffered[0],
+                buffered[1],
+                buffered[2],
+                buffered[3],
+            ]) as usize;
+            if len == 0 {
+                return Err(anyhow::anyhow!("zero-length client frame"));
+            }
+            if len > MAX_FRAME_BYTES {
+                return Err(anyhow::anyhow!(
+                    "client frame {len} bytes > cap {MAX_FRAME_BYTES}"
+                ));
+            }
+            let total = 4 + len;
+            if buffered.len() < total {
+                break;
+            }
+
+            let body = &buffered[4..total];
+            let frame: ClientFrame = ciborium::de::from_reader(body)
+                .map_err(|e| anyhow::anyhow!("ClientFrame cbor decode: {e}"))?;
+            dispatch_client_frame(frame, state, filter, owned_role).await;
+            buffered.drain(..total);
         }
     }
 
-    if buf.is_empty() {
-        return Ok(None);
+    // Best-effort: a stream that closes mid-frame is a protocol error,
+    // but a stream that closes cleanly with leftover bytes (less than 4
+    // header bytes) is just the operator-tab-closing case. Treat the
+    // partial-header tail as a clean EOF.
+    if !buffered.is_empty() && buffered.len() < 4 {
+        debug!("wt: client stream closed with {} stray byte(s)", buffered.len());
+    } else if !buffered.is_empty() {
+        return Err(anyhow::anyhow!(
+            "client stream closed mid-frame with {} buffered bytes",
+            buffered.len()
+        ));
     }
-    let sub: WtSubscribe = ciborium::de::from_reader(buf.as_slice())
-        .map_err(|e| anyhow::anyhow!("WtSubscribe cbor decode: {e}"))?;
-    Ok(Some(sub))
+    Ok(())
 }
+
+/// Dispatch one decoded [`ClientFrame`]. The router's filter handle is
+/// updated in place for `Subscribe`; motion frames go through
+/// `MotionRegistry`.
+async fn dispatch_client_frame(
+    frame: ClientFrame,
+    state: &SharedState,
+    filter: &Arc<RwLock<SubscriptionFilter>>,
+    owned_role: &mut Option<String>,
+) {
+    match frame {
+        ClientFrame::Subscribe(sub) => {
+            SessionRouter::apply_subscribe(filter, sub);
+        }
+        ClientFrame::MotionJog { role, vel_rad_s } => {
+            let intent = MotionIntent::Jog { vel_rad_s };
+            // Hot path: existing jog → just update intent (which also
+            // refreshes the heartbeat in the controller).
+            let already_jogging = state
+                .motion
+                .current(&role)
+                .map(|s| s.kind == "jog")
+                .unwrap_or(false);
+            if already_jogging {
+                state.motion.update_intent(&role, intent);
+                *owned_role = Some(role);
+            } else {
+                match state.motion.start(state, &role, intent).await {
+                    Ok(_run_id) => {
+                        *owned_role = Some(role);
+                    }
+                    Err(e) => {
+                        warn!(role = %role, error = e.code(), "wt: motion_jog rejected");
+                    }
+                }
+            }
+        }
+        ClientFrame::MotionHeartbeat { role } => {
+            // No-op if the role isn't actively jogging — the controller
+            // would have already exited on heartbeat lapse, and we don't
+            // want a stale heartbeat to silently re-arm something the
+            // operator stopped.
+            if !state.motion.heartbeat_jog(&role) {
+                trace!(role = %role, "wt: heartbeat for non-jog (or idle) role");
+            } else {
+                *owned_role = Some(role);
+            }
+        }
+        ClientFrame::MotionStop { role } => {
+            let stopped = state.motion.stop(&role).await;
+            if stopped {
+                debug!(role = %role, "wt: client requested motion stop");
+            }
+            // Whether we stopped or not, the operator's intent is "this
+            // stream no longer drives this role" — clear the ownership
+            // so the EOF path doesn't re-stop the *next* operator's run.
+            if owned_role.as_deref() == Some(role.as_str()) {
+                *owned_role = None;
+            }
+        }
+    }
+}
+

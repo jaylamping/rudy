@@ -1,23 +1,20 @@
 // Motion-tests card.
 //
-// Closed-loop motion patterns layered on top of the existing `jog` endpoint.
-// Each pattern runs as a 20 Hz client-side loop that:
-//   - reads live mech_pos_rad from the motor's WT-fed cache,
-//   - decides a target velocity for the next 50 ms window, and
-//   - POSTs `/api/motors/:role/jog` with vel_rad_s + ttl_ms = 200.
+// Closed-loop motion patterns are owned by the daemon (`crates/rudydae/src/motion/`).
+// This card is a pure intent + observe surface:
 //
-// Stopping is multi-layered: clicking Stop, unmounting the tab, the motor
-// going un-verified or out-of-band, or any jog error all cancel the loop
-// and issue an explicit `api.stop`. As a final backstop the daemon's TTL
-// watchdog fires `cmd_stop` ~200 ms after the last frame.
+//   1. POST /api/motors/:role/motion/{sweep,wave} once to start.
+//   2. Subscribe to the `motion_status` WebTransport stream filtered to
+//      this role to render the live "running: <kind>" badge and the last
+//      commanded velocity.
+//   3. POST /api/motors/:role/motion/stop on Stop button / unmount.
 //
-// The actuator's soft travel band remains the authoritative envelope; jog
-// itself rejects projections outside the band, so the patterns here only
-// need to be "polite" about turning around early.
+// There is no per-frame loop in here. The browser does not drive the
+// motor; the bus_worker on the Pi does. See the convention doc in
+// `crates/rudydae/src/motion/mod.rs` for the rationale.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Activity, Square, Waves } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import {
@@ -30,216 +27,231 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
+import { getBridgeWt } from "@/lib/hooks/wtBridgeHandle";
 import type { MotorSummary } from "@/lib/types/MotorSummary";
+import type { MotionStatus } from "@/lib/types/MotionStatus";
 
-// 60 Hz mirror of the daemon's new poll cadence; matches the rAF
-// frequency in modern browsers, so we stop coalescing pos updates
-// behind a 50 ms heartbeat. See the Sweep-safe CAN I/O plan for why
-// matching cadences end-to-end matters end-to-end.
-const SEND_INTERVAL_MS = 16;
-const TTL_MS = 100;
-// Mirror of `safety.max_feedback_age_ms` (default 250 ms) on the daemon.
-// Bail out client-side at the same threshold so the SPA stops sending
-// before rudydae has to refuse the next jog with `stale_telemetry`.
-//
-// The threshold accounts for the type-17 fallback cadence on idle motors
-// (~poll_interval_ms × motors_per_bus); 250 ms absorbs that worst case
-// while still failing closed within ~15 type-2 frames if a sweep stalls
-// mid-flight. Keep this in sync with `config.rs::default_max_feedback_age_ms`.
-const MAX_FEEDBACK_AGE_MS = 250;
 const RAD_TO_DEG = 180 / Math.PI;
 const DEG_TO_RAD = Math.PI / 180;
 
-// Daemon-side hard cap (see MAX_JOG_VEL_RAD_S in api/jog.rs). Mirrored
-// here so the slider can't request something that would clamp on the wire.
+// Daemon-side hard cap (see MAX_MOTION_VEL_RAD_S in api/motion.rs).
+// Mirrored here so the slider can't request something that would clamp
+// silently on the wire.
 const MAX_VEL_RAD_S = 0.5;
 
 type PatternId = "wave" | "sweep";
 
-interface PatternState {
-  id: PatternId;
-  // Wave: oscillate +/- amplitudeDeg around the position when the run started.
-  centerRad: number;
-  amplitudeRad: number;
-  // Common: slew speed and a turnaround margin so we reverse just shy
-  // of the soft target rather than slamming into the band edge.
-  speedRadS: number;
-  turnaroundRad: number;
-  // Direction is updated each tick by the closed-loop controller.
-  direction: -1 | 1;
+/**
+ * Last-seen status from the server-side controller. Carries the live
+ * commanded velocity so the UI can show "running at +0.25 rad/s" without
+ * re-deriving it from the pattern parameters.
+ */
+interface LiveStatus {
+  kind: string;
+  vel_rad_s: number;
+  mech_pos_rad: number;
+  state: "running" | "stopped";
+  reason: string | null;
 }
 
 export function MotionTestsCard({ motor }: { motor: MotorSummary }) {
-  const qc = useQueryClient();
   const [waveAmpDeg, setWaveAmpDeg] = useState<[number]>([15]);
   const [waveSpeedRad, setWaveSpeedRad] = useState<[number]>([0.3]);
   const [sweepSpeedRad, setSweepSpeedRad] = useState<[number]>([0.25]);
   const [active, setActive] = useState<PatternId | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [available, setAvailable] = useState(true);
+  const [liveStatus, setLiveStatus] = useState<LiveStatus | null>(null);
+  // Active run id; used to filter `motion_status` frames so a stale
+  // datagram from a just-stopped run can't relight the badge.
+  const runIdRef = useRef<string | null>(null);
 
-  const stateRef = useRef<PatternState | null>(null);
-  const timerRef = useRef<number | null>(null);
+  // Subscribe to the daemon's `motion_status` stream filtered to this
+  // motor's role. The bridge owns the QUIC session; we just attach a
+  // listener and a per-role filter narrowing.
+  useEffect(() => {
+    const wt = getBridgeWt();
+    if (!wt) return;
 
-  // Read the freshest position out of the WT-fed motors cache rather than
-  // capturing it in a closure, so the loop sees ~200 Hz feedback updates.
-  const livePosRad = useCallback((): number | null => {
-    const motors = qc.getQueryData<MotorSummary[]>(["motors"]);
-    const m = motors?.find((mm) => mm.role === motor.role);
-    return m?.latest?.mech_pos_rad ?? null;
-  }, [qc, motor.role]);
+    // Narrow the bridge subscription so only this role's motion_status
+    // (plus the always-on telemetry kinds) reach this tab. Restored on
+    // unmount so other tabs aren't permanently narrowed.
+    void wt.setFilter({
+      kinds: [
+        "motor_feedback",
+        "system_snapshot",
+        "safety_event",
+        "motion_status",
+      ],
+      filters: { motor_roles: [motor.role], run_ids: [] },
+    });
 
-  // Companion to `livePosRad` — returns the cached feedback `t_ms` so the
-  // tick loop can fail-closed on stalled telemetry, mirroring the daemon's
-  // `safety.max_feedback_age_ms` guard. Returns `null` when no row exists
-  // (treated as "stale" by callers).
-  const liveFeedbackAgeMs = useCallback((): number | null => {
-    const motors = qc.getQueryData<MotorSummary[]>(["motors"]);
-    const m = motors?.find((mm) => mm.role === motor.role);
-    const tMs = m?.latest?.t_ms;
-    if (tMs == null) return null;
-    return Date.now() - Number(tMs);
-  }, [qc, motor.role]);
+    const off = wt.onKind<MotionStatus>("motion_status", (env) => {
+      const ms = env.data;
+      if (ms.role !== motor.role) return;
+      // Drop frames from runs we don't own (a separate operator's run
+      // for the same motor — should be rare; the registry permits one
+      // controller per role).
+      if (runIdRef.current && ms.run_id !== runIdRef.current) return;
+      setLiveStatus({
+        kind: ms.kind,
+        vel_rad_s: ms.vel_rad_s,
+        mech_pos_rad: ms.mech_pos_rad,
+        state: ms.state,
+        reason: ms.reason,
+      });
+      if (ms.state === "stopped") {
+        // The daemon's terminal frame is the source of truth for
+        // "we're idle now." Clear the badge regardless of which exit
+        // path got us here (operator stop, heartbeat lapse, fault).
+        runIdRef.current = null;
+        setActive(null);
+        if (ms.reason && ms.reason !== "operator") {
+          setError(`Stopped: ${ms.reason}`);
+        }
+      }
+    });
+
+    return () => {
+      off();
+      void wt.setFilter({
+        kinds: [],
+        filters: { motor_roles: [], run_ids: [] },
+      });
+    };
+  }, [motor.role]);
+
+  // Reconcile against the GET snapshot on mount and on motor change so
+  // the badge is correct before the WT stream catches up (and as the
+  // recovery path if the terminal "stopped" datagram was dropped).
+  useEffect(() => {
+    let cancelled = false;
+    api.motion
+      .current(motor.role)
+      .then((snap) => {
+        if (cancelled) return;
+        if (snap == null) {
+          runIdRef.current = null;
+          setActive(null);
+        } else {
+          runIdRef.current = snap.run_id;
+          setActive(snap.kind === "wave" ? "wave" : snap.kind === "sweep" ? "sweep" : null);
+        }
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        if (e instanceof ApiError && e.status === 404) {
+          setAvailable(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [motor.role]);
 
   const stopMotion = useCallback(
-    (reason?: string) => {
-      stateRef.current = null;
-      if (timerRef.current !== null) {
-        window.clearInterval(timerRef.current);
-        timerRef.current = null;
+    async (reason?: string) => {
+      // Optimistic clear; the terminal MotionStatus datagram will
+      // confirm. If the POST itself fails we leave the badge alone so
+      // the operator notices.
+      try {
+        await api.motion.stop(motor.role);
+        runIdRef.current = null;
+        setActive(null);
+        if (reason) setError(reason);
+      } catch (e) {
+        if (e instanceof ApiError) setError(e.message);
+        else setError(String(e));
       }
-      setActive(null);
-      if (reason) setError(reason);
-      api.stop(motor.role).catch(() => {
-        // ignored — TTL watchdog stops the motor regardless.
-      });
     },
     [motor.role],
   );
 
-  useEffect(() => () => stopMotion(), [stopMotion]);
+  // Cleanup: on unmount stop whatever's running for this role. The
+  // controller's per-tick preflight + the daemon's safety paths cover
+  // the case where the POST never lands (network drop / closed tab).
+  useEffect(() => {
+    return () => {
+      if (runIdRef.current) {
+        // Fire-and-forget; the unmount path can't await.
+        void api.motion.stop(motor.role).catch(() => {});
+      }
+    };
+  }, [motor.role]);
 
   // Auto-stop if the safety preconditions disappear out from under us.
+  // The daemon also re-runs preflight every tick and will exit on its
+  // own; this is a UI courtesy so the badge clears immediately rather
+  // than waiting for the next status frame.
   useEffect(() => {
     if (active === null) return;
     if (!motor.verified) {
-      stopMotion("Motor unverified; motion stopped.");
+      void stopMotion("Motor unverified; motion stopped.");
       return;
     }
     const bs = motor.boot_state.kind;
     if (bs === "out_of_band" || bs === "auto_recovering" || bs === "unknown") {
-      stopMotion(`Boot state ${bs}; motion stopped.`);
+      void stopMotion(`Boot state ${bs}; motion stopped.`);
     }
   }, [active, motor.verified, motor.boot_state.kind, stopMotion]);
 
-  const startPattern = (id: PatternId) => {
+  const startPattern = async (id: PatternId) => {
     setError(null);
+    setLiveStatus(null);
     const limits = motor.travel_limits;
     if (!limits) {
       setError("Configure travel limits before running motion patterns.");
       return;
     }
-    const pos = livePosRad();
-    if (pos == null) {
-      setError("No live position telemetry yet.");
-      return;
-    }
 
-    let st: PatternState;
-    if (id === "wave") {
-      const amplitudeRad = waveAmpDeg[0] * DEG_TO_RAD;
-      // Clip the wave window so it can't poke past the band even if the
-      // user picked a bigger amplitude than the band allows.
-      const lo = Math.max(limits.min_rad + 0.01, pos - amplitudeRad);
-      const hi = Math.min(limits.max_rad - 0.01, pos + amplitudeRad);
-      if (hi - lo < 0.02) {
-        setError(
-          "Not enough headroom in the travel band for this wave amplitude.",
-        );
-        return;
-      }
-      const center = (lo + hi) / 2;
-      st = {
-        id,
-        centerRad: center,
-        amplitudeRad: (hi - lo) / 2,
-        speedRadS: Math.min(waveSpeedRad[0], MAX_VEL_RAD_S),
-        turnaroundRad: 0.02, // ~1.1 degrees
-        direction: 1,
-      };
-    } else {
-      // Sweep the full travel band. centerRad is unused; we drive against
-      // the configured min/max with a small margin.
-      st = {
-        id,
-        centerRad: (limits.min_rad + limits.max_rad) / 2,
-        amplitudeRad: (limits.max_rad - limits.min_rad) / 2,
-        speedRadS: Math.min(sweepSpeedRad[0], MAX_VEL_RAD_S),
-        turnaroundRad: 0.05, // ~2.9 degrees from the band edge
-        direction: pos > (limits.min_rad + limits.max_rad) / 2 ? -1 : 1,
-      };
-    }
-
-    stateRef.current = st;
-    setActive(id);
-
-    const tick = async () => {
-      const s = stateRef.current;
-      if (s == null) return;
-      const pos2 = livePosRad();
-      if (pos2 == null) {
-        stopMotion("Lost telemetry mid-run.");
-        return;
-      }
-      // Mirror of the daemon's stale-feedback guard. If the cached feedback
-      // is older than MAX_FEEDBACK_AGE_MS the next jog is going to be
-      // refused with `stale_telemetry` anyway; bail proactively so we
-      // surface "Telemetry stalled" instead of a 409 toast and stop sending
-      // dead frames into the bus.
-      const ageMs = liveFeedbackAgeMs();
-      if (ageMs == null || ageMs > MAX_FEEDBACK_AGE_MS) {
-        stopMotion("Telemetry stalled");
-        return;
-      }
-      const lim = motor.travel_limits;
-      if (!lim) {
-        stopMotion("Travel limits cleared mid-run.");
-        return;
-      }
-
-      // Pick the turnaround target for this pattern.
-      let lo: number;
-      let hi: number;
-      if (s.id === "wave") {
-        lo = s.centerRad - s.amplitudeRad;
-        hi = s.centerRad + s.amplitudeRad;
-      } else {
-        lo = lim.min_rad + s.turnaroundRad;
-        hi = lim.max_rad - s.turnaroundRad;
-      }
-
-      // Reverse direction if we've reached (or overshot) the active edge.
-      if (s.direction > 0 && pos2 >= hi) s.direction = -1;
-      else if (s.direction < 0 && pos2 <= lo) s.direction = 1;
-
-      const v = s.direction * s.speedRadS;
-      try {
-        await api.jog(motor.role, { vel_rad_s: v, ttl_ms: TTL_MS });
-      } catch (e) {
-        if (e instanceof ApiError) {
-          if (e.status === 404) {
-            setAvailable(false);
-            stopMotion();
-            return;
-          }
-          stopMotion(e.message);
-        } else {
-          stopMotion(String(e));
+    try {
+      if (id === "wave") {
+        const amplitudeRad = waveAmpDeg[0] * DEG_TO_RAD;
+        // Center the wave at the joint's current position; the daemon
+        // clips against the band on every tick if the operator narrows
+        // it mid-run.
+        const pos = motor.latest?.mech_pos_rad;
+        if (pos == null) {
+          setError("No live position telemetry yet.");
+          return;
         }
+        const lo = Math.max(limits.min_rad + 0.01, pos - amplitudeRad);
+        const hi = Math.min(limits.max_rad - 0.01, pos + amplitudeRad);
+        if (hi - lo < 0.02) {
+          setError(
+            "Not enough headroom in the travel band for this wave amplitude.",
+          );
+          return;
+        }
+        const center = (lo + hi) / 2;
+        const amp = (hi - lo) / 2;
+        const speed = Math.min(waveSpeedRad[0], MAX_VEL_RAD_S);
+        const resp = await api.motion.wave(motor.role, {
+          center_rad: center,
+          amplitude_rad: amp,
+          speed_rad_s: speed,
+        });
+        runIdRef.current = resp.run_id;
+        setActive("wave");
+      } else {
+        const speed = Math.min(sweepSpeedRad[0], MAX_VEL_RAD_S);
+        const resp = await api.motion.sweep(motor.role, {
+          speed_rad_s: speed,
+        });
+        runIdRef.current = resp.run_id;
+        setActive("sweep");
       }
-    };
-    void tick();
-    timerRef.current = window.setInterval(() => void tick(), SEND_INTERVAL_MS);
+    } catch (e) {
+      if (e instanceof ApiError) {
+        if (e.status === 404) {
+          setAvailable(false);
+          return;
+        }
+        setError(e.message);
+      } else {
+        setError(String(e));
+      }
+    }
   };
 
   const limits = motor.travel_limits;
@@ -258,11 +270,11 @@ export function MotionTestsCard({ motor }: { motor: MotorSummary }) {
       <CardHeader>
         <CardTitle className="text-base">Motion patterns</CardTitle>
         <CardDescription>
-          Closed-loop motion routines layered on the jog endpoint. The daemon's
-          travel-band check still vets every frame, and the TTL watchdog stops
-          the motor within {TTL_MS} ms if anything stops sending. Use these to
-          shake the joint out, demo the workspace, or sanity-check freshly
-          edited limits.
+          Closed-loop motion runs entirely on the daemon: the browser POSTs
+          a single intent, watches the live status stream, and POSTs once
+          more to stop. The travel band, stale-telemetry guard, and
+          per-tick preflight inside the controller bound every commanded
+          frame.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -281,9 +293,22 @@ export function MotionTestsCard({ motor }: { motor: MotorSummary }) {
                 {liveDeg == null ? "-" : `${liveDeg.toFixed(1)}°`}
               </span>
             </span>
+            {liveStatus && active && (
+              <span className="text-muted-foreground">
+                cmd:{" "}
+                <span className="font-mono text-foreground">
+                  {liveStatus.vel_rad_s >= 0 ? "+" : ""}
+                  {liveStatus.vel_rad_s.toFixed(2)} rad/s
+                </span>
+              </span>
+            )}
           </div>
           {active && (
-            <Button size="sm" variant="destructive" onClick={() => stopMotion()}>
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={() => void stopMotion()}
+            >
               <Square className="h-3.5 w-3.5" /> Stop
             </Button>
           )}
@@ -294,9 +319,11 @@ export function MotionTestsCard({ motor }: { motor: MotorSummary }) {
           title="Wave"
           subtitle="Symmetric oscillation around the joint's current position. Good for limbering up a fresh actuator without sweeping the whole band."
           running={active === "wave"}
-          disabled={!available || !safetyReady || (active !== null && active !== "wave")}
-          onStart={() => startPattern("wave")}
-          onStop={() => stopMotion()}
+          disabled={
+            !available || !safetyReady || (active !== null && active !== "wave")
+          }
+          onStart={() => void startPattern("wave")}
+          onStop={() => void stopMotion()}
           controls={
             <div className="grid grid-cols-2 gap-3">
               <SliderRow
@@ -334,9 +361,11 @@ export function MotionTestsCard({ motor }: { motor: MotorSummary }) {
               : "Configure soft travel limits above to enable this pattern."
           }
           running={active === "sweep"}
-          disabled={!available || !safetyReady || (active !== null && active !== "sweep")}
-          onStart={() => startPattern("sweep")}
-          onStop={() => stopMotion()}
+          disabled={
+            !available || !safetyReady || (active !== null && active !== "sweep")
+          }
+          onStart={() => void startPattern("sweep")}
+          onStop={() => void stopMotion()}
           controls={
             <SliderRow
               label="Speed"
@@ -354,7 +383,7 @@ export function MotionTestsCard({ motor }: { motor: MotorSummary }) {
 
         {!available && (
           <p className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-400">
-            Jog endpoint is not yet deployed on this rudydae build; motion
+            Motion endpoint is not yet deployed on this rudydae build;
             patterns are unavailable.
           </p>
         )}

@@ -5,4 +5,4 @@
  * router's per-stream sequence counter. The on-wire kind is the
  * snake_case literal from the macro; serde renames keep it stable.
  */
-export type WtKind = "motor_feedback" | "system_snapshot" | "test_progress" | "safety_event";
+export type WtKind = "motor_feedback" | "system_snapshot" | "test_progress" | "safety_event" | "motion_status";

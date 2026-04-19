@@ -26,6 +26,10 @@ import { decode as cborDecode } from "cbor-x/decode";
 import { encode as cborEncode } from "cbor-x/encode";
 import { useEffect, useRef, useState } from "react";
 import type { WtSubscribe } from "@/lib/types/WtSubscribe";
+import {
+  openClientStream as openClientStreamImpl,
+  type ClientStreamHandle,
+} from "@/lib/wt/clientStream";
 
 /**
  * Envelope schema version this client speaks. Must match the daemon's
@@ -86,6 +90,15 @@ export interface UseWebTransportResult {
    * first call because the QUIC bidi stream init has to round-trip).
    */
   setFilter: (filter: WtSubscribe) => Promise<void>;
+  /**
+   * Open a fresh bidirectional stream for client-to-server `ClientFrame`
+   * traffic (motion intents, heartbeats, etc.). Returns a handle that
+   * the caller MUST close when done.
+   *
+   * Throws if the QUIC session isn't connected yet, so callers should
+   * gate behind `status.connected` (or fall back to REST).
+   */
+  openClientStream: () => Promise<ClientStreamHandle>;
 }
 
 export interface UseWebTransportOptions {
@@ -241,22 +254,53 @@ export function useWebTransport(
       }
       await sendFilter(t, encodeRef.current, filter);
     },
+    async openClientStream() {
+      const t = transportRef.current;
+      if (!t) {
+        throw new Error("WebTransport not connected");
+      }
+      return openClientStreamImpl(t);
+    },
   };
 }
+
+export type { ClientStreamHandle } from "@/lib/wt/clientStream";
 
 async function sendFilter(
   transport: WebTransport,
   encode: (v: unknown) => Uint8Array,
   filter: WtSubscribe,
 ): Promise<void> {
+  // Wrap as a `ClientFrame::Subscribe` so the daemon's per-stream
+  // dispatcher (`wt_router::dispatch_client_frame`) recognizes it.
+  // Length-prefixed framing matches the daemon's reliable-stream framing
+  // on the server-to-client side and lets a single bidi stream carry
+  // multiple frames if the consumer wants to multiplex (the dead-man
+  // jog uses this; setFilter is still effectively one-shot).
+  const body = encode({ kind: "subscribe", ...filter });
   const stream = await transport.createBidirectionalStream();
   const writer = stream.writable.getWriter();
   try {
-    await writer.write(encode(filter));
+    await writer.write(prefixWithLength(body));
     await writer.close();
   } finally {
     writer.releaseLock();
   }
+}
+
+/**
+ * Prepend a `u32 BE` length to a CBOR body. Mirrors the daemon-side
+ * framer in `wt_router::SessionRouter::write_reliable`.
+ */
+export function prefixWithLength(body: Uint8Array): Uint8Array {
+  const out = new Uint8Array(4 + body.byteLength);
+  const len = body.byteLength;
+  out[0] = (len >>> 24) & 0xff;
+  out[1] = (len >>> 16) & 0xff;
+  out[2] = (len >>> 8) & 0xff;
+  out[3] = len & 0xff;
+  out.set(body, 4);
+  return out;
 }
 
 function defaultEncode(value: unknown): Uint8Array {

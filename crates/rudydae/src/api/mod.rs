@@ -17,6 +17,7 @@ mod home;
 mod home_all;
 mod inventory_route;
 mod jog;
+mod motion;
 mod motors;
 mod params;
 mod reminders_route;
@@ -43,6 +44,11 @@ pub fn router(state: SharedState) -> Router<SharedState> {
             get(travel::get_travel_limits).put(travel::put_travel_limits),
         )
         .route("/motors/:role/jog", post(jog::jog))
+        .route("/motors/:role/motion", get(motion::get_motion))
+        .route("/motors/:role/motion/sweep", post(motion::start_sweep))
+        .route("/motors/:role/motion/wave", post(motion::start_wave))
+        .route("/motors/:role/motion/jog", post(motion::start_or_update_jog))
+        .route("/motors/:role/motion/stop", post(motion::stop))
         .route("/motors/:role/home", post(home::home))
         .route("/motors/:role/rename", post(rename::rename))
         .route("/motors/:role/assign", post(rename::assign))

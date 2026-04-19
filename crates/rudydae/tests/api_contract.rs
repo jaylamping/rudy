@@ -1510,6 +1510,220 @@ async fn rename_invalid_role_format_is_rejected() {
     assert_eq!(err.error, "invalid_role");
 }
 
+/// `GET /api/motors/:role/motion` returns 204 when no motion is running.
+/// The SPA's `api.motion.current` distinguishes 204 from 200 + JSON;
+/// any change here breaks the actuator detail page on mount.
+#[tokio::test]
+async fn get_motion_returns_204_when_idle() {
+    let (state, _dir) = common::make_state();
+    let app = rudydae::build_app(state);
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/motors/shoulder_actuator_a/motion")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+}
+
+/// `POST /api/motors/:role/motion/sweep` without travel limits accepts
+/// the request (the start preflight runs against vel=0 so the
+/// path-violation check doesn't trip there) but the spawned controller
+/// exits on its first tick. Pin both halves so we don't accidentally
+/// flip to a "reject up front" model that would make the SPA's
+/// "configure travel limits first" hint go unused.
+#[tokio::test]
+async fn motion_sweep_without_travel_limits_self_terminates() {
+    let (state, _dir) = common::make_state();
+    common::force_homed(&state);
+    common::seed_feedback(&state);
+    let mut status_rx = state.motion_status_tx.subscribe();
+    let app = rudydae::build_app(state);
+
+    let body = serde_json::to_vec(&json!({"speed_rad_s": 0.1})).unwrap();
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/motors/shoulder_actuator_a/motion/sweep")
+                .header("content-type", "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let payload: serde_json::Value = body_json(resp).await;
+    let run_id = payload["run_id"].as_str().unwrap().to_string();
+
+    // The controller exits within one tick with TravelLimitViolation.
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(2);
+    let mut saw_violation = false;
+    while !saw_violation {
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        if remaining.is_zero() {
+            panic!("sweep without limits never produced a stopped frame");
+        }
+        let frame = match tokio::time::timeout(remaining, status_rx.recv()).await {
+            Ok(Ok(f)) => f,
+            Ok(Err(e)) => panic!("status channel closed: {e}"),
+            Err(_) => panic!("timed out waiting for stopped frame"),
+        };
+        if frame.run_id != run_id {
+            continue;
+        }
+        if matches!(
+            frame.state,
+            rudydae::motion::intent::MotionState::Stopped
+        ) {
+            assert_eq!(frame.reason.as_deref(), Some("travel_limit_violation"));
+            saw_violation = true;
+        }
+    }
+}
+
+/// `POST /api/motors/:role/motion/sweep` happy path: starts a sweep and
+/// returns `{ run_id, clamped_speed_rad_s }`. Issues an immediate
+/// `motion/stop` to keep the test fixture quiet.
+#[tokio::test]
+async fn motion_sweep_starts_and_returns_run_id() {
+    let (state, _dir) = common::make_state();
+    common::force_homed(&state);
+    common::seed_feedback(&state);
+    {
+        let mut inv = state.inventory.write().expect("inventory");
+        let m = inv
+            .motors
+            .iter_mut()
+            .find(|m| m.role == "shoulder_actuator_a")
+            .unwrap();
+        m.travel_limits = Some(TravelLimits {
+            min_rad: -0.5,
+            max_rad: 0.5,
+            updated_at: None,
+        });
+    }
+    let app = rudydae::build_app(state);
+
+    let body = serde_json::to_vec(&json!({"speed_rad_s": 0.1})).unwrap();
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/motors/shoulder_actuator_a/motion/sweep")
+                .header("content-type", "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let payload: serde_json::Value = body_json(resp).await;
+    let run_id = payload["run_id"].as_str().expect("run_id string");
+    assert!(!run_id.is_empty());
+    let clamped = payload["clamped_speed_rad_s"]
+        .as_f64()
+        .expect("clamped_speed_rad_s number");
+    assert!((clamped - 0.1).abs() < 1e-6);
+
+    // Cleanup: stop returns `{ stopped: bool }`.
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/motors/shoulder_actuator_a/motion/stop")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let payload: serde_json::Value = body_json(resp).await;
+    assert_eq!(payload["stopped"], json!(true));
+}
+
+/// `POST /api/motors/:role/motion/stop` is idempotent and returns
+/// `{ stopped: false }` when nothing was running.
+#[tokio::test]
+async fn motion_stop_when_idle_returns_false() {
+    let (state, _dir) = common::make_state();
+    let app = rudydae::build_app(state);
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/motors/shoulder_actuator_a/motion/stop")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let payload: serde_json::Value = body_json(resp).await;
+    assert_eq!(payload["stopped"], json!(false));
+}
+
+/// `POST /api/motors/:role/motion/sweep` clamps a speed beyond
+/// `MAX_MOTION_VEL_RAD_S` (0.5) silently. The SPA mirrors this constant,
+/// so a regression here surfaces as the slider top end no longer
+/// matching the actual cap.
+#[tokio::test]
+async fn motion_sweep_clamps_excessive_speed() {
+    let (state, _dir) = common::make_state();
+    common::force_homed(&state);
+    common::seed_feedback(&state);
+    {
+        let mut inv = state.inventory.write().expect("inventory");
+        let m = inv
+            .motors
+            .iter_mut()
+            .find(|m| m.role == "shoulder_actuator_a")
+            .unwrap();
+        m.travel_limits = Some(TravelLimits {
+            min_rad: -0.5,
+            max_rad: 0.5,
+            updated_at: None,
+        });
+    }
+    let app = rudydae::build_app(state);
+
+    let body = serde_json::to_vec(&json!({"speed_rad_s": 5.0})).unwrap();
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/motors/shoulder_actuator_a/motion/sweep")
+                .header("content-type", "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let payload: serde_json::Value = body_json(resp).await;
+    let clamped = payload["clamped_speed_rad_s"].as_f64().unwrap();
+    assert!(
+        clamped <= 0.5 + 1e-6,
+        "expected clamped speed <= 0.5, got {clamped}"
+    );
+
+    let _ = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/motors/shoulder_actuator_a/motion/stop")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+}
+
 /// Sanity check: the URL paths the test hits above are exactly the ones the
 /// SPA's `link/src/lib/api.ts` constructs. If someone renames a route in
 /// `crates/rudydae/src/api/mod.rs`, this test file fails to compile because
@@ -1536,6 +1750,11 @@ fn endpoint_inventory_documented() {
         "GET    /api/motors/:role/travel_limits",
         "PUT    /api/motors/:role/travel_limits",
         "POST   /api/motors/:role/jog",
+        "GET    /api/motors/:role/motion",
+        "POST   /api/motors/:role/motion/sweep",
+        "POST   /api/motors/:role/motion/wave",
+        "POST   /api/motors/:role/motion/jog",
+        "POST   /api/motors/:role/motion/stop",
         "POST   /api/motors/:role/home",
         "POST   /api/motors/:role/rename",
         "POST   /api/motors/:role/assign",
