@@ -73,6 +73,56 @@ if ! ip link show can0 >/dev/null 2>&1; then
   exit 1
 fi
 
+# Pin each CAN interface's hard IRQ to the same CPU rudydae will pin
+# its per-bus worker thread to. The kernel runs the SocketCAN softirq
+# on whichever CPU received the hard IRQ, so co-locating IRQ + worker
+# eliminates an inter-core hop on every received frame and keeps the
+# RX path resident in the worker core's L1/L2.
+#
+# Mapping rule mirrors `crates/rudydae/src/can/bus_worker.rs::auto_assign_cpu`:
+# the first iface (sorted) goes on core 1, the second on core 2, etc.,
+# leaving core 0 for the kernel + tokio runtime + axum / WebTransport.
+#
+# Idempotent — safe to re-run on every bootstrap.
+pin_can_irqs() {
+  local cpu_count
+  cpu_count=$(nproc)
+  if [[ "${cpu_count}" -lt 2 ]]; then
+    echo "Skipping CAN IRQ pinning: ${cpu_count} CPU(s) available."
+    return 0
+  fi
+
+  local idx=0
+  for iface in $(ip -o link show type can | awk -F': ' '{print $2}' | sort); do
+    # Skip if iface didn't make it up.
+    if ! ip link show "${iface}" >/dev/null 2>&1; then
+      continue
+    fi
+    # /proc/interrupts rows look like:
+    #   23:    1234567   ...   spi0.0   <iface>
+    # Pull the leading IRQ number for the row whose final column is
+    # this iface. Using `awk` rather than grep so multi-word iface
+    # names can never confuse the match.
+    local irq
+    irq=$(awk -v want="${iface}" '$NF == want { sub(":", "", $1); print $1; exit }' /proc/interrupts)
+    if [[ -z "${irq}" ]]; then
+      echo "WARN: no /proc/interrupts row for ${iface}; skipping IRQ pin."
+      continue
+    fi
+    local cpu=$(( 1 + (idx % (cpu_count - 1)) ))
+    if [[ -w "/proc/irq/${irq}/smp_affinity_list" ]]; then
+      echo "${cpu}" > "/proc/irq/${irq}/smp_affinity_list" || \
+        echo "WARN: failed to pin IRQ ${irq} (${iface}) to CPU ${cpu}."
+      echo "Pinned ${iface} (IRQ ${irq}) to CPU ${cpu}."
+    else
+      echo "WARN: /proc/irq/${irq}/smp_affinity_list not writable; skipping ${iface}."
+    fi
+    idx=$((idx + 1))
+  done
+}
+
+pin_can_irqs
+
 install -m 0755 "${SCRIPT_DIR}/rudy-update.sh" /usr/local/bin/rudy-update.sh
 install -m 0644 "${SCRIPT_DIR}/rudy-update.service" /etc/systemd/system/rudy-update.service
 install -m 0644 "${SCRIPT_DIR}/rudy-update.timer" /etc/systemd/system/rudy-update.timer

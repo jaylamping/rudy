@@ -1157,6 +1157,119 @@ async fn jog_step_too_large_when_not_homed_is_forbidden() {
     assert_eq!(err.error, "step_too_large");
 }
 
+/// Sweep-safe CAN I/O (fail-closed): when `state.latest[role]` is missing
+/// or older than `safety.max_feedback_age_ms`, jog must refuse with
+/// `409 stale_telemetry` rather than silently bypassing the band check.
+///
+/// This is the primary regression test for the "Sweep travel limits"
+/// safety hole where bus contention froze `state.latest` and every
+/// subsequent jog approved every projected position forever.
+#[tokio::test]
+async fn jog_refuses_on_stale_feedback() {
+    let (state, _dir) = common::make_state();
+    let _ = state
+        .inventory
+        .write()
+        .expect("inventory")
+        .motors
+        .iter_mut()
+        .find(|m| m.role == "shoulder_actuator_a")
+        .map(|m| {
+            m.travel_limits = Some(TravelLimits {
+                min_rad: -1.0,
+                max_rad: 1.0,
+                updated_at: None,
+            });
+        });
+    common::set_boot_state(&state, "shoulder_actuator_a", BootState::Homed);
+
+    // Seed a deliberately stale row: 500 ms old > the 100 ms default.
+    {
+        let mut latest = state.latest.write().expect("latest");
+        let now_ms = chrono::Utc::now().timestamp_millis();
+        latest.insert(
+            "shoulder_actuator_a".into(),
+            MotorFeedback {
+                t_ms: now_ms - 500,
+                role: "shoulder_actuator_a".into(),
+                can_id: 0x08,
+                mech_pos_rad: 0.0,
+                mech_vel_rad_s: 0.0,
+                torque_nm: 0.0,
+                vbus_v: 48.0,
+                temp_c: 30.0,
+                fault_sta: 0,
+                warn_sta: 0,
+            },
+        );
+    }
+    let app = rudydae::build_app(state);
+
+    let body = serde_json::to_vec(&json!({"vel_rad_s": 0.1, "ttl_ms": 200})).unwrap();
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/motors/shoulder_actuator_a/jog")
+                .header("content-type", "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CONFLICT);
+    let err: ApiError = body_json(resp).await;
+    assert_eq!(err.error, "stale_telemetry");
+    assert!(
+        err.detail
+            .as_deref()
+            .map(|d| d.contains("ms old"))
+            .unwrap_or(false),
+        "stale_telemetry detail should include the age, got {:?}",
+        err.detail,
+    );
+}
+
+/// Companion to `jog_refuses_on_stale_feedback`: when `state.latest`
+/// has no row at all for the role, the same 409 fires.
+#[tokio::test]
+async fn jog_refuses_with_no_feedback() {
+    let (state, _dir) = common::make_state();
+    let _ = state
+        .inventory
+        .write()
+        .expect("inventory")
+        .motors
+        .iter_mut()
+        .find(|m| m.role == "shoulder_actuator_a")
+        .map(|m| {
+            m.travel_limits = Some(TravelLimits {
+                min_rad: -1.0,
+                max_rad: 1.0,
+                updated_at: None,
+            });
+        });
+    common::set_boot_state(&state, "shoulder_actuator_a", BootState::Homed);
+    // Note: deliberately do NOT call seed_feedback.
+    let app = rudydae::build_app(state);
+
+    let body = serde_json::to_vec(&json!({"vel_rad_s": 0.1, "ttl_ms": 200})).unwrap();
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/motors/shoulder_actuator_a/jog")
+                .header("content-type", "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CONFLICT);
+    let err: ApiError = body_json(resp).await;
+    assert_eq!(err.error, "stale_telemetry");
+}
+
 /// set_zero resets BootState to Unknown so the operator must re-home before
 /// enable will work.
 #[tokio::test]

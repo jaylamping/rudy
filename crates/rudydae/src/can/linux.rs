@@ -1,39 +1,63 @@
 //! Linux SocketCAN core - real hardware path.
+//!
+//! Each `[[can.buses]]` entry runs on a dedicated I/O thread (see
+//! [`crate::can::bus_worker`]). `LinuxCanCore` is the synchronous facade
+//! that the rest of the daemon talks to: every public method here builds
+//! a [`bus_worker::Cmd`], submits it to the appropriate per-bus channel,
+//! and (where a reply is expected) blocks on a oneshot.
+//!
+//! The previous implementation used a per-iface `Mutex<CanBus>` that
+//! every operation had to take in turn. That serialised
+//! `set_velocity_setpoint` against `read_param` against the periodic
+//! `drain_motor_feedback`, which under sweep cadence (~20 Hz of
+//! velocity setpoints + 4 type-17 round-trips per motor per tick) used
+//! the whole bus budget on lock contention. The dedicated-thread design
+//! also lets the worker stream every received type-2 frame straight
+//! into `state.latest`, so the safety check in `api/jog.rs` always sees
+//! native-cadence feedback even while a slow `read_param` is in
+//! flight.
 
 #![cfg(target_os = "linux")]
 
 use std::collections::BTreeMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex, OnceLock, Weak};
 use std::time::Duration;
 
 use anyhow::{anyhow, bail, Context, Result};
 use chrono::Utc;
-use driver::rs03::feedback::MotorFeedback as DriverFeedback;
-use driver::rs03::session;
 use driver::CanBus;
 
-use crate::boot_state::{self, BootState, ClassifyOutcome};
-use crate::can::auto_recovery;
 use crate::can::backoff::MotorBackoff;
+use crate::can::bus_worker::{self, BusHandle, WriteValue};
 use crate::config::Config;
 use crate::inventory::{Inventory, Motor};
 use crate::spec::ParamDescriptor;
-use crate::state::SharedState;
+use crate::state::{AppState, SharedState};
 use crate::types::{MotorFeedback, ParamSnapshot, ParamValue};
 
 const DEFAULT_HOST_ID: u8 = 0xFD;
-const READ_TIMEOUT: Duration = Duration::from_millis(5);
 const PARAM_TIMEOUT: Duration = Duration::from_millis(30);
-const FEEDBACK_DRAIN_TIMEOUT: Duration = Duration::from_millis(2);
 
+/// Two-phase lifecycle:
+///
+/// 1. [`LinuxCanCore::open`] opens every bus and parks the [`CanBus`]
+///    sockets inside `pending_buses`. No worker threads are spawned yet
+///    — at this point `AppState` doesn't exist, so we can't hand the
+///    workers a `Weak<AppState>` for the type-2 fan-out.
+/// 2. [`LinuxCanCore::start_workers`] is called from `can::spawn` once
+///    `AppState` is built. It moves each `CanBus` out of `pending_buses`
+///    into a freshly-spawned worker thread and stashes the resulting
+///    [`BusHandle`] in `handles`.
+///
+/// Calls into `enable` / `set_velocity_setpoint` / etc. between the two
+/// phases would fail with `BusNotReady`; in practice they never happen
+/// because every public caller is downstream of `AppState`.
 pub struct LinuxCanCore {
-    inner: Mutex<LinuxCanInner>,
+    pending_buses: Mutex<BTreeMap<String, CanBus>>,
+    handles: OnceLock<BTreeMap<String, BusHandle>>,
+    cfg: Config,
     host_id: u8,
     backoff: MotorBackoff,
-}
-
-struct LinuxCanInner {
-    buses: BTreeMap<String, CanBus>,
 }
 
 impl LinuxCanCore {
@@ -46,8 +70,6 @@ impl LinuxCanCore {
         for bus_cfg in &cfg.can.buses {
             let bus = CanBus::open(&bus_cfg.iface)
                 .with_context(|| format!("opening SocketCAN iface {}", bus_cfg.iface))?;
-            bus.set_read_timeout(READ_TIMEOUT)
-                .with_context(|| format!("setting read timeout on {}", bus_cfg.iface))?;
             buses.insert(bus_cfg.iface.clone(), bus);
         }
 
@@ -62,10 +84,58 @@ impl LinuxCanCore {
         }
 
         Ok(Self {
-            inner: Mutex::new(LinuxCanInner { buses }),
+            pending_buses: Mutex::new(buses),
+            handles: OnceLock::new(),
+            cfg: cfg.clone(),
             host_id: DEFAULT_HOST_ID,
             backoff: MotorBackoff::new(),
         })
+    }
+
+    /// Phase 2: spawn one worker per bus. Idempotent — re-calling is a
+    /// no-op (the `OnceLock` guards against double-spawn). Auto-assigns
+    /// CPU affinity (cores 1..N round-robin, leaving core 0 to the
+    /// kernel + tokio) for any bus that omitted `cpu_pin` in its
+    /// `[[can.buses]]` entry.
+    pub fn start_workers(&self, state: &SharedState) -> Result<()> {
+        if self.handles.get().is_some() {
+            return Ok(());
+        }
+        let mut taken = self.pending_buses.lock().expect("pending_buses poisoned");
+        // Move all buses out, leaving the map empty so a second call is
+        // a clean no-op (it'll find handles already populated above).
+        let mut drained: BTreeMap<String, CanBus> = std::mem::take(&mut *taken);
+        drop(taken);
+
+        let weak: Weak<AppState> = Arc::downgrade(state);
+        let cpu_count = available_cpus();
+        let mut handles = BTreeMap::new();
+        for (idx, bus_cfg) in self.cfg.can.buses.iter().enumerate() {
+            let bus = drained.remove(&bus_cfg.iface).ok_or_else(|| {
+                anyhow!(
+                    "internal: bus {} disappeared between open and start_workers",
+                    bus_cfg.iface
+                )
+            })?;
+            let cpu_pin = bus_cfg
+                .cpu_pin
+                .or_else(|| bus_worker::auto_assign_cpu(idx, cpu_count));
+            let handle = bus_worker::spawn(bus_cfg.iface.clone(), bus, weak.clone(), cpu_pin)
+                .with_context(|| format!("spawning worker for {}", bus_cfg.iface))?;
+            handles.insert(bus_cfg.iface.clone(), handle);
+        }
+        self.handles
+            .set(handles)
+            .map_err(|_| anyhow!("start_workers raced against itself"))?;
+        Ok(())
+    }
+
+    fn handle_for(&self, iface: &str) -> Result<&BusHandle> {
+        self.handles
+            .get()
+            .ok_or_else(|| anyhow!("bus workers not started yet"))?
+            .get(iface)
+            .ok_or_else(|| anyhow!("SocketCAN iface {iface} not configured"))
     }
 
     pub fn write_param(
@@ -75,115 +145,93 @@ impl LinuxCanCore {
         value: &serde_json::Value,
         save_after: bool,
     ) -> Result<serde_json::Value> {
-        self.with_bus(&motor.can_bus, |bus| {
-            let normalized: serde_json::Value = match desc.ty.as_str() {
-                "float" | "f32" | "f64" => {
-                    let v = value
-                        .as_f64()
-                        .ok_or_else(|| anyhow!("expected numeric JSON value for {}", desc.ty))?
-                        as f32;
-                    session::write_param_f32(bus, self.host_id, motor.can_id, desc.index, v)?;
-                    serde_json::json!(v)
-                }
-                "uint8" | "u8" => {
-                    let v = value
-                        .as_u64()
-                        .ok_or_else(|| anyhow!("expected unsigned integer JSON value"))?;
-                    let v = u8::try_from(v).context("u8 parameter out of range")?;
-                    session::write_param_u8(bus, self.host_id, motor.can_id, desc.index, v)?;
-                    serde_json::json!(v)
-                }
-                "uint16" | "u16" => {
-                    let v = value
-                        .as_u64()
-                        .ok_or_else(|| anyhow!("expected unsigned integer JSON value"))?;
-                    let v = u16::try_from(v).context("u16 parameter out of range")?;
-                    session::write_param_u32(
-                        bus,
-                        self.host_id,
-                        motor.can_id,
-                        desc.index,
-                        v as u32,
-                    )?;
-                    serde_json::json!(v)
-                }
-                "uint32" | "u32" => {
-                    let v = value
-                        .as_u64()
-                        .ok_or_else(|| anyhow!("expected unsigned integer JSON value"))?;
-                    let v = u32::try_from(v).context("u32 parameter out of range")?;
-                    session::write_param_u32(bus, self.host_id, motor.can_id, desc.index, v)?;
-                    serde_json::json!(v)
-                }
-                other => bail!("writes for parameter type {other} are not supported"),
-            };
-
-            if save_after {
-                session::cmd_save_params(bus, self.host_id, motor.can_id)?;
+        let handle = self.handle_for(&motor.can_bus)?;
+        let normalized: serde_json::Value = match desc.ty.as_str() {
+            "float" | "f32" | "f64" => {
+                let v = value
+                    .as_f64()
+                    .ok_or_else(|| anyhow!("expected numeric JSON value for {}", desc.ty))?
+                    as f32;
+                handle.write_param(self.host_id, motor.can_id, desc.index, WriteValue::F32(v))?;
+                serde_json::json!(v)
             }
+            "uint8" | "u8" => {
+                let v = value
+                    .as_u64()
+                    .ok_or_else(|| anyhow!("expected unsigned integer JSON value"))?;
+                let v = u8::try_from(v).context("u8 parameter out of range")?;
+                handle.write_param(self.host_id, motor.can_id, desc.index, WriteValue::U8(v))?;
+                serde_json::json!(v)
+            }
+            "uint16" | "u16" => {
+                let v = value
+                    .as_u64()
+                    .ok_or_else(|| anyhow!("expected unsigned integer JSON value"))?;
+                let v = u16::try_from(v).context("u16 parameter out of range")?;
+                handle.write_param(
+                    self.host_id,
+                    motor.can_id,
+                    desc.index,
+                    WriteValue::U32(v as u32),
+                )?;
+                serde_json::json!(v)
+            }
+            "uint32" | "u32" => {
+                let v = value
+                    .as_u64()
+                    .ok_or_else(|| anyhow!("expected unsigned integer JSON value"))?;
+                let v = u32::try_from(v).context("u32 parameter out of range")?;
+                handle.write_param(self.host_id, motor.can_id, desc.index, WriteValue::U32(v))?;
+                serde_json::json!(v)
+            }
+            other => bail!("writes for parameter type {other} are not supported"),
+        };
 
-            Ok(normalized)
-        })
+        if save_after {
+            handle.save_params(self.host_id, motor.can_id)?;
+        }
+
+        Ok(normalized)
     }
 
     pub fn enable(&self, motor: &Motor) -> Result<()> {
-        self.with_bus(&motor.can_bus, |bus| {
-            session::cmd_enable(bus, self.host_id, motor.can_id)?;
-            Ok(())
-        })
+        let handle = self.handle_for(&motor.can_bus)?;
+        handle.enable(self.host_id, motor.can_id)?;
+        Ok(())
     }
 
     pub fn stop(&self, motor: &Motor) -> Result<()> {
-        self.with_bus(&motor.can_bus, |bus| {
-            session::cmd_stop(bus, self.host_id, motor.can_id, false)?;
-            Ok(())
-        })
+        let handle = self.handle_for(&motor.can_bus)?;
+        handle.stop(self.host_id, motor.can_id)?;
+        Ok(())
     }
 
     pub fn save_to_flash(&self, motor: &Motor) -> Result<()> {
-        self.with_bus(&motor.can_bus, |bus| {
-            session::cmd_save_params(bus, self.host_id, motor.can_id)?;
-            Ok(())
-        })
+        let handle = self.handle_for(&motor.can_bus)?;
+        handle.save_params(self.host_id, motor.can_id)?;
+        Ok(())
     }
 
     pub fn set_zero(&self, motor: &Motor) -> Result<()> {
-        self.with_bus(&motor.can_bus, |bus| {
-            session::cmd_set_zero(bus, self.host_id, motor.can_id)?;
-            Ok(())
-        })
+        let handle = self.handle_for(&motor.can_bus)?;
+        handle.set_zero(self.host_id, motor.can_id)?;
+        Ok(())
     }
 
-    /// Velocity-mode setpoint. Idempotent, so the jog endpoint can call it
-    /// at 20 Hz without re-entering enable / run-mode for each frame: the
-    /// setup writes only run on the first call, subsequent calls just
-    /// re-issue `spd_ref`.
+    /// Velocity-mode setpoint. The worker thread implements smart
+    /// re-arm: on the first frame after `state.enabled` does NOT
+    /// contain the role, the worker writes `RUN_MODE = 2` + sends
+    /// `cmd_enable` + writes `SPD_REF`. On every subsequent frame
+    /// (`state.enabled` already contains the role), it writes only
+    /// `SPD_REF`. Cuts steady-state jog traffic from 60 to 20 frames/s.
     ///
-    /// Velocity is *clamped* to the firmware-level `limit_spd` envelope
-    /// before forwarding so a misbehaving caller can't bypass the firmware
-    /// guard via the REST layer.
+    /// Velocity is *clamped* to the firmware-level `limit_spd`
+    /// envelope before forwarding so a misbehaving caller can't bypass
+    /// the firmware guard via the REST layer.
     pub fn set_velocity_setpoint(&self, motor: &Motor, vel_rad_s: f32) -> Result<()> {
-        self.with_bus(&motor.can_bus, |bus| {
-            // Best-effort: re-arm the motor on every call. cmd_enable is
-            // idempotent and write_param_u8 / _f32 are tiny — at 20 Hz this
-            // adds ~1 ms of bus time per frame.
-            driver::rs03::session::write_param_u8(
-                bus,
-                self.host_id,
-                motor.can_id,
-                driver::rs03::params::RUN_MODE,
-                2,
-            )?;
-            driver::rs03::session::cmd_enable(bus, self.host_id, motor.can_id)?;
-            driver::rs03::session::write_param_f32(
-                bus,
-                self.host_id,
-                motor.can_id,
-                driver::rs03::params::SPD_REF,
-                vel_rad_s,
-            )?;
-            Ok(())
-        })
+        let handle = self.handle_for(&motor.can_bus)?;
+        handle.set_velocity(self.host_id, motor.can_id, &motor.role, vel_rad_s)?;
+        Ok(())
     }
 
     /// RAM-write low torque AND speed limits for every present motor.
@@ -250,8 +298,6 @@ impl LinuxCanCore {
     /// always returns `Ok(())` to its caller — there's nothing left at
     /// the call site that can usefully fail-the-batch on.
     pub fn refresh_all_params(&self, state: &SharedState) -> Result<()> {
-        // Snapshot the inventory so we don't hold the RwLock across the
-        // (potentially blocking) per-motor SocketCAN reads.
         let motors: Vec<Motor> = state
             .inventory
             .read()
@@ -282,9 +328,13 @@ impl LinuxCanCore {
         Ok(())
     }
 
-    /// Poll live feedback for every present motor.
+    /// Slow-cadence type-17 sweep for the observables that don't ride
+    /// the type-2 stream (`fault_sta`, `vbus`).
     ///
-    /// Same isolation guarantees as [`Self::refresh_all_params`].
+    /// `pos`, `vel`, `torque` and `temp` are now updated by
+    /// [`crate::can::bus_worker`] every time a type-2 frame arrives, so
+    /// this function no longer reads them. Per-motor failures stay
+    /// isolated via [`MotorBackoff`].
     pub fn poll_once(&self, state: &SharedState) -> Result<()> {
         let motors: Vec<Motor> = state
             .inventory
@@ -299,22 +349,10 @@ impl LinuxCanCore {
             if !self.backoff.should_poll(&motor.role) {
                 continue;
             }
-            match self.read_live_feedback(state, motor) {
-                Ok(latest) => {
+            match self.read_aux_observables(state, motor) {
+                Ok((vbus, fault_sta)) => {
                     self.backoff.record_success(&motor.role);
-                    state
-                        .latest
-                        .write()
-                        .expect("latest poisoned")
-                        .insert(motor.role.clone(), latest.clone());
-                    if let ClassifyOutcome::Changed { new, .. } =
-                        boot_state::classify(state, &motor.role, latest.mech_pos_rad)
-                    {
-                        if let BootState::OutOfBand { mech_pos_rad, .. } = new {
-                            auto_recovery::maybe_spawn_recovery(state, &motor.role, mech_pos_rad);
-                        }
-                    }
-                    let _ = state.feedback_tx.send(latest);
+                    self.merge_aux_into_latest(state, motor, vbus, fault_sta);
                 }
                 Err(e) => {
                     self.backoff.record_failure(&motor.role, &e);
@@ -346,21 +384,34 @@ impl LinuxCanCore {
         })
     }
 
-    fn read_live_feedback(&self, state: &SharedState, motor: &Motor) -> Result<MotorFeedback> {
-        let mech_pos = self
-            .read_named_f32(state, motor, "mech_pos")?
-            .unwrap_or_default();
-        let mech_vel = self
-            .read_named_f32(state, motor, "mech_vel")?
-            .unwrap_or_default();
-        let vbus = self
-            .read_named_f32(state, motor, "vbus")?
-            .unwrap_or_default();
-        let fault_sta = self
-            .read_named_u32(state, motor, "fault_sta")?
-            .unwrap_or_default();
-        let feedback = self.read_type2_feedback(motor)?;
+    /// Type-17 read of the auxiliary observables that don't ride
+    /// type-2. Returns `(vbus, fault_sta)`. Either may be `None` if
+    /// the motor returned a read-fail.
+    fn read_aux_observables(
+        &self,
+        state: &SharedState,
+        motor: &Motor,
+    ) -> Result<(Option<f32>, Option<u32>)> {
+        let vbus = self.read_named_f32(state, motor, "vbus")?;
+        let fault_sta = self.read_named_u32(state, motor, "fault_sta")?;
+        Ok((vbus, fault_sta))
+    }
 
+    /// Splice freshly-polled vbus / fault_sta into the existing
+    /// `state.latest[role]` row (which the bus_worker keeps refreshing
+    /// from type-2 frames). When no row exists yet (e.g. the motor is
+    /// silent), seed a partial row so the API at least sees the vbus
+    /// reading.
+    fn merge_aux_into_latest(
+        &self,
+        state: &SharedState,
+        motor: &Motor,
+        vbus: Option<f32>,
+        fault_sta: Option<u32>,
+    ) {
+        // Mirror into the params snapshot too so /api/motors/:role/params
+        // reflects the most recent vbus / fault_sta even between full
+        // refresh sweeps.
         {
             let mut params = state.params.write().expect("params poisoned");
             let snapshot = params
@@ -371,10 +422,14 @@ impl LinuxCanCore {
                 });
             for (name, desc) in state.spec.observables.iter() {
                 let value = match name.as_str() {
-                    "mech_pos" => serde_json::json!(mech_pos),
-                    "mech_vel" => serde_json::json!(mech_vel),
-                    "vbus" => serde_json::json!(vbus),
-                    "fault_sta" => serde_json::json!(fault_sta),
+                    "vbus" => match vbus {
+                        Some(v) => serde_json::json!(v),
+                        None => continue,
+                    },
+                    "fault_sta" => match fault_sta {
+                        Some(v) => serde_json::json!(v),
+                        None => continue,
+                    },
                     _ => continue,
                 };
                 snapshot.values.insert(
@@ -391,29 +446,42 @@ impl LinuxCanCore {
             }
         }
 
-        let (torque_nm, temp_c, fb_pos, fb_vel) = feedback
-            .map(|fb| {
-                (
-                    fb.torque_nm,
-                    fb.temp_c,
-                    Some(fb.pos_rad),
-                    Some(fb.vel_rad_s),
-                )
-            })
-            .unwrap_or((0.0, 0.0, None, None));
-
-        Ok(MotorFeedback {
-            t_ms: Utc::now().timestamp_millis(),
-            role: motor.role.clone(),
-            can_id: motor.can_id,
-            mech_pos_rad: fb_pos.unwrap_or(mech_pos),
-            mech_vel_rad_s: fb_vel.unwrap_or(mech_vel),
-            torque_nm,
-            vbus_v: vbus,
-            temp_c,
-            fault_sta,
-            warn_sta: 0,
-        })
+        let mut latest = state.latest.write().expect("latest poisoned");
+        let now_ms = Utc::now().timestamp_millis();
+        match latest.get_mut(&motor.role) {
+            Some(row) => {
+                if let Some(v) = vbus {
+                    row.vbus_v = v;
+                }
+                if let Some(f) = fault_sta {
+                    row.fault_sta = f;
+                }
+                // Don't backdate `t_ms` here: the bus_worker stamps
+                // `t_ms` from the most recent type-2 frame, which is
+                // the canonical "freshness" of the row used by the
+                // jog stale-feedback guard.
+            }
+            None => {
+                // No type-2 yet — seed a partial row so the API has
+                // something to render. mech_pos / vel / torque stay 0
+                // until the first type-2 lands.
+                latest.insert(
+                    motor.role.clone(),
+                    MotorFeedback {
+                        t_ms: now_ms,
+                        role: motor.role.clone(),
+                        can_id: motor.can_id,
+                        mech_pos_rad: 0.0,
+                        mech_vel_rad_s: 0.0,
+                        torque_nm: 0.0,
+                        vbus_v: vbus.unwrap_or_default(),
+                        temp_c: 0.0,
+                        fault_sta: fault_sta.unwrap_or_default(),
+                        warn_sta: 0,
+                    },
+                );
+            }
+        }
     }
 
     fn read_named_f32(
@@ -427,10 +495,9 @@ impl LinuxCanCore {
             .observables
             .get(name)
             .ok_or_else(|| anyhow!("observable {name} not found in actuator spec"))?;
-        self.with_bus(&motor.can_bus, |bus| {
-            session::read_param_f32(bus, self.host_id, motor.can_id, desc.index, PARAM_TIMEOUT)
-                .map_err(Into::into)
-        })
+        let handle = self.handle_for(&motor.can_bus)?;
+        let bytes = handle.read_param(self.host_id, motor.can_id, desc.index, PARAM_TIMEOUT)?;
+        Ok(bytes.map(f32::from_le_bytes))
     }
 
     fn read_named_u32(
@@ -444,17 +511,9 @@ impl LinuxCanCore {
             .observables
             .get(name)
             .ok_or_else(|| anyhow!("observable {name} not found in actuator spec"))?;
-        self.with_bus(&motor.can_bus, |bus| {
-            session::read_param_u32(bus, self.host_id, motor.can_id, desc.index, PARAM_TIMEOUT)
-                .map_err(Into::into)
-        })
-    }
-
-    fn read_type2_feedback(&self, motor: &Motor) -> Result<Option<DriverFeedback>> {
-        self.with_bus(&motor.can_bus, |bus| {
-            session::drain_motor_feedback(bus, self.host_id, motor.can_id, FEEDBACK_DRAIN_TIMEOUT)
-                .map_err(Into::into)
-        })
+        let handle = self.handle_for(&motor.can_bus)?;
+        let bytes = handle.read_param(self.host_id, motor.can_id, desc.index, PARAM_TIMEOUT)?;
+        Ok(bytes.map(u32::from_le_bytes))
     }
 
     fn read_param_value(
@@ -471,72 +530,55 @@ impl LinuxCanCore {
                 .unwrap_or(serde_json::Value::Null));
         }
 
-        self.with_bus(&motor.can_bus, |bus| match desc.ty.as_str() {
-            "float" | "f32" | "f64" => Ok(session::read_param_f32(
-                bus,
-                self.host_id,
-                motor.can_id,
-                desc.index,
-                PARAM_TIMEOUT,
-            )?
-            .map(|v| serde_json::json!(v))
-            .unwrap_or(serde_json::Value::Null)),
-            "uint8" | "u8" => Ok(session::read_param_u8(
-                bus,
-                self.host_id,
-                motor.can_id,
-                desc.index,
-                PARAM_TIMEOUT,
-            )?
-            .map(|v| serde_json::json!(v))
-            .unwrap_or(serde_json::Value::Null)),
-            "uint16" | "u16" => Ok(session::read_param_u32(
-                bus,
-                self.host_id,
-                motor.can_id,
-                desc.index,
-                PARAM_TIMEOUT,
-            )?
-            .map(|v| serde_json::json!(v as u16))
-            .unwrap_or(serde_json::Value::Null)),
-            "uint32" | "u32" => Ok(session::read_param_u32(
-                bus,
-                self.host_id,
-                motor.can_id,
-                desc.index,
-                PARAM_TIMEOUT,
-            )?
-            .map(|v| serde_json::json!(v))
-            .unwrap_or(serde_json::Value::Null)),
+        let handle = self.handle_for(&motor.can_bus)?;
+        match desc.ty.as_str() {
+            "float" | "f32" | "f64" => Ok(handle
+                .read_param(self.host_id, motor.can_id, desc.index, PARAM_TIMEOUT)?
+                .map(f32::from_le_bytes)
+                .map(|v| serde_json::json!(v))
+                .unwrap_or(serde_json::Value::Null)),
+            "uint8" | "u8" => Ok(handle
+                .read_param(self.host_id, motor.can_id, desc.index, PARAM_TIMEOUT)?
+                .map(|b| b[0])
+                .map(|v| serde_json::json!(v))
+                .unwrap_or(serde_json::Value::Null)),
+            "uint16" | "u16" => Ok(handle
+                .read_param(self.host_id, motor.can_id, desc.index, PARAM_TIMEOUT)?
+                .map(u32::from_le_bytes)
+                .map(|v| serde_json::json!(v as u16))
+                .unwrap_or(serde_json::Value::Null)),
+            "uint32" | "u32" => Ok(handle
+                .read_param(self.host_id, motor.can_id, desc.index, PARAM_TIMEOUT)?
+                .map(u32::from_le_bytes)
+                .map(|v| serde_json::json!(v))
+                .unwrap_or(serde_json::Value::Null)),
             _ => Ok(serde_json::Value::Null),
-        })
+        }
     }
 
-    fn with_bus<T>(&self, iface: &str, f: impl FnOnce(&CanBus) -> Result<T>) -> Result<T> {
-        let inner = self.inner.lock().expect("linux can mutex poisoned");
-        let bus = inner
-            .buses
-            .get(iface)
-            .ok_or_else(|| anyhow!("SocketCAN iface {iface} not configured"))?;
-        f(bus)
-    }
-
-    /// Like [`with_bus`] but for callers that already use `std::io::Result`
-    /// (e.g. the `driver::rs03::tests` library). The bench routines own the
-    /// bus for their entire duration, which is exactly what the per-iface
-    /// mutex inside `LinuxCanInner` already enforces.
+    /// Borrow the raw [`CanBus`] for the duration of `f`, exclusively.
+    /// Used by the bench-routine handler in `api/tests.rs`, which needs
+    /// to drive the `driver::rs03::tests::run_*` helpers directly
+    /// against `&CanBus` for seconds at a time. While `f` runs, the
+    /// per-bus worker thread will block on its next `recv` lock attempt
+    /// — type-2 streaming pauses for the duration. That matches the
+    /// pre-refactor semantic of the per-iface mutex; benches are not
+    /// run during operator-driven motion, so the safety surface is
+    /// unchanged.
     pub fn with_bus_for_test<T>(
         &self,
         iface: &str,
         f: impl FnOnce(&CanBus) -> std::io::Result<T>,
     ) -> std::io::Result<T> {
-        let inner = self.inner.lock().expect("linux can mutex poisoned");
-        let bus = inner.buses.get(iface).ok_or_else(|| {
-            std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                format!("SocketCAN iface {iface} not configured"),
-            )
-        })?;
-        f(bus)
+        let handle = self
+            .handle_for(iface)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::NotFound, format!("{e:#}")))?;
+        handle.with_exclusive_bus(f)
     }
+}
+
+fn available_cpus() -> usize {
+    std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1)
 }

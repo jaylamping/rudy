@@ -75,6 +75,42 @@ sudo bash ~/rudy/deploy/pi5/bootstrap.sh
 
 After it finishes, `journalctl -u rudy-update -f` will show the Pi pull the latest GitHub Release and start `rudyd`. Open `https://rudy-pi/` from any device on the same tailnet.
 
+## CAN I/O CPU pinning (Pi 5)
+
+`bootstrap.sh` pins each CAN interface's **hard IRQ** to a non-zero CPU
+core (one per iface, in the alphabetical order returned by
+`ip -o link show type can`, leaving core 0 for the kernel + tokio +
+axum / WebTransport). `rudydae` then pins each per-bus worker thread to
+the same core via the per-bus `cpu_pin` field in `[[can.buses]]` (or
+the same auto-assignment rule, when `cpu_pin` is omitted).
+
+The benefit: the kernel runs the SocketCAN softirq on whichever CPU
+received the hard IRQ. Pinning the IRQ to the worker's core keeps the
+kernel-side packet path and the user-space `recv()` loop resident in
+the same L1/L2 cache, eliminating an inter-core hop on every received
+frame. This is the highest-impact bus-determinism knob short of moving
+to `SCHED_FIFO` (deferred — see `crates/rudydae/src/can/bus_worker.rs`).
+
+**Verify after bootstrap (or reboot):**
+
+```bash
+# Find the IRQ for the iface you care about.
+grep can1 /proc/interrupts          # → e.g. 87:  1234567 ... spi0.0  can1
+# Confirm it's pinned to the expected CPU (core 1 for the first bus).
+cat /proc/irq/87/smp_affinity_list  # → 1
+
+# Confirm the rudydae worker is also on that core. The `Cpus_allowed_list`
+# row of /proc/<pid>/status reflects current affinity.
+pidof rudydae | xargs -I{} grep -H Cpus_allowed_list /proc/{}/task/*/status \
+  | grep rudy-can-can1
+```
+
+If the IRQ pin row shows `0-3` (i.e. unpinned), `bootstrap.sh` either
+couldn't find the IRQ row in `/proc/interrupts` (uncommon, only happens
+if the iface name moved between bootstrap and the IRQ scan) or the
+filesystem isn't writable from the script's UID. Re-running `sudo bash
+deploy/pi5/bootstrap.sh` is the easiest fix.
+
 ## Day-to-day
 
 ```bash

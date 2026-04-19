@@ -30,6 +30,9 @@ pub mod motion;
 pub mod travel;
 
 #[cfg(target_os = "linux")]
+pub mod bus_worker;
+
+#[cfg(target_os = "linux")]
 pub mod linux;
 
 #[cfg(target_os = "linux")]
@@ -104,6 +107,15 @@ pub fn spawn(state: SharedState) -> Result<()> {
     if state.cfg.can.mock {
         info!("rudydae: starting mock CAN core");
         return mock::spawn(state);
+    }
+
+    // Real CAN: start the dedicated per-bus worker threads. They own
+    // their `CanBus` exclusively, stream type-2 frames into
+    // `state.latest`, and service `Cmd::*` requests from the API
+    // handlers.
+    #[cfg(target_os = "linux")]
+    if let Some(core) = state.real_can.clone() {
+        core.start_workers(&state)?;
     }
 
     info!("rudydae: real SocketCAN core initialized");

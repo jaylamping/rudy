@@ -240,10 +240,14 @@ async fn run_real(
         };
         let stop = AtomicBool::new(false);
 
-        // Dispatch via the LinuxCanCore's existing per-bus mutex so the
-        // bench routine doesn't race the telemetry poller for the same
-        // socket. This pattern matches `LinuxCanCore::with_bus`; we route
-        // through a private helper that exposes the bus to the closure.
+        // Dispatch via `LinuxCanCore::with_bus_for_test`, which locks
+        // the underlying `Arc<Mutex<CanBus>>` shared between the
+        // dedicated per-bus worker (`crates/rudydae/src/can/bus_worker.rs`)
+        // and this exclusive-access path. The lock pauses type-2
+        // streaming for the duration of the bench routine — that's the
+        // same trade-off the previous per-iface `Mutex<CanBus>` enforced.
+        // Bench routines are not run during operator-driven motion, so
+        // the safety surface is unchanged.
         let core = state_for_closure
             .real_can
             .clone()

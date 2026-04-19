@@ -157,10 +157,45 @@ pub async fn jog(
         ));
     }
 
-    // Use the latest cached position to bound the next setpoint. The check
-    // is conservative: if we have no recent feedback we let the firmware
-    // envelope handle it.
-    if let Some(fb) = state.latest.read().expect("latest poisoned").get(&role) {
+    // Fail-closed on stale telemetry. If the per-role feedback row is
+    // missing or older than `safety.max_feedback_age_ms`, refuse the jog
+    // so a frozen `state.latest` (bus contention, backoff hold-off, lost
+    // motor) can't silently green-light motion past the soft band.
+    //
+    // The previous policy was "no recent feedback => skip the band check
+    // and let the firmware envelope handle it"; that's the sweep-safe
+    // hole the new policy closes (see Sweep-safe CAN I/O plan).
+    let max_age_ms = state.cfg.safety.max_feedback_age_ms as i64;
+    let now_ms = Utc::now().timestamp_millis();
+    let fb_snapshot = state
+        .latest
+        .read()
+        .expect("latest poisoned")
+        .get(&role)
+        .cloned();
+    let fb = match fb_snapshot {
+        Some(fb) if now_ms.saturating_sub(fb.t_ms) <= max_age_ms => fb,
+        Some(fb) => {
+            return Err(err(
+                StatusCode::CONFLICT,
+                "stale_telemetry",
+                Some(format!(
+                    "feedback for {role} is {} ms old (> {} ms); refusing motion",
+                    now_ms.saturating_sub(fb.t_ms),
+                    max_age_ms,
+                )),
+            ));
+        }
+        None => {
+            return Err(err(
+                StatusCode::CONFLICT,
+                "stale_telemetry",
+                Some(format!("no fresh feedback for {role}; refusing motion")),
+            ));
+        }
+    };
+
+    {
         // Project where the motor would be after `ttl_ms` at `clamped` and
         // refuse if that lands outside the band. Path-aware: also rejects
         // any jog that would sweep across the band boundary.

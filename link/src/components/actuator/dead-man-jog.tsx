@@ -24,8 +24,12 @@ import {
 import { Slider } from "@/components/ui/slider";
 import type { MotorSummary } from "@/lib/types/MotorSummary";
 
-const SEND_INTERVAL_MS = 50; // 20 Hz
-const TTL_MS = 200; // > 2 send intervals
+// 60 Hz to match the daemon's new tick cadence, so a held jog button
+// streams setpoints at the same rate the bus_worker drains type-2
+// feedback. See the Sweep-safe CAN I/O plan + motion-tests-card.tsx
+// for the matching cadence rationale.
+const SEND_INTERVAL_MS = 16;
+const TTL_MS = 100; // > 2 send intervals
 
 export function DeadManJog({ motor }: { motor: MotorSummary }) {
   const [vel, setVel] = useState<[number]>([0.5]); // rad/s

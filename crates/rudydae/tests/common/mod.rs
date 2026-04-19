@@ -112,6 +112,7 @@ pub fn make_state() -> (SharedState, tempfile::TempDir) {
             target_tolerance_rad: 0.005,
             homer_timeout_ms: 5_000,
             auto_recovery_enabled: true,
+            max_feedback_age_ms: 100,
         },
     };
 
@@ -186,15 +187,21 @@ pub fn seed_params(state: &SharedState) {
 
 /// Seed one synthetic feedback row for every motor so /motors/:role/feedback
 /// returns 200 without spinning up the mock CAN ticker.
+///
+/// `t_ms` is "now" so jog's stale-feedback guard
+/// (`safety.max_feedback_age_ms`, default 100 ms) treats the row as live.
+/// Tests that need to exercise the stale path should overwrite the row
+/// after this call with an old `t_ms`.
 pub fn seed_feedback(state: &SharedState) {
     use rudydae::types::MotorFeedback;
+    let now_ms = chrono::Utc::now().timestamp_millis();
     let mut latest = state.latest.write().expect("latest");
     let inv = state.inventory.read().expect("inventory poisoned");
     for motor in &inv.motors {
         latest.insert(
             motor.role.clone(),
             MotorFeedback {
-                t_ms: 1_700_000_000_000,
+                t_ms: now_ms,
                 role: motor.role.clone(),
                 can_id: motor.can_id,
                 mech_pos_rad: 0.1,

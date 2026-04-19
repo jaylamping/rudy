@@ -291,6 +291,7 @@ mod path_check_tests {
                 target_tolerance_rad: 0.005,
                 homer_timeout_ms: 5_000,
                 auto_recovery_enabled: true,
+                max_feedback_age_ms: 100,
             },
         };
         let spec = ActuatorSpec::load(&spec_path).unwrap();
@@ -379,6 +380,7 @@ mod path_check_tests {
                 target_tolerance_rad: 0.005,
                 homer_timeout_ms: 5_000,
                 auto_recovery_enabled: true,
+                max_feedback_age_ms: 100,
             },
         };
         let spec = ActuatorSpec::load(&spec_path).unwrap();

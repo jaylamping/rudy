@@ -32,8 +32,17 @@ import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
 import type { MotorSummary } from "@/lib/types/MotorSummary";
 
-const SEND_INTERVAL_MS = 50; // 20 Hz, mirrors dead-man-jog
-const TTL_MS = 200;
+// 60 Hz mirror of the daemon's new poll cadence; matches the rAF
+// frequency in modern browsers, so we stop coalescing pos updates
+// behind a 50 ms heartbeat. See the Sweep-safe CAN I/O plan for why
+// matching cadences end-to-end matters: the per-tick stale-telemetry
+// guard below uses the same 100 ms budget the daemon does.
+const SEND_INTERVAL_MS = 16;
+const TTL_MS = 100;
+// Mirror of `safety.max_feedback_age_ms` (default 100 ms) on the daemon.
+// Bail out client-side at the same threshold so the SPA stops sending
+// before rudydae has to refuse the next jog with `stale_telemetry`.
+const MAX_FEEDBACK_AGE_MS = 100;
 const RAD_TO_DEG = 180 / Math.PI;
 const DEG_TO_RAD = Math.PI / 180;
 
@@ -74,6 +83,18 @@ export function MotionTestsCard({ motor }: { motor: MotorSummary }) {
     const motors = qc.getQueryData<MotorSummary[]>(["motors"]);
     const m = motors?.find((mm) => mm.role === motor.role);
     return m?.latest?.mech_pos_rad ?? null;
+  }, [qc, motor.role]);
+
+  // Companion to `livePosRad` — returns the cached feedback `t_ms` so the
+  // tick loop can fail-closed on stalled telemetry, mirroring the daemon's
+  // `safety.max_feedback_age_ms` guard. Returns `null` when no row exists
+  // (treated as "stale" by callers).
+  const liveFeedbackAgeMs = useCallback((): number | null => {
+    const motors = qc.getQueryData<MotorSummary[]>(["motors"]);
+    const m = motors?.find((mm) => mm.role === motor.role);
+    const tMs = m?.latest?.t_ms;
+    if (tMs == null) return null;
+    return Date.now() - Number(tMs);
   }, [qc, motor.role]);
 
   const stopMotion = useCallback(
@@ -164,6 +185,16 @@ export function MotionTestsCard({ motor }: { motor: MotorSummary }) {
       const pos2 = livePosRad();
       if (pos2 == null) {
         stopMotion("Lost telemetry mid-run.");
+        return;
+      }
+      // Mirror of the daemon's stale-feedback guard. If the cached feedback
+      // is older than MAX_FEEDBACK_AGE_MS the next jog is going to be
+      // refused with `stale_telemetry` anyway; bail proactively so we
+      // surface "Telemetry stalled" instead of a 409 toast and stop sending
+      // dead frames into the bus.
+      const ageMs = liveFeedbackAgeMs();
+      if (ageMs == null || ageMs > MAX_FEEDBACK_AGE_MS) {
+        stopMotion("Telemetry stalled");
         return;
       }
       const lim = motor.travel_limits;

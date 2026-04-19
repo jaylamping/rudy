@@ -33,10 +33,10 @@ use tracing::{debug, info, warn};
 
 /// First retry delay after a failure. Starts here, doubles each subsequent
 /// failure, capped at [`MAX_BACKOFF`]. Picked to match the typical poll
-/// cadence (`telemetry.poll_interval_ms` defaults to 100 ms) so the very
-/// first retry happens on the next tick — only persistent failures back
-/// off.
-const INITIAL_BACKOFF: Duration = Duration::from_millis(100);
+/// cadence (`telemetry.poll_interval_ms` defaults to 16 ms ≈ 60 Hz) so
+/// the very first retry happens on the next tick — only persistent
+/// failures back off.
+const INITIAL_BACKOFF: Duration = Duration::from_millis(16);
 
 /// Cap on the per-motor retry interval. Once a motor has been failing for
 /// long enough to hit this, we keep retrying every 30 s so a motor that
@@ -184,13 +184,15 @@ mod tests {
 
         b.record_failure_at("a", &err("1"), t0);
         b.record_failure_at("a", &err("2"), t0);
-        // After the 2nd failure, backoff is 200 ms (2 * INITIAL_BACKOFF).
-        assert!(b.should_poll_at("a", t0 + Duration::from_millis(200)));
-        assert!(!b.should_poll_at("a", t0 + Duration::from_millis(199)));
+        // After the 2nd failure, backoff is 2 * INITIAL_BACKOFF.
+        let after_2 = INITIAL_BACKOFF * 2;
+        assert!(b.should_poll_at("a", t0 + after_2));
+        assert!(!b.should_poll_at("a", t0 + after_2 - Duration::from_millis(1)));
 
         b.record_failure_at("a", &err("3"), t0);
-        assert!(b.should_poll_at("a", t0 + Duration::from_millis(400)));
-        assert!(!b.should_poll_at("a", t0 + Duration::from_millis(399)));
+        let after_3 = INITIAL_BACKOFF * 4;
+        assert!(b.should_poll_at("a", t0 + after_3));
+        assert!(!b.should_poll_at("a", t0 + after_3 - Duration::from_millis(1)));
     }
 
     #[test]

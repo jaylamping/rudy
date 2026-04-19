@@ -71,6 +71,12 @@ tempfile = "3"
 # Kept as a relative path; see ADR-0004 §D8 for why it stays in ros/src/.
 driver = { path = "../../ros/src/driver" }
 
+# Pin per-bus worker threads to a CPU on Linux (Pi 5: one core per limb,
+# leaving core 0 to the kernel + tokio runtime). Cross-platform with a
+# silent no-op on dev hosts. See `crates/rudydae/src/can/bus_worker.rs`.
+[target.'cfg(target_os = "linux")'.dependencies]
+core_affinity = "0.8"
+
 [build-dependencies]
 walkdir = "2"
 

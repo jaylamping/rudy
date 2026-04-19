@@ -52,9 +52,17 @@ audit_log = "./.rudyd/audit.jsonl"
 mock = true
 
 [telemetry]
-# Type-17 poll period for observables (0x70xx shadow). At 100 ms per motor
-# with 2 motors we're well inside the 1 Mbps CAN budget.
-poll_interval_ms = 100
+# Slow-cadence type-17 sweep for the auxiliary observables that don't
+# ride the type-2 stream (`fault_sta`, `vbus`). The dedicated bus
+# worker (`crates/rudydae/src/can/bus_worker.rs`) streams pos / vel /
+# torque / temp into `state.latest` at native bus cadence (~60 Hz on
+# the RS03), so this interval is now just for the housekeeping reads,
+# NOT the live position feedback that the jog safety check reads from.
+#
+# Bumped from 100 ms (10 Hz) to 16 ms (~60 Hz) to match the SPA's new
+# 60 Hz tick; this also matches `MotorBackoff::INITIAL_BACKOFF` so the
+# very first retry after a per-motor failure happens on the next tick.
+poll_interval_ms = 16
 
 [safety]
 # `rudydae` refuses to enable a motor whose inventory entry lacks
