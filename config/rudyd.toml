@@ -69,3 +69,16 @@ poll_interval_ms = 16
 # `verified: true`. The Rust driver enforces the same gate; this is belt +
 # suspenders. Override only for benchtop commissioning of a fresh motor.
 require_verified = true
+
+# Maximum tolerated age of cached telemetry, in ms, on the jog path.
+# Pinned here (not just defaulted) because the right value is bus-shaped:
+# the type-17 fallback round-robins across motors at roughly
+# `telemetry.poll_interval_ms × motors_per_bus + slack` per role, so an
+# idle motor's `state.latest` row only refreshes every ~100 ms even
+# under healthy conditions. 250 ms absorbs that worst-case fallback
+# gap (still ~15 missed type-2 frames at 60 Hz, so a real mid-sweep
+# stall still fails closed within ~4 SPA tick budgets).
+#
+# The SPA mirror in `link/src/components/actuator/motion-tests-card.tsx`
+# reads the same value; bump both together if you change this.
+max_feedback_age_ms = 250

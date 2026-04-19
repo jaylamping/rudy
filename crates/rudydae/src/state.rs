@@ -39,6 +39,20 @@ pub struct AppState {
     /// In-memory per-motor latest feedback (role -> feedback).
     pub latest: RwLock<BTreeMap<String, MotorFeedback>>,
 
+    /// Per-role timestamp (ms since unix epoch) of the most recent
+    /// type-2 (`MotorFeedback`) frame we received from the bus. Distinct
+    /// from `latest[role].t_ms`, which tracks *any* refresh — including
+    /// the slow type-17 fallback that keeps `latest` warm while a motor
+    /// is idle and not emitting type-2 traffic.
+    ///
+    /// Internal-only (not on the wire); used by the jog stale-telemetry
+    /// refusal so its log message can distinguish "type-2 stream
+    /// stuttered mid-sweep" (real bus problem) from "motor was idle, the
+    /// type-17 round-robin just took an extra tick" (benign edge case
+    /// the threshold is sized for). Without this, every false-positive
+    /// refusal looks identical to a real one in the logs.
+    pub last_type2_at: RwLock<HashMap<String, i64>>,
+
     /// In-memory per-motor parameter snapshot (role -> snapshot). Written to
     /// whenever the telemetry loop decodes a type-17 read or a write succeeds.
     pub params: RwLock<BTreeMap<String, ParamSnapshot>>,
@@ -126,6 +140,7 @@ impl AppState {
             audit,
             real_can,
             latest: RwLock::new(BTreeMap::new()),
+            last_type2_at: RwLock::new(HashMap::new()),
             params: RwLock::new(BTreeMap::new()),
             feedback_tx,
             system_tx,

@@ -35,14 +35,18 @@ import type { MotorSummary } from "@/lib/types/MotorSummary";
 // 60 Hz mirror of the daemon's new poll cadence; matches the rAF
 // frequency in modern browsers, so we stop coalescing pos updates
 // behind a 50 ms heartbeat. See the Sweep-safe CAN I/O plan for why
-// matching cadences end-to-end matters: the per-tick stale-telemetry
-// guard below uses the same 100 ms budget the daemon does.
+// matching cadences end-to-end matters end-to-end.
 const SEND_INTERVAL_MS = 16;
 const TTL_MS = 100;
-// Mirror of `safety.max_feedback_age_ms` (default 100 ms) on the daemon.
+// Mirror of `safety.max_feedback_age_ms` (default 250 ms) on the daemon.
 // Bail out client-side at the same threshold so the SPA stops sending
 // before rudydae has to refuse the next jog with `stale_telemetry`.
-const MAX_FEEDBACK_AGE_MS = 100;
+//
+// The threshold accounts for the type-17 fallback cadence on idle motors
+// (~poll_interval_ms × motors_per_bus); 250 ms absorbs that worst case
+// while still failing closed within ~15 type-2 frames if a sweep stalls
+// mid-flight. Keep this in sync with `config.rs::default_max_feedback_age_ms`.
+const MAX_FEEDBACK_AGE_MS = 250;
 const RAD_TO_DEG = 180 / Math.PI;
 const DEG_TO_RAD = Math.PI / 180;
 

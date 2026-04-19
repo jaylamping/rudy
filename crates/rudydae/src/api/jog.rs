@@ -176,18 +176,34 @@ pub async fn jog(
     let fb = match fb_snapshot {
         Some(fb) if now_ms.saturating_sub(fb.t_ms) <= max_age_ms => fb,
         Some(fb) => {
-            // Structured warn so a sweep that stutters leaves a clean
-            // breadcrumb trail in the daemon log: the refusal cadence,
-            // exact age, and the last successful t_ms together pinpoint
-            // whether telemetry froze, drifted, or never started flowing
-            // for this specific motor.
+            // Two ages tell two different stories: `age_ms` is how stale
+            // the merged row is (whatever last touched it — type-2 or
+            // type-17 fallback), while `type2_age_ms` is how long it's
+            // been since the bus actually delivered a type-2 frame for
+            // this role. If `type2_age_ms` is huge but `age_ms` is small,
+            // the motor is idle and the slow type-17 sweep is keeping
+            // the row alive — bumping the threshold further would help.
+            // If both are similar and small-but-just-over, the type-2
+            // stream genuinely stuttered and the bus needs investigation.
             let age_ms = now_ms.saturating_sub(fb.t_ms);
+            let last_type2_ms = state
+                .last_type2_at
+                .read()
+                .expect("last_type2_at poisoned")
+                .get(&role)
+                .copied();
+            let type2_age_str = match last_type2_ms {
+                Some(t) => format!("{}", now_ms.saturating_sub(t)),
+                None => "never".to_string(),
+            };
             tracing::warn!(
                 role = %role,
                 can_id = fb.can_id,
                 age_ms = age_ms,
                 max_age_ms = max_age_ms,
                 last_t_ms = fb.t_ms,
+                last_type2_ms = ?last_type2_ms,
+                type2_age = %type2_age_str,
                 now_ms = now_ms,
                 "jog refused: stale telemetry"
             );
@@ -195,7 +211,7 @@ pub async fn jog(
                 StatusCode::CONFLICT,
                 "stale_telemetry",
                 Some(format!(
-                    "feedback for {role} is {age_ms} ms old (> {max_age_ms} ms); refusing motion",
+                    "feedback for {role} is {age_ms} ms old (> {max_age_ms} ms); last type-2 frame {type2_age_str} ms ago; refusing motion",
                 )),
             ));
         }

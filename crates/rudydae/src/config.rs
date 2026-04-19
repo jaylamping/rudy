@@ -169,9 +169,17 @@ pub struct SafetyConfig {
     /// or backoff freezes `state.latest`, the position-projection check
     /// would otherwise approve every subsequent jog forever.
     ///
-    /// Default 100 ms; the SPA mirror in `motion-tests-card.tsx` uses the
-    /// same threshold so the client stops sending before the server
-    /// refuses.
+    /// Default 250 ms. The original 100 ms target matched the type-2
+    /// hot-path cadence (~16 ms at 60 Hz), but on a real bus with N
+    /// idle motors the type-17 fallback round-robin sits at roughly
+    /// `poll_interval_ms × N + slack` per role — easily 100-200 ms when
+    /// the motor isn't actively emitting type-2 frames. 250 ms absorbs
+    /// that worst-case fallback gap (still ~15 missed 60 Hz frames) so
+    /// the very first jog out of idle isn't a guaranteed false positive,
+    /// while staying tight enough that a true mid-sweep type-2 stall
+    /// fails closed within ~4 SPA tick budgets. The SPA mirror in
+    /// `motion-tests-card.tsx` uses the same threshold so the client
+    /// stops sending before the server refuses.
     #[serde(default = "default_max_feedback_age_ms")]
     pub max_feedback_age_ms: u64,
 }
@@ -213,7 +221,7 @@ fn default_homer_timeout_ms() -> u32 {
 }
 
 fn default_max_feedback_age_ms() -> u64 {
-    100
+    250
 }
 
 impl Config {

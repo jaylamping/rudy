@@ -570,6 +570,18 @@ fn apply_type2(state: &Weak<crate::state::AppState>, src_motor: u8, fb: DriverFe
         .expect("latest poisoned")
         .insert(role.clone(), latest.clone());
 
+    // Stamp `last_type2_at[role]` so the jog stale-telemetry refusal can
+    // distinguish "type-2 stream stuttered" from "type-17 fallback is
+    // doing the heavy lifting on an idle motor". This is intentionally
+    // separate from `latest[role].t_ms`, which the type-17 sweep also
+    // refreshes — without the split, both failure modes would look
+    // identical in the refusal log.
+    state
+        .last_type2_at
+        .write()
+        .expect("last_type2_at poisoned")
+        .insert(role.clone(), now_ms);
+
     // High-cadence breadcrumb so we can confirm 60 Hz per role and catch
     // any motor whose type-2 stream falls behind the safety budget. At
     // ~16 ms cadence this fires too often for `info!` — gate on `trace!`
