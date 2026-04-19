@@ -145,7 +145,7 @@ pub enum MotionStopReason {
     /// `safety.max_feedback_age_ms` exceeded mid-run.
     StaleTelemetry,
     /// `boot_state` transitioned away from `Homed`/`InBand` (motor faulted
-    /// or auto-recovery kicked in).
+    /// or boot state changed mid-run).
     BootStateLost,
     /// A different motion request superseded this one for the same role.
     Superseded,

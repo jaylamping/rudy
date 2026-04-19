@@ -99,9 +99,6 @@ async fn drive_predefined_home(
                 mech_pos_rad,
             ));
         }
-        BootState::AutoRecovering { .. } => {
-            return Err(("auto_recovery_in_progress".into(), f32::NAN));
-        }
         BootState::OffsetChanged { .. } => return Err(("offset_changed".into(), f32::NAN)),
         BootState::AutoHoming { .. } => return Err(("auto_homing_in_progress".into(), f32::NAN)),
         BootState::HomeFailed { .. } => return Err(("home_failed".into(), f32::NAN)),
@@ -220,10 +217,6 @@ pub async fn home_all(
                 }
                 BootState::OutOfBand { .. } => {
                     offenders.push((m.role.clone(), "out_of_band"));
-                    false
-                }
-                BootState::AutoRecovering { .. } => {
-                    offenders.push((m.role.clone(), "auto_recovery_in_progress"));
                     false
                 }
                 BootState::OffsetChanged { .. } => {

@@ -49,8 +49,7 @@ use driver::CanBus;
 use tokio::runtime::Handle;
 use tracing::{debug, info, warn};
 
-use crate::boot_state::{self, BootState, ClassifyOutcome};
-use crate::can::auto_recovery;
+use crate::boot_state;
 use crate::types::MotorFeedback;
 
 /// Soft cap on commands drained per loop iteration, so a backlog of
@@ -314,10 +313,8 @@ fn recv_blocking<T>(rx: Receiver<T>, timeout: Duration) -> io::Result<T> {
 /// non-fatal (logged + ignored).
 ///
 /// Must be called from inside a tokio runtime context: the worker
-/// captures `Handle::current()` so that
-/// [`auto_recovery::maybe_spawn_recovery`] (called from the type-2
-/// classification path) can reach the runtime when it needs to
-/// `tokio::spawn` an async recovery task.
+/// captures `Handle::current()` so async work spawned from the type-2
+/// path (e.g. boot orchestrator) can reach the runtime.
 pub fn spawn(
     iface: String,
     bus: CanBus,
@@ -340,9 +337,9 @@ pub fn spawn(
         .name(format!("rudy-can-{iface}"))
         .spawn(move || {
             // Establish a tokio runtime context for this OS thread so
-            // anything in the worker that calls `tokio::spawn`
-            // (auto-recovery dispatch, broadcast `feedback_tx.send`,
-            // etc.) finds a runtime.
+            // anything in the worker that calls `tokio::spawn` (boot
+            // orchestrator, broadcast `feedback_tx.send`, etc.) finds a
+            // runtime.
             let _guard = runtime_handle.enter();
             if let Some(cpu) = cpu_pin {
                 pin_to_cpu(&iface_for_thread, cpu);
@@ -524,8 +521,8 @@ fn handle_frame(
 }
 
 /// Push a freshly-decoded type-2 row into `state.latest`,
-/// `state.feedback_tx`, and trigger boot-state classification +
-/// auto-recovery exactly the same way `LinuxCanCore::poll_once` did.
+/// `state.feedback_tx`, and trigger boot-state classification + boot
+/// orchestrator the same way `LinuxCanCore::poll_once` does on aux merge.
 fn apply_type2(state: &Weak<crate::state::AppState>, src_motor: u8, fb: DriverFeedback) {
     let Some(state) = state.upgrade() else { return };
 
@@ -599,13 +596,6 @@ fn apply_type2(state: &Weak<crate::state::AppState>, src_motor: u8, fb: DriverFe
     );
 
     let classify_outcome = boot_state::classify(&state, &role, latest.mech_pos_rad);
-    if let ClassifyOutcome::Changed {
-        new: BootState::OutOfBand { mech_pos_rad, .. },
-        ..
-    } = &classify_outcome
-    {
-        auto_recovery::maybe_spawn_recovery(&state, &role, *mech_pos_rad);
-    }
     crate::boot_orchestrator::spawn_if_orchestrator_qualifies(
         state.clone(),
         role.clone(),

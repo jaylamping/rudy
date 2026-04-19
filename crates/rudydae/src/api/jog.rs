@@ -125,19 +125,9 @@ pub async fn jog(
     let clamped = body.vel_rad_s.clamp(-MAX_JOG_VEL_RAD_S, MAX_JOG_VEL_RAD_S);
     let ttl_ms = body.ttl_ms.clamp(50, MAX_TTL_MS);
 
-    // Boot-state gate: refuse jog while Layer 6 is driving the motor, and
-    // refuse while Unknown/OutOfBand. InBand is permitted (operator can jog
-    // around for inspection), Homed is permitted.
+    // Boot-state gate: refuse while Unknown/OutOfBand. InBand is permitted
+    // (operator can jog around for inspection), Homed is permitted.
     let bs = boot_state::current(&state, &role);
-    if bs.is_auto_recovering() {
-        return Err(err(
-            StatusCode::CONFLICT,
-            "auto_recovery_in_progress",
-            Some(format!(
-                "auto-recovery is driving {role}; wait for completion"
-            )),
-        ));
-    }
     if matches!(bs, BootState::Unknown) {
         return Err(err(
             StatusCode::CONFLICT,

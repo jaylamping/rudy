@@ -47,7 +47,6 @@ pub fn boot_state_kind_snake(bs: &BootState) -> &'static str {
     match bs {
         BootState::Unknown => "unknown",
         BootState::OutOfBand { .. } => "out_of_band",
-        BootState::AutoRecovering { .. } => "auto_recovering",
         BootState::InBand => "in_band",
         BootState::Homed => "homed",
         BootState::OffsetChanged { .. } => "offset_changed",

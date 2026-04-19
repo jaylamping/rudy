@@ -250,9 +250,7 @@ function BootStateBadge({ motor }: { motor: MotorSummary }) {
       </div>
     );
   }
-  // Legacy daemon builds may still emit `auto_recovering`; same fields as
-  // `auto_homing` — show orchestrator-style progress (Phase H removes Layer 6).
-  if (bs.kind === "auto_recovering" || bs.kind === "auto_homing") {
+  if (bs.kind === "auto_homing") {
     const from = (bs.from_rad * RAD_TO_DEG).toFixed(1);
     const target = (bs.target_rad * RAD_TO_DEG).toFixed(1);
     const prog = (bs.progress_rad * RAD_TO_DEG).toFixed(1);

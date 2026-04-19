@@ -7,9 +7,9 @@
 //! transitions `BootState -> Homed` and (if `limits_written.limit_torque_nm`
 //! is set) RAM-restores the per-motor full torque/speed envelope.
 //!
-//! This is the only path that transitions to `Homed`. The boot-time
-//! Layer-6 auto-recovery does NOT count as homing — it just brings the
-//! motor back into band; the operator still has to click Verify & Home.
+//! This is the operator-facing slow-ramp homer: it transitions to `Homed`
+//! on success and emits `SafetyEvent::Homed`. The boot orchestrator uses
+//! the same ramp internally but emits `SafetyEvent::AutoHomed` instead.
 
 use axum::{
     extract::{Path, State},
@@ -122,15 +122,6 @@ pub async fn home(
                 "out_of_band",
                 Some(format!(
                     "{role} at {mech_pos_rad:.3} rad outside [{min_rad:.3}, {max_rad:.3}]"
-                )),
-            ));
-        }
-        BootState::AutoRecovering { .. } => {
-            return Err(err(
-                StatusCode::CONFLICT,
-                "auto_recovery_in_progress",
-                Some(format!(
-                    "auto-recovery is driving {role}; wait for completion"
                 )),
             ));
         }

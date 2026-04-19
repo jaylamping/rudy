@@ -276,8 +276,7 @@ fn stop_reason_from_preflight(e: &PreflightFailure) -> MotionStopReason {
         | PreflightFailure::StepTooLarge { .. } => MotionStopReason::TravelLimitViolation,
         PreflightFailure::BootOutOfBand { .. }
         | PreflightFailure::BootNotReady { .. }
-        | PreflightFailure::AutoRecoveryInProgress => MotionStopReason::BootStateLost,
-        PreflightFailure::UnknownMotor
+        | PreflightFailure::UnknownMotor
         | PreflightFailure::Absent
         | PreflightFailure::NotVerified => MotionStopReason::BootStateLost,
         PreflightFailure::LimbQuarantined { .. } => MotionStopReason::BootStateLost,

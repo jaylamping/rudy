@@ -27,8 +27,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use chrono::Utc;
 use driver::CanBus;
 
-use crate::boot_state::{self, BootState, ClassifyOutcome};
-use crate::can::auto_recovery;
+use crate::boot_state;
 use crate::can::backoff::MotorBackoff;
 use crate::can::bus_worker::{self, BusHandle, WriteValue};
 use crate::config::Config;
@@ -709,17 +708,9 @@ impl LinuxCanCore {
         // Run the boot-state classifier on the freshly-merged position
         // so a motor that drifted out of band while disabled (or
         // simply hasn't been classified yet because no type-2 arrived
-        // since boot) transitions into `OutOfBand` and triggers the
-        // auto-recovery path. Mirrors what `bus_worker::apply_type2`
-        // does on the type-2 hot path.
+        // since boot) transitions into `OutOfBand`. Mirrors what
+        // `bus_worker::apply_type2` does on the type-2 hot path.
         let classify_outcome = boot_state::classify(state, &motor.role, merged.mech_pos_rad);
-        if let ClassifyOutcome::Changed {
-            new: BootState::OutOfBand { mech_pos_rad, .. },
-            ..
-        } = &classify_outcome
-        {
-            auto_recovery::maybe_spawn_recovery(state, &motor.role, *mech_pos_rad);
-        }
         let aux_seeded_first_row = matches!(outcome, MergeOutcome::Seeded);
         crate::boot_orchestrator::spawn_if_orchestrator_qualifies(
             state.clone(),

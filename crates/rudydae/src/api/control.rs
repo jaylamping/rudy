@@ -183,10 +183,6 @@ pub async fn enable(
                 "out_of_band",
                 format!("{role} reported outside band; manual recovery required"),
             ),
-            BootState::AutoRecovering { .. } => (
-                "auto_recovery_in_progress",
-                format!("{role} is being driven by auto-recovery"),
-            ),
             BootState::OffsetChanged {
                 stored_rad,
                 current_rad,

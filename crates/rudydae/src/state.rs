@@ -128,7 +128,7 @@ pub struct AppState {
     /// Set of motor roles currently believed to be `enabled` on the bus
     /// (i.e. driving — torque allowed). Inserted on a successful `enable`
     /// CAN frame; cleared on a successful `stop` (per-motor stop, e-stop,
-    /// jog watchdog, or auto-recovery cleanup). Consulted by `rename` /
+    /// jog watchdog, or slow-ramp / e-stop cleanup). Consulted by `rename` /
     /// `assign` so we refuse role mutations while the motor is live, but
     /// admit them as soon as the operator clicks STOP.
     ///
@@ -141,14 +141,6 @@ pub struct AppState {
     /// motion-safety hazard.
     pub enabled: RwLock<BTreeSet<String>>,
 
-    /// Per-motor mutex guarding the auto-recovery routine (Layer 6). The
-    /// routine acquires this for the entire duration so two telemetry ticks
-    /// can't both spawn recovery for the same motor, and so manual commands
-    /// can detect "recovery in progress" by trying to lock with `try_lock`.
-    /// Sequential-across-motors policy (one recovery at a time globally) is
-    /// enforced by `auto_recovery::GLOBAL_RECOVERY_LOCK`.
-    pub auto_recovery_attempted: Mutex<std::collections::HashSet<String>>,
-
     /// Per-role idempotency set for the boot orchestrator's auto-home
     /// flow (commissioned-zero plan, Phase C.5). The orchestrator
     /// inserts a role when it begins, removes it on terminal-failure
@@ -157,12 +149,6 @@ pub struct AppState {
     /// later telemetry tick doesn't re-trigger the same flow without
     /// operator action; removes it on `OutOfBand` so a future
     /// `OutOfBand → InBand` transition retriggers).
-    ///
-    /// Distinct from `auto_recovery_attempted` because the two flows
-    /// have different "should this fire again?" semantics:
-    /// auto-recovery is one-shot per daemon lifetime; the orchestrator
-    /// can fire multiple times in one lifetime if the operator
-    /// physically moves a joint OutOfBand → InBand.
     pub boot_orchestrator_attempted: Mutex<std::collections::HashSet<String>>,
 
     /// Persistent log store handle. Set once at startup by
@@ -242,7 +228,6 @@ impl AppState {
             reminders,
             boot_state: RwLock::new(HashMap::new()),
             enabled: RwLock::new(BTreeSet::new()),
-            auto_recovery_attempted: Mutex::new(std::collections::HashSet::new()),
             boot_orchestrator_attempted: Mutex::new(std::collections::HashSet::new()),
             log_store: OnceLock::new(),
             log_event_tx,
@@ -278,7 +263,7 @@ impl AppState {
 
     /// Clear a motor's enabled bit. Idempotent. Called from every code path
     /// that successfully sends a `stop` frame (per-motor stop, e-stop, jog
-    /// watchdog timeout, auto-recovery cleanup).
+    /// watchdog timeout, slow-ramp cleanup).
     pub fn mark_stopped(&self, role: &str) {
         self.enabled.write().expect("enabled poisoned").remove(role);
     }

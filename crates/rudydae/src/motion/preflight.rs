@@ -11,8 +11,8 @@
 //! What gets checked, in order (cheap → expensive):
 //!
 //! 1. Inventory presence + `present` / `verified` flags.
-//! 2. Boot-state gate (`Unknown`, `OutOfBand`, and `AutoRecovering` all
-//!    refuse motion; `InBand` and `Homed` are permitted).
+//! 2. Boot-state gate (`Unknown` and `OutOfBand` refuse motion; `InBand` and
+//!    `Homed` are permitted).
 //! 3. Stale-telemetry refusal (`safety.max_feedback_age_ms`).
 //! 4. Path-aware travel-band check on the projected position, via
 //!    [`crate::can::travel::enforce_position_with_path`].
@@ -49,7 +49,6 @@ pub enum PreflightFailure {
         min_rad: f32,
         max_rad: f32,
     },
-    AutoRecoveryInProgress,
     StaleTelemetry {
         age_ms: i64,
         max_age_ms: i64,
@@ -90,7 +89,6 @@ impl PreflightFailure {
             PreflightFailure::NotVerified => "not_verified",
             PreflightFailure::BootNotReady { .. } => "not_ready",
             PreflightFailure::BootOutOfBand { .. } => "out_of_band",
-            PreflightFailure::AutoRecoveryInProgress => "auto_recovery_in_progress",
             PreflightFailure::StaleTelemetry { .. } => "stale_telemetry",
             PreflightFailure::NoTelemetry => "stale_telemetry",
             PreflightFailure::OutOfBand { .. } => "travel_limit_violation",
@@ -119,9 +117,6 @@ impl PreflightFailure {
             } => format!(
                 "{role} is at {mech_pos_rad:.3} rad outside [{min_rad:.3}, {max_rad:.3}]; manual recovery required"
             ),
-            PreflightFailure::AutoRecoveryInProgress => {
-                format!("auto-recovery is driving {role}; wait for completion")
-            }
             PreflightFailure::StaleTelemetry {
                 age_ms,
                 max_age_ms,
@@ -227,9 +222,6 @@ impl PreflightChecks<'_> {
         }
 
         let bs = boot_state::current(self.state, self.role);
-        if bs.is_auto_recovering() {
-            return Err(PreflightFailure::AutoRecoveryInProgress);
-        }
         match bs {
             BootState::Unknown => {
                 return Err(PreflightFailure::BootNotReady {

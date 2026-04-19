@@ -98,8 +98,7 @@ function GoHomeBar({ motor }: { motor: MotorSummary }) {
     motor.latest != null
       ? ((motor.latest.mech_pos_rad * 180) / Math.PI).toFixed(2)
       : null;
-  const autoHoming =
-    bs.kind === "auto_homing" || bs.kind === "auto_recovering";
+  const autoHoming = bs.kind === "auto_homing";
 
   return (
     <Card>

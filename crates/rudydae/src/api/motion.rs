@@ -70,7 +70,6 @@ fn preflight_to_http(role: &str, e: PreflightFailure) -> (StatusCode, Json<ApiEr
         PreflightFailure::NotVerified => StatusCode::FORBIDDEN,
         PreflightFailure::BootNotReady { .. }
         | PreflightFailure::BootOutOfBand { .. }
-        | PreflightFailure::AutoRecoveryInProgress
         | PreflightFailure::StaleTelemetry { .. }
         | PreflightFailure::NoTelemetry
         | PreflightFailure::OutOfBand { .. }

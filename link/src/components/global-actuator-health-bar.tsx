@@ -33,11 +33,7 @@ export function GlobalActuatorHealthBar() {
 
   const critical = motors.filter((m) => isCriticalBootState(m.boot_state));
   const notHomed = motors.filter((m) => m.boot_state.kind !== "homed");
-  const homing = motors.filter(
-    (m) =>
-      m.boot_state.kind === "auto_homing" ||
-      m.boot_state.kind === "auto_recovering",
-  );
+  const homing = motors.filter((m) => m.boot_state.kind === "auto_homing");
 
   if (critical.length > 0) {
     return (

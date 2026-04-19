@@ -438,8 +438,7 @@ function VerifyAndHomeCard({ motor }: { motor: MotorSummary }) {
   });
   const bs = motor.boot_state;
   const ready = bs.kind === "in_band";
-  const orchestratorHoming =
-    bs.kind === "auto_homing" || bs.kind === "auto_recovering";
+  const orchestratorHoming = bs.kind === "auto_homing";
   const live =
     motor.latest != null ? motor.latest.mech_pos_rad * RAD_TO_DEG : null;
 

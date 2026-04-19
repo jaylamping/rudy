@@ -36,26 +36,13 @@ pub enum BootState {
     /// handler refuses commands in this state — a stale or missing read is
     /// not safe to act on.
     Unknown,
-    /// Position read OK; motor sits outside its `travel_limits` band by
-    /// more than the auto-recovery budget (or auto-recovery is disabled /
-    /// failed). Operator must physically move the joint into band.
+    /// Position read OK; motor sits outside its `travel_limits` band.
+    /// Operator must physically move the joint into band (or use the
+    /// slow-ramp homer once in range).
     OutOfBand {
         mech_pos_rad: f32,
         min_rad: f32,
         max_rad: f32,
-    },
-    /// Layer 6 routine is currently driving the motor toward the band edge.
-    /// All other command paths are refused until this finishes (success or
-    /// failure transitions to `InBand` or `OutOfBand` respectively).
-    ///
-    /// Slated for removal alongside `crate::can::auto_recovery` in Phase
-    /// H.1 of the commissioned-zero plan; the boot orchestrator's
-    /// `AutoHoming` variant supersedes it. Kept in place for now so
-    /// Layer 6 continues to function during the migration window.
-    AutoRecovering {
-        from_rad: f32,
-        target_rad: f32,
-        progress_rad: f32,
     },
     /// Position confirmed inside band, but the operator hasn't done the
     /// Verify & Home ritual yet. Enable is still refused; per-step ceiling
@@ -104,19 +91,10 @@ impl BootState {
     pub fn permits_enable(&self) -> bool {
         matches!(self, BootState::Homed)
     }
-
-    /// Convenience: is the auto-recovery routine currently driving this
-    /// motor? While true, jog / enable / params writes / bench tests are
-    /// all refused. Slated for removal in Phase H.1 of the
-    /// commissioned-zero plan when Layer 6 goes away.
-    pub fn is_auto_recovering(&self) -> bool {
-        matches!(self, BootState::AutoRecovering { .. })
-    }
 }
 
 /// Outcome of running [`classify`] once. Returned to callers so the
-/// telemetry loop can decide whether to spawn the auto-recovery routine
-/// (Layer 6) or the new boot orchestrator (Phase C.5+).
+/// telemetry loop can run follow-up logic (e.g. the boot orchestrator).
 ///
 /// Not `Copy` because `BootState` is no longer `Copy` (HomeFailed
 /// carries a String reason).
@@ -133,7 +111,7 @@ pub enum ClassifyOutcome {
 /// `set_zero` or daemon restart can clear that).
 ///
 /// Returns the previous and new state when they differ so the caller can
-/// log the transition or trigger Layer 6 auto-recovery.
+/// log the transition or spawn the boot orchestrator.
 pub fn classify(state: &SharedState, role: &str, mech_pos_rad: f32) -> ClassifyOutcome {
     let limits: Option<TravelLimits> = state
         .inventory
@@ -193,42 +171,6 @@ fn force_set(state: &SharedState, role: &str, new: BootState) {
     map.insert(role.to_string(), new);
 }
 
-/// Mark `role` as currently being driven by the auto-recovery routine.
-/// Carries the from/target so the UI can render a progress bar.
-pub fn mark_auto_recovering(state: &SharedState, role: &str, from_rad: f32, target_rad: f32) {
-    let _ = transition(
-        state,
-        role,
-        BootState::AutoRecovering {
-            from_rad,
-            target_rad,
-            progress_rad: 0.0,
-        },
-    );
-}
-
-/// Update the in-flight `progress_rad` on an `AutoRecovering` state without
-/// emitting a transition event. Used by the auto-recovery loop to drive the
-/// UI progress bar tick-by-tick.
-pub fn update_auto_recovery_progress(state: &SharedState, role: &str, progress_rad: f32) {
-    let mut map = state.boot_state.write().expect("boot_state poisoned");
-    if let Some(BootState::AutoRecovering {
-        from_rad,
-        target_rad,
-        ..
-    }) = map.get(role).cloned()
-    {
-        map.insert(
-            role.to_string(),
-            BootState::AutoRecovering {
-                from_rad,
-                target_rad,
-                progress_rad,
-            },
-        );
-    }
-}
-
 /// Mark `role` as Class-1-shenanigan-detected: the firmware's
 /// reported `add_offset` disagrees with the stored
 /// `commissioned_zero_offset` by more than the configured tolerance.
@@ -271,9 +213,8 @@ pub fn force_set_auto_homing(
 }
 
 /// Update the in-flight `progress_rad` on an `AutoHoming` state
-/// without emitting a transition event. Mirrors
-/// [`update_auto_recovery_progress`] but for the boot orchestrator's
-/// auto-home flow.
+/// without emitting a transition event. Used by the boot orchestrator's
+/// auto-home flow for UI progress.
 pub fn update_auto_homing_progress(state: &SharedState, role: &str, progress_rad: f32) {
     let mut map = state.boot_state.write().expect("boot_state poisoned");
     if let Some(BootState::AutoHoming {
@@ -334,7 +275,7 @@ pub fn distance_to_band(mech_pos_rad: f32, limits: &TravelLimits) -> f32 {
     to_min.min(to_max)
 }
 
-/// Compute the auto-recovery target: the band edge nearest to `mech_pos`
+/// Compute a band re-entry target: the band edge nearest to `mech_pos`
 /// plus a small inside-the-band margin. Returns `None` if already in band.
 pub fn recovery_target(mech_pos_rad: f32, limits: &TravelLimits, margin_rad: f32) -> Option<f32> {
     let principal = wrap_to_pi(mech_pos_rad);
@@ -484,8 +425,5 @@ mod tests {
         assert!(!oc.permits_enable());
         assert!(!ah.permits_enable());
         assert!(!hf.permits_enable());
-        assert!(!oc.is_auto_recovering());
-        assert!(!ah.is_auto_recovering());
-        assert!(!hf.is_auto_recovering());
     }
 }

@@ -120,21 +120,7 @@ pub struct SafetyConfig {
     #[serde(default = "default_boot_max_step_rad")]
     pub boot_max_step_rad: f32,
 
-    /// Layer 6 budget. If a motor boots up further than this from the
-    /// nearest band edge, auto-recovery refuses to start and the operator
-    /// must move it physically. Default 90 deg ~= 1.5708 rad — chosen so
-    /// "settled overnight" recoveries work but "operator clearly moved
-    /// the joint by hand" does not.
-    #[serde(default = "default_auto_recovery_max_rad")]
-    pub auto_recovery_max_rad: f32,
-
-    /// Margin INSIDE the band edge where auto-recovery aims to land.
-    /// Avoids bouncing right on the boundary. Default 5 deg.
-    #[serde(default = "default_recovery_margin_rad")]
-    pub recovery_margin_rad: f32,
-
-    /// Per-tick step size for both the slow-ramp homer and Layer 6
-    /// auto-recovery. Default 0.02 rad ~= 1.1 deg.
+    /// Per-tick step size for the slow-ramp homer. Default 0.02 rad ~= 1.1 deg.
     #[serde(default = "default_step_size_rad")]
     pub step_size_rad: f32,
 
@@ -157,12 +143,6 @@ pub struct SafetyConfig {
     /// Hard timeout on the slow-ramp loops, in milliseconds. Default 30 s.
     #[serde(default = "default_homer_timeout_ms")]
     pub homer_timeout_ms: u32,
-
-    /// Master switch for Layer 6. With `false` the daemon never spawns
-    /// auto-recovery; OutOfBand motors stay OutOfBand until manual rescue.
-    /// Useful when bringing up a new joint or in paranoid environments.
-    #[serde(default = "default_true")]
-    pub auto_recovery_enabled: bool,
 
     /// Maximum tolerated age of cached telemetry, in ms, on the jog path.
     /// If `state.latest[role]` is missing or older than this, the daemon
@@ -221,14 +201,6 @@ fn default_boot_max_step_rad() -> f32 {
 
 fn default_commission_readback_tolerance_rad() -> f32 {
     1e-3
-}
-
-fn default_auto_recovery_max_rad() -> f32 {
-    std::f32::consts::FRAC_PI_2
-}
-
-fn default_recovery_margin_rad() -> f32 {
-    0.087
 }
 
 fn default_step_size_rad() -> f32 {
@@ -420,14 +392,11 @@ mod tests {
             safety: SafetyConfig {
                 require_verified: true,
                 boot_max_step_rad: default_boot_max_step_rad(),
-                auto_recovery_max_rad: default_auto_recovery_max_rad(),
-                recovery_margin_rad: default_recovery_margin_rad(),
                 step_size_rad: default_step_size_rad(),
                 tick_interval_ms: default_tick_interval_ms(),
                 tracking_error_max_rad: default_tracking_error_max_rad(),
                 target_tolerance_rad: default_target_tolerance_rad(),
                 homer_timeout_ms: default_homer_timeout_ms(),
-                auto_recovery_enabled: true,
                 max_feedback_age_ms: default_max_feedback_age_ms(),
                 commission_readback_tolerance_rad: default_commission_readback_tolerance_rad(),
                 auto_home_on_boot: true,

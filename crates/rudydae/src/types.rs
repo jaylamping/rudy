@@ -252,38 +252,6 @@ pub enum SafetyEvent {
         min_rad: f32,
         max_rad: f32,
     },
-    /// Layer 6 began driving a motor back toward its band.
-    AutoRecoveryAttempted {
-        t_ms: i64,
-        role: String,
-        from_rad: f32,
-        target_rad: f32,
-        delta_rad: f32,
-    },
-    /// Layer 6 reached the in-band target; motor was left disabled. The
-    /// operator still needs to do the Verify & Home ritual to enable.
-    AutoRecoverySucceeded {
-        t_ms: i64,
-        role: String,
-        final_pos_rad: f32,
-        ticks: u32,
-    },
-    /// Layer 6 aborted (resistance / fault / timeout / budget exceeded).
-    /// Operator must manually move the joint into band.
-    AutoRecoveryFailed {
-        t_ms: i64,
-        role: String,
-        reason: String,
-        last_pos_rad: f32,
-    },
-    /// Layer 6 refused to start (delta to band exceeds budget, or feature
-    /// disabled). No motion frame was sent on the bus.
-    AutoRecoveryRefused {
-        t_ms: i64,
-        role: String,
-        reason: String,
-        delta_rad: f32,
-    },
     /// Slow-ramp homer reached its target. Full torque/speed limits restored.
     Homed {
         t_ms: i64,
@@ -333,9 +301,8 @@ pub enum SafetyEvent {
     /// Boot orchestrator's slow-ramp homer aborted (tracking error,
     /// fault, timeout, path violation). `BootState::HomeFailed` will
     /// stick until the operator hits `POST /api/motors/:role/home` to
-    /// retry. Distinct from `AutoRecoveryFailed` (which Layer 6 emits
-    /// — Phase H.1 deletes that) and from a manual-homer abort (which
-    /// already audit-logs but does not get its own SafetyEvent today).
+    /// retry. Distinct from a manual-homer abort (which audit-logs but
+    /// does not emit `HomeFailed` on the safety stream today).
     HomeFailed {
         t_ms: i64,
         role: String,

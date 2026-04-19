@@ -12,7 +12,6 @@ export function bootStateSortRank(bs: BootState): number {
       return 2;
     case "out_of_band":
       return 3;
-    case "auto_recovering":
     case "auto_homing":
       return 4;
     case "in_band":
@@ -34,7 +33,6 @@ export function bootStateShortLabel(bs: BootState): string {
       return "Unknown";
     case "out_of_band":
       return "Out of band";
-    case "auto_recovering":
     case "auto_homing":
       return "Auto-homing";
     case "offset_changed":
@@ -52,7 +50,6 @@ export function bootStateRoleTextClass(bs: BootState): string {
     case "homed":
       return "text-emerald-400";
     case "auto_homing":
-    case "auto_recovering":
       return "text-sky-400";
     case "out_of_band":
     case "home_failed":
@@ -72,7 +69,6 @@ export function bootStateDotClass(bs: BootState): string {
     case "homed":
       return "bg-emerald-400";
     case "auto_homing":
-    case "auto_recovering":
       return "bg-sky-400";
     case "out_of_band":
     case "home_failed":

@@ -10,4 +10,4 @@
  * All callers that previously relied on implicit copies use `.cloned()`
  * or pattern-bind by reference.
  */
-export type BootState = { "kind": "unknown" } | { "kind": "out_of_band", mech_pos_rad: number, min_rad: number, max_rad: number, } | { "kind": "auto_recovering", from_rad: number, target_rad: number, progress_rad: number, } | { "kind": "in_band" } | { "kind": "homed" } | { "kind": "offset_changed", stored_rad: number, current_rad: number, } | { "kind": "auto_homing", from_rad: number, target_rad: number, progress_rad: number, } | { "kind": "home_failed", reason: string, last_pos_rad: number, };
+export type BootState = { "kind": "unknown" } | { "kind": "out_of_band", mech_pos_rad: number, min_rad: number, max_rad: number, } | { "kind": "in_band" } | { "kind": "homed" } | { "kind": "offset_changed", stored_rad: number, current_rad: number, } | { "kind": "auto_homing", from_rad: number, target_rad: number, progress_rad: number, } | { "kind": "home_failed", reason: string, last_pos_rad: number, };

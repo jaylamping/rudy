@@ -64,9 +64,8 @@ pub enum BandCheck {
         attempted_rad: f32,
     },
     /// Target endpoint is inside the band but the swept arc crosses the
-    /// band boundary (current position is outside). Rejected by every
-    /// motion endpoint EXCEPT the Layer 6 auto-recovery routine, which is
-    /// allowed exactly this exception by design.
+    /// band boundary (current position is outside). Rejected by motion
+    /// endpoints; the slow-ramp homer refuses this shape as well.
     PathViolation {
         min_rad: f32,
         max_rad: f32,
@@ -283,14 +282,11 @@ mod path_check_tests {
             safety: SafetyConfig {
                 require_verified: false,
                 boot_max_step_rad: 0.087,
-                auto_recovery_max_rad: std::f32::consts::FRAC_PI_2,
-                recovery_margin_rad: 0.087,
                 step_size_rad: 0.02,
                 tick_interval_ms: 5,
                 tracking_error_max_rad: 0.05,
                 target_tolerance_rad: 0.005,
                 homer_timeout_ms: 5_000,
-                auto_recovery_enabled: true,
                 max_feedback_age_ms: 100,
                 commission_readback_tolerance_rad: 1e-3,
                 auto_home_on_boot: true,
@@ -378,14 +374,11 @@ mod path_check_tests {
             safety: SafetyConfig {
                 require_verified: false,
                 boot_max_step_rad: 0.087,
-                auto_recovery_max_rad: std::f32::consts::FRAC_PI_2,
-                recovery_margin_rad: 0.087,
                 step_size_rad: 0.02,
                 tick_interval_ms: 5,
                 tracking_error_max_rad: 0.05,
                 target_tolerance_rad: 0.005,
                 homer_timeout_ms: 5_000,
-                auto_recovery_enabled: true,
                 max_feedback_age_ms: 100,
                 commission_readback_tolerance_rad: 1e-3,
                 auto_home_on_boot: true,
