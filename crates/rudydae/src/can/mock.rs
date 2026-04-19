@@ -56,13 +56,21 @@ pub fn spawn(state: SharedState) -> Result<()> {
 
                 // Run the boot-time classifier. On the first OutOfBand
                 // transition for a present motor, maybe-spawn auto-recovery.
+                let classify_outcome =
+                    boot_state::classify(&state, &motor.role, fb.mech_pos_rad);
                 if let ClassifyOutcome::Changed {
                     new: BootState::OutOfBand { mech_pos_rad, .. },
                     ..
-                } = boot_state::classify(&state, &motor.role, fb.mech_pos_rad)
+                } = &classify_outcome
                 {
-                    auto_recovery::maybe_spawn_recovery(&state, &motor.role, mech_pos_rad);
+                    auto_recovery::maybe_spawn_recovery(&state, &motor.role, *mech_pos_rad);
                 }
+                crate::boot_orchestrator::spawn_if_orchestrator_qualifies(
+                    state.clone(),
+                    motor.role.clone(),
+                    classify_outcome,
+                    false,
+                );
 
                 // Ignore errors: no WebTransport subscribers yet is fine.
                 let _ = state.feedback_tx.send(fb);

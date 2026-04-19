@@ -3,7 +3,9 @@
 //! and (when matched + in-band) auto-homes the motor to its predefined
 //! neutral pose without operator intervention.
 //!
-//! Spawned from the telemetry hook (Phase C.6) on these BootState
+//! Spawned from the telemetry hook (`spawn_if_orchestrator_qualifies` in
+//! `bus_worker`, `linux::merge_aux_into_latest`, and the mock CAN loop)
+//! on these BootState
 //! transitions, all of which signal "this motor's position just became
 //! trustworthy":
 //!
@@ -57,7 +59,7 @@ use tokio::time::sleep;
 use tracing::{info, warn};
 
 use crate::audit::{AuditEntry, AuditResult};
-use crate::boot_state::{self, BootState};
+use crate::boot_state::{self, BootState, ClassifyOutcome};
 use crate::can::motion::wrap_to_pi;
 use crate::can::slow_ramp;
 use crate::state::SharedState;
@@ -75,6 +77,36 @@ fn max_feedback_age_ms(state: &SharedState) -> u64 {
 /// internally backs off; this is a "one quick second chance" so the
 /// orchestrator absorbs an ENOBUFS bounce without giving up.
 const READBACK_RETRY_DELAY: Duration = Duration::from_millis(200);
+
+/// After telemetry updates `state.latest` and runs [`boot_state::classify`],
+/// call this to possibly spawn [`maybe_run`] without blocking the CAN thread
+/// or poll loop.
+///
+/// Fires when classification transitions `Unknown → InBand` or
+/// `OutOfBand → InBand`, or when the Linux aux-merge path seeds the first
+/// `latest` row (`Seeded`) while the motor is already `InBand` (edge case).
+pub fn spawn_if_orchestrator_qualifies(
+    state: SharedState,
+    role: String,
+    classify_outcome: ClassifyOutcome,
+    aux_seeded_first_row: bool,
+) {
+    let in_band_transition = match &classify_outcome {
+        ClassifyOutcome::Changed { prev, new } => {
+            matches!(new, BootState::InBand)
+                && matches!(prev, BootState::Unknown | BootState::OutOfBand { .. })
+        }
+        ClassifyOutcome::Unchanged => false,
+    };
+    let seeded_in_band = aux_seeded_first_row
+        && matches!(boot_state::current(&state, &role), BootState::InBand);
+    if !in_band_transition && !seeded_in_band {
+        return;
+    }
+    tokio::spawn(async move {
+        maybe_run(state, role).await;
+    });
+}
 
 /// Public entrypoint, spawned by the telemetry hook on a qualifying
 /// BootState transition. Cheap to call; idempotency is enforced
@@ -224,6 +256,7 @@ pub async fn maybe_run(state: SharedState, role: String) {
     // Step 8: transition to AutoHoming and run the slow ramp.
     let target_rad = motor.predefined_home_rad.unwrap_or(0.0);
     boot_state::force_set_auto_homing(&state, &role, mech_pos_rad, target_rad);
+    audit_auto_homing_started(&state, &role, mech_pos_rad, target_rad);
     info!(
         role = %role,
         from_rad = mech_pos_rad,
@@ -350,6 +383,9 @@ fn clear_attempted(state: &SharedState, role: &str) {
 /// post-hoc audit-log review can grep for the orchestrator's actions
 /// uniformly.
 fn audit_offset_changed(state: &SharedState, role: &str, stored_rad: f32, current_rad: f32) {
+    let message = format!(
+        "boot_orchestrator: detected offset change for {role}: stored={stored_rad} current={current_rad}"
+    );
     state.audit.write(AuditEntry {
         timestamp: Utc::now(),
         session_id: None,
@@ -357,6 +393,7 @@ fn audit_offset_changed(state: &SharedState, role: &str, stored_rad: f32, curren
         action: "boot_orchestrator_offset_changed".into(),
         target: Some(role.into()),
         details: serde_json::json!({
+            "message": message,
             "stored_rad": stored_rad,
             "current_rad": current_rad,
             "delta_rad": current_rad - stored_rad,
@@ -373,6 +410,9 @@ fn audit_auto_homed(
     ticks: u32,
     final_pos_rad: f32,
 ) {
+    let message = format!(
+        "boot_orchestrator: auto-homed {role}: from={from_rad} to={target_rad} ticks={ticks}"
+    );
     state.audit.write(AuditEntry {
         timestamp: Utc::now(),
         session_id: None,
@@ -380,6 +420,7 @@ fn audit_auto_homed(
         action: "boot_orchestrator_auto_homed".into(),
         target: Some(role.into()),
         details: serde_json::json!({
+            "message": message,
             "from_rad": from_rad,
             "target_rad": target_rad,
             "final_pos_rad": final_pos_rad,
@@ -389,7 +430,27 @@ fn audit_auto_homed(
     });
 }
 
+fn audit_auto_homing_started(state: &SharedState, role: &str, from_rad: f32, target_rad: f32) {
+    let message = format!(
+        "boot_orchestrator: auto-homing started for {role}: from={from_rad} to={target_rad}"
+    );
+    state.audit.write(AuditEntry {
+        timestamp: Utc::now(),
+        session_id: None,
+        remote: None,
+        action: "boot_orchestrator_auto_homing_started".into(),
+        target: Some(role.into()),
+        details: serde_json::json!({
+            "message": message,
+            "from_rad": from_rad,
+            "target_rad": target_rad,
+        }),
+        result: AuditResult::Ok,
+    });
+}
+
 fn audit_home_failed(state: &SharedState, role: &str, reason: &str, last_pos_rad: f32) {
+    let message = format!("boot_orchestrator: auto-home failed for {role}: reason={reason}");
     state.audit.write(AuditEntry {
         timestamp: Utc::now(),
         session_id: None,
@@ -397,6 +458,7 @@ fn audit_home_failed(state: &SharedState, role: &str, reason: &str, last_pos_rad
         action: "boot_orchestrator_home_failed".into(),
         target: Some(role.into()),
         details: serde_json::json!({
+            "message": message,
             "reason": reason,
             "last_pos_rad": last_pos_rad,
         }),

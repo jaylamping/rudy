@@ -598,13 +598,20 @@ fn apply_type2(state: &Weak<crate::state::AppState>, src_motor: u8, fb: DriverFe
         "type-2 frame applied"
     );
 
+    let classify_outcome = boot_state::classify(&state, &role, latest.mech_pos_rad);
     if let ClassifyOutcome::Changed {
         new: BootState::OutOfBand { mech_pos_rad, .. },
         ..
-    } = boot_state::classify(&state, &role, latest.mech_pos_rad)
+    } = &classify_outcome
     {
-        auto_recovery::maybe_spawn_recovery(&state, &role, mech_pos_rad);
+        auto_recovery::maybe_spawn_recovery(&state, &role, *mech_pos_rad);
     }
+    crate::boot_orchestrator::spawn_if_orchestrator_qualifies(
+        state.clone(),
+        role.clone(),
+        classify_outcome,
+        false,
+    );
 
     let _ = state.feedback_tx.send(latest);
 }
