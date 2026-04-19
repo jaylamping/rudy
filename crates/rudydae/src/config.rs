@@ -184,6 +184,31 @@ pub struct SafetyConfig {
     /// stops sending before the server refuses.
     #[serde(default = "default_max_feedback_age_ms")]
     pub max_feedback_age_ms: u64,
+
+    /// Tolerance for the boot orchestrator's add_offset readback check.
+    /// On every boot the orchestrator reads `add_offset` (0x702B) over
+    /// CAN and compares it against the `commissioned_zero_offset`
+    /// recorded in `inventory.yaml`; a mismatch larger than this lands
+    /// the motor in `BootState::OffsetChanged` and refuses motion until
+    /// the operator either re-commissions or restores. Default 1e-3 rad
+    /// (~0.057°): tight enough to catch a deliberate set_zero from the
+    /// bench tool, loose enough to ignore the usual firmware-side
+    /// rounding when the same float survives a flash round-trip.
+    #[serde(default = "default_commission_readback_tolerance_rad")]
+    pub commission_readback_tolerance_rad: f32,
+
+    /// Master switch for the boot orchestrator's auto-home flow.
+    /// With `true` (the operator-confirmed default), every commissioned
+    /// motor whose first valid telemetry lands `InBand` is automatically
+    /// driven to its `predefined_home_rad` via the slow-ramp homer; the
+    /// operator never has to click "Verify & Home" on every boot.
+    /// With `false` the orchestrator never spawns an auto-home —
+    /// commissioned motors then need the manual `Verify & Home` flow,
+    /// exactly like uncommissioned motors. Useful as an escape hatch
+    /// during a hardware investigation; the operator can flip this off
+    /// and restart the daemon without losing any commissioning state.
+    #[serde(default = "default_true")]
+    pub auto_home_on_boot: bool,
 }
 
 fn default_true() -> bool {
@@ -192,6 +217,10 @@ fn default_true() -> bool {
 
 fn default_boot_max_step_rad() -> f32 {
     0.087
+}
+
+fn default_commission_readback_tolerance_rad() -> f32 {
+    1e-3
 }
 
 fn default_auto_recovery_max_rad() -> f32 {
@@ -400,6 +429,8 @@ mod tests {
                 homer_timeout_ms: default_homer_timeout_ms(),
                 auto_recovery_enabled: true,
                 max_feedback_age_ms: default_max_feedback_age_ms(),
+                commission_readback_tolerance_rad: default_commission_readback_tolerance_rad(),
+                auto_home_on_boot: true,
             },
             logs: LogsConfig {
                 db_path: db_path

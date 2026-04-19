@@ -82,3 +82,29 @@ require_verified = true
 # The SPA mirror in `link/src/components/actuator/motion-tests-card.tsx`
 # reads the same value; bump both together if you change this.
 max_feedback_age_ms = 250
+
+# Tolerance for the boot orchestrator's add_offset readback check
+# (commissioned-zero quick-home plan, Phase C). On every boot the
+# orchestrator reads firmware param 0x702B over CAN and compares it
+# against the `commissioned_zero_offset` recorded in inventory.yaml.
+# A mismatch larger than this lands the motor in
+# `BootState::OffsetChanged` and refuses motion until the operator
+# either re-commissions (POST /commission) or restores the stored
+# value (POST /restore_offset).
+#
+# 1e-3 rad ≈ 0.057°: tight enough to catch a deliberate set_zero from
+# the bench tool, loose enough to ignore the usual firmware-side float
+# rounding when the same value survives a flash round-trip.
+commission_readback_tolerance_rad = 1e-3
+
+# Master switch for the boot orchestrator's auto-home flow. With true
+# (the default), every commissioned motor whose first valid telemetry
+# lands InBand is automatically driven to its predefined_home_rad via
+# the slow-ramp homer — the operator never has to click Verify & Home
+# on every boot for those motors. Uncommissioned motors continue to
+# require the manual Verify & Home flow regardless.
+#
+# Flip to false as an escape hatch during a hardware investigation;
+# commissioned motors then need the manual flow until you flip it back.
+# No commissioning state on disk is touched.
+auto_home_on_boot = true
