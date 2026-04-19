@@ -176,17 +176,34 @@ pub async fn jog(
     let fb = match fb_snapshot {
         Some(fb) if now_ms.saturating_sub(fb.t_ms) <= max_age_ms => fb,
         Some(fb) => {
+            // Structured warn so a sweep that stutters leaves a clean
+            // breadcrumb trail in the daemon log: the refusal cadence,
+            // exact age, and the last successful t_ms together pinpoint
+            // whether telemetry froze, drifted, or never started flowing
+            // for this specific motor.
+            let age_ms = now_ms.saturating_sub(fb.t_ms);
+            tracing::warn!(
+                role = %role,
+                can_id = fb.can_id,
+                age_ms = age_ms,
+                max_age_ms = max_age_ms,
+                last_t_ms = fb.t_ms,
+                now_ms = now_ms,
+                "jog refused: stale telemetry"
+            );
             return Err(err(
                 StatusCode::CONFLICT,
                 "stale_telemetry",
                 Some(format!(
-                    "feedback for {role} is {} ms old (> {} ms); refusing motion",
-                    now_ms.saturating_sub(fb.t_ms),
-                    max_age_ms,
+                    "feedback for {role} is {age_ms} ms old (> {max_age_ms} ms); refusing motion",
                 )),
             ));
         }
         None => {
+            tracing::warn!(
+                role = %role,
+                "jog refused: no telemetry row for role yet"
+            );
             return Err(err(
                 StatusCode::CONFLICT,
                 "stale_telemetry",

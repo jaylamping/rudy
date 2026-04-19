@@ -535,8 +535,22 @@ fn apply_type2(state: &Weak<crate::state::AppState>, src_motor: u8, fb: DriverFe
     };
     let Some(role) = role else { return };
 
+    let now_ms = Utc::now().timestamp_millis();
+
+    // Snapshot the previous t_ms (and carry-over vbus / fault_sta) under
+    // a single read lock, then drop it before we take the write lock
+    // below. The `prev_t_ms` is also used to log the inter-frame gap so
+    // a stuttering type-2 stream is visible per-motor.
+    let (prev_t_ms, prev_vbus, prev_fault) = {
+        let guard = state.latest.read().expect("latest poisoned");
+        match guard.get(&role) {
+            Some(f) => (Some(f.t_ms), f.vbus_v, f.fault_sta),
+            None => (None, 0.0, 0),
+        }
+    };
+
     let latest = MotorFeedback {
-        t_ms: Utc::now().timestamp_millis(),
+        t_ms: now_ms,
         role: role.clone(),
         can_id: src_motor,
         mech_pos_rad: fb.pos_rad,
@@ -544,21 +558,9 @@ fn apply_type2(state: &Weak<crate::state::AppState>, src_motor: u8, fb: DriverFe
         torque_nm: fb.torque_nm,
         // type-2 doesn't carry vbus; keep last known. Type-17 sweep
         // refreshes vbus separately.
-        vbus_v: state
-            .latest
-            .read()
-            .expect("latest poisoned")
-            .get(&role)
-            .map(|f| f.vbus_v)
-            .unwrap_or_default(),
+        vbus_v: prev_vbus,
         temp_c: fb.temp_c,
-        fault_sta: state
-            .latest
-            .read()
-            .expect("latest poisoned")
-            .get(&role)
-            .map(|f| f.fault_sta)
-            .unwrap_or_default(),
+        fault_sta: prev_fault,
         warn_sta: 0,
     };
 
@@ -567,6 +569,22 @@ fn apply_type2(state: &Weak<crate::state::AppState>, src_motor: u8, fb: DriverFe
         .write()
         .expect("latest poisoned")
         .insert(role.clone(), latest.clone());
+
+    // High-cadence breadcrumb so we can confirm 60 Hz per role and catch
+    // any motor whose type-2 stream falls behind the safety budget. At
+    // ~16 ms cadence this fires too often for `info!` — gate on `trace!`
+    // so it's opt-in via `RUST_LOG=rudydae::can::bus_worker=trace`. The
+    // first frame for a role logs `gap_ms = -1` so it's distinguishable
+    // from a real measurement.
+    let gap_ms = prev_t_ms
+        .map(|prev| now_ms.saturating_sub(prev))
+        .unwrap_or(-1);
+    tracing::trace!(
+        role = %role,
+        can_id = src_motor,
+        gap_ms = gap_ms,
+        "type-2 frame applied"
+    );
 
     if let ClassifyOutcome::Changed {
         new: BootState::OutOfBand { mech_pos_rad, .. },

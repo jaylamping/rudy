@@ -528,7 +528,19 @@ impl LinuxCanCore {
         // before broadcasting. We do classification + recovery + the
         // broadcast send outside any held lock so a slow subscriber
         // can never wedge the poll loop.
-        let merged: MotorFeedback = {
+        // Capture which branch the merge takes + whether the type-17
+        // sweep actually refreshed t_ms, so we can tell the difference
+        // between "type-2 is keeping this row hot" (good) and "type-2
+        // dried up and only the slow type-17 fallback is keeping the
+        // jog guard happy" (the failure mode the stale-telemetry guard
+        // exists to surface).
+        enum MergeOutcome {
+            Type2Won { row_t_ms: i64 },
+            Type17Stamped,
+            Seeded,
+        }
+
+        let (merged, outcome): (MotorFeedback, MergeOutcome) = {
             let mut latest = state.latest.write().expect("latest poisoned");
             let now_ms = Utc::now().timestamp_millis();
             match latest.get_mut(&motor.role) {
@@ -547,7 +559,7 @@ impl LinuxCanCore {
                     // 60-Hz-cadence type-2 frame with a slower type-17
                     // reading. `t_ms < poll_started_ms` means "no
                     // type-2 frame arrived during this tick".
-                    if row.t_ms < poll_started_ms {
+                    let outcome = if row.t_ms < poll_started_ms {
                         if let Some(p) = aux.mech_pos {
                             row.mech_pos_rad = p;
                         }
@@ -561,8 +573,11 @@ impl LinuxCanCore {
                         // been idle long enough for the last type-2 to
                         // age past `safety.max_feedback_age_ms`.
                         row.t_ms = now_ms;
-                    }
-                    row.clone()
+                        MergeOutcome::Type17Stamped
+                    } else {
+                        MergeOutcome::Type2Won { row_t_ms: row.t_ms }
+                    };
+                    (row.clone(), outcome)
                 }
                 None => {
                     // No type-2 has landed yet — seed the row from
@@ -582,10 +597,46 @@ impl LinuxCanCore {
                         warn_sta: 0,
                     };
                     latest.insert(motor.role.clone(), seeded.clone());
-                    seeded
+                    (seeded, MergeOutcome::Seeded)
                 }
             }
         };
+
+        // Trace-level so the per-motor every-tick spam is opt-in via
+        // `RUST_LOG=rudydae::can::linux=trace`. The fields together let
+        // us see whether the type-17 fallback is what's keeping the row
+        // alive (Type17Stamped on the affected motor) versus type-2
+        // doing its job (Type2Won most of the time).
+        match outcome {
+            MergeOutcome::Type2Won { row_t_ms } => tracing::trace!(
+                role = %motor.role,
+                can_id = motor.can_id,
+                outcome = "type2_won",
+                row_t_ms = row_t_ms,
+                poll_started_ms = poll_started_ms,
+                aux_pos = ?aux.mech_pos,
+                aux_vel = ?aux.mech_vel,
+                aux_vbus = ?aux.vbus,
+                aux_fault = ?aux.fault_sta,
+                "aux merge"
+            ),
+            MergeOutcome::Type17Stamped => tracing::debug!(
+                role = %motor.role,
+                can_id = motor.can_id,
+                outcome = "type17_stamped",
+                poll_started_ms = poll_started_ms,
+                aux_pos = ?aux.mech_pos,
+                aux_vel = ?aux.mech_vel,
+                aux_vbus = ?aux.vbus,
+                aux_fault = ?aux.fault_sta,
+                "aux merge: type-17 fallback refreshed t_ms (no type-2 this tick)"
+            ),
+            MergeOutcome::Seeded => tracing::info!(
+                role = %motor.role,
+                can_id = motor.can_id,
+                "aux merge: seeded latest row from type-17 (first telemetry)"
+            ),
+        }
 
         // Run the boot-state classifier on the freshly-merged position
         // so a motor that drifted out of band while disabled (or
