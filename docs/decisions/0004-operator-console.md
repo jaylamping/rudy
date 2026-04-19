@@ -10,10 +10,10 @@ Rudy needs a single browser-reachable surface for day-to-day operation:
 
 - Live telemetry (per-motor `mechPos`, `mechVel`, `vbus`, `faultSta`, and later `joint_states`).
 - Firmware parameter editor — must replace Motor Studio for RS03 commissioning
-  (see [tools/robstride/commission.md](../../tools/robstride/commission.md)).
-  This is explicitly write-capable: the final "hard joint limit" work
-  (`limit_torque`, `limit_spd`, `limit_cur`, `canTimeout`) is landed through
-  this UI per the plan that prompted this ADR.
+(see [tools/robstride/commission.md](../../tools/robstride/commission.md)).
+This is explicitly write-capable: the final "hard joint limit" work
+(`limit_torque`, `limit_spd`, `limit_cur`, `canTimeout`) is landed through
+this UI per the plan that prompted this ADR.
 - Jog/enable controls with a dead-man switch (Phase 2).
 - URDF 3D view driven by reconstructed `joint_states` (Phase 2).
 - Log tail (journald for the daemon, `dmesg` for kernel CAN errors) (Phase 2).
@@ -44,11 +44,11 @@ Rationale: we need one writer to the bus; two would race.
 state via `tokio::sync::broadcast` channels:
 
 - **axum on `:8443` (HTTPS/1.1+2)** — all CRUD + embedded SPA static assets.
-  Curlable, cacheable, TanStack-Query-friendly on the client.
+Curlable, cacheable, TanStack-Query-friendly on the client.
 - **wtransport on `:4433/udp` (HTTP/3 / QUIC)** — the telemetry + log
-  firehose. Unreliable datagrams for high-rate signals (`mechPos`, `mechVel`,
-  `vbus`); reliable unidirectional streams for fault/warn events and journald
-  log lines.
+firehose. Unreliable datagrams for high-rate signals (`mechPos`, `mechVel`,
+`vbus`); reliable unidirectional streams for fault/warn events and journald
+log lines.
 
 Rationale: WebTransport is the user's chosen streaming transport (see plan
 discussion). `axum` does not serve HTTP/3 today, so two listeners is the
@@ -92,31 +92,31 @@ The firmware layering in
 holds. On top of it, `rudydae` adds:
 
 - **Write confirmation.** Every `PUT /api/motors/:id/params/:index` is
-  server-side range-checked against
-  `config/actuators/robstride_rs03.yaml:firmware_limits.hardware_range` and
-  (for commissioning-relevant parameters)
-  `commissioning_defaults`. The UI additionally requires a typed-confirm
-  dialog.
+server-side range-checked against
+`config/actuators/robstride_rs03.yaml:firmware_limits.hardware_range` and
+(for commissioning-relevant parameters)
+`commissioning_defaults`. The UI additionally requires a typed-confirm
+dialog.
 - **Save-to-flash is a separate button.** Matches the Step 6 / Step 7 split
-  in [tools/robstride/commission.md](../../tools/robstride/commission.md).
-  RAM writes and flash saves are distinct endpoints
-  (`PUT …/params/:index` vs `POST …/save`).
+in [tools/robstride/commission.md](../../tools/robstride/commission.md).
+RAM writes and flash saves are distinct endpoints
+(`PUT …/params/:index` vs `POST …/save`).
 - **Enable gating.** `POST /api/motors/:id/enable` refuses unless the motor's
-  `config/actuators/inventory.yaml` entry has `verified: true`. Same gate the
-  Rust driver already enforces.
+`config/actuators/inventory.yaml` entry has `verified: true`. Same gate the
+Rust driver already enforces.
 - **Single-operator lock.** `rudydae` runs a lightweight implicit lock on
-  mutating endpoints (jog, home, params, travel-limits, verified, tests,
-  rename). The first mutator from a fresh `X-Rudy-Session` silently claims
-  it; a second concurrent session is refused with 423 Locked. There is no
-  UI surface — see the 2026-04-18 addendum below for why this collapsed
-  from the original "explicit Take control / Take over" UX.
+mutating endpoints (jog, home, params, travel-limits, verified, tests,
+rename). The first mutator from a fresh `X-Rudy-Session` silently claims
+it; a second concurrent session is refused with 423 Locked. There is no
+UI surface — see the 2026-04-18 addendum below for why this collapsed
+from the original "explicit Take control / Take over" UX.
 - **Dead-man jog.** Holding a jog key sends commands at ≥ 20 Hz; releasing
-  (or disconnecting) causes `rudydae` to issue `cmd_stop`. The firmware
-  `canTimeout` is the backstop if `rudydae` itself hangs.
+(or disconnecting) causes `rudydae` to issue `cmd_stop`. The firmware
+`canTimeout` is the backstop if `rudydae` itself hangs.
 - **Append-only audit log.** Every mutating action is recorded with ISO 8601
-  timestamp, session id, motor id, endpoint, and pre/post values. Survives
-  restarts; rotation is the operator's problem (logrotate config shipped in
-  `deploy/pi5/`).
+timestamp, session id, motor id, endpoint, and pre/post values. Survives
+restarts; rotation is the operator's problem (logrotate config shipped in
+`deploy/pi5/`).
 
 ### D7. Repository layout (reorganized as Phase 0 of this work)
 
@@ -151,55 +151,55 @@ is the moment to revisit; the split becomes ADR-0005 then.
 ### Positive
 
 - Lands the long-lived CAN-owning process the architecture doc has been
-  promising — unblocks both this console and future `driver_node`.
+promising — unblocks both this console and future `driver_node`.
 - `link/` as a standalone Vite project can be iterated on without `cargo`,
-  and can later be deployed offboard (e.g. a laptop during offsite debugging)
-  by pointing `VITE_RUDYD_URL` at the Pi over Tailscale.
+and can later be deployed offboard (e.g. a laptop during offsite debugging)
+by pointing `VITE_RUDYD_URL` at the Pi over Tailscale.
 - Parameter writes become a first-class, audited, safety-gated UI action
-  rather than a footgun in Motor Studio.
+rather than a footgun in Motor Studio.
 - WebTransport gives room to grow: Phase 3's Isaac Lab ghost overlay and
-  full 1 kHz joint-state recording are already in budget.
+full 1 kHz joint-state recording are already in budget.
 
 ### Negative / trade-offs
 
 - Two network listeners in one process — more surface area than a single
-  WebSocket server. Mitigated by their sharing an in-process core and
-  identical (none) auth posture.
+WebSocket server. Mitigated by their sharing an in-process core and
+identical (none) auth posture.
 - WebTransport debuggability is thinner than WebSocket (no `wscat`, DevTools
-  support younger). Accepted; telemetry is secondary to the REST surface
-  during bring-up.
+support younger). Accepted; telemetry is secondary to the REST surface
+during bring-up.
 - Tailscale is now a hard runtime dependency for the console. Accepted; the
-  operator is already a Tailscale user and the Pi is already on the tailnet.
+operator is already a Tailscale user and the Pi is already on the tailnet.
 - Browser support: Chrome/Edge fully; Firefox partial; Safari experimental.
-  Operator uses Chrome/Edge — acceptable. No WebSocket fallback (explicit
-  decision).
+Operator uses Chrome/Edge — acceptable. No WebSocket fallback (explicit
+decision).
 - One more process to supervise on the Pi (`systemctl enable rudyd.service`).
-  Offset by removing the ad-hoc `bench_tool` invocations.
+Offset by removing the ad-hoc `bench_tool` invocations.
 
 ### Deferred (explicitly not in scope)
 
 - Multi-operator / federated auth. We'll revisit when >1 person uses Rudy.
 - Remote (non-Tailscale) access. If needed, either tailnet-funnel or a
-  proper reverse-proxy + OIDC; neither is ADR-0004.
+proper reverse-proxy + OIDC; neither is ADR-0004.
 - Splitting the `driver` package (see D8) — future ADR.
 - `bench_tool` routing through `rudydae`. For now, `bench_tool` keeps direct
-  CAN access (`--direct`) as a rescue path when the daemon is crashed; a
-  `--via-rudyd` mode may be added in Phase 2 so `bench_tool` can respect the
-  single-operator lock.
+CAN access (`--direct`) as a rescue path when the daemon is crashed; a
+`--via-rudyd` mode may be added in Phase 2 so `bench_tool` can respect the
+single-operator lock.
 
 ## Alternatives considered
 
 1. **Single axum process, WebSocket for streaming.** Rejected: user
-   specifically chose WebTransport for future growth and has accepted the
+  specifically chose WebTransport for future growth and has accepted the
    dual-listener cost.
 2. **Put `rudydae` under `ros/src/`.** Rejected: `rudydae` is not a ROS 2 package
-   and forcing it into colcon's world adds ament overhead with no ROS
+  and forcing it into colcon's world adds ament overhead with no ROS
    integration in return. Living in `crates/` is honest about what it is.
 3. **Separate repo for `link/`.** Rejected: `link/` and `rudydae` move together
-   on safety-relevant changes (param schemas, auth, lock semantics). Atomic
+  on safety-relevant changes (param schemas, auth, lock semantics). Atomic
    commits across the API boundary matter more than repo purity.
 4. **Let `ros2_control` own the bus and `rudydae` subscribe via DDS.**
-   Rejected for Phase 1: adds a ROS dependency to the operator console for
+  Rejected for Phase 1: adds a ROS dependency to the operator console for
    no current benefit, and the `driver_node` that would be the DDS owner
    doesn't exist yet.
 
@@ -214,8 +214,7 @@ is the moment to revisit; the split becomes ADR-0005 then.
 The original D3 had `rudydae` terminating TLS itself for both surfaces (REST
 on `:8443`, WebTransport on `:4433`) using `tailscale cert`-issued PEM
 files. We are amending: the REST + SPA surface now runs **plaintext on
-`127.0.0.1:8443`** and is fronted by `tailscale serve --bg --https=443
-http://127.0.0.1:8443`. The HTTPS URL becomes the short MagicDNS form,
+`127.0.0.1:8443`** and is fronted by `tailscale serve --bg --https=443 http://127.0.0.1:8443`. The HTTPS URL becomes the short MagicDNS form,
 `https://<host>/` (no port, no `.ts.net` suffix).
 
 WebTransport keeps doing its own TLS on `<tailnet-ip>:4433` because
@@ -225,26 +224,26 @@ The WT cert is still the same `tailscale cert`-issued pair.
 ### Why
 
 - Auto-renewing cert for the main UI: `tailscale serve` reuses the
-  Tailscale daemon's continuously-rotated Let's Encrypt cert. We deleted
-  the manual `tailscale cert` step from the REST/SPA bring-up, and a
-  follow-up `rudyd-cert-renew.timer` only needs to handle the WT cert.
+Tailscale daemon's continuously-rotated Let's Encrypt cert. We deleted
+the manual `tailscale cert` step from the REST/SPA bring-up, and a
+follow-up `rudyd-cert-renew.timer` only needs to handle the WT cert.
 - Shorter URL: `https://rudy-pi/` is materially nicer to type and bookmark
-  than `https://rudy-pi.tail-abc123.ts.net:8443/`.
+than `https://rudy-pi.tail-abc123.ts.net:8443/`.
 - Smaller `rudydae`: removed the `axum-server tls-rustls` feature and the
-  `[http.tls]` config block + branch in `server.rs`. One less dep, one
-  less crash surface (rustls `CryptoProvider`-init panics still apply for
-  the WT path; we keep the `install_default()` call for that).
+`[http.tls]` config block + branch in `server.rs`. One less dep, one
+less crash surface (rustls `CryptoProvider`-init panics still apply for
+the WT path; we keep the `install_default()` call for that).
 - Firewall simplification: `tailscale serve` already binds tailnet-only,
-  so we no longer need the nftables drop rule on `:8443`. The rule on
-  `:4433/udp` (for WT) stays.
+so we no longer need the nftables drop rule on `:8443`. The rule on
+`:4433/udp` (for WT) stays.
 
 ### Known limitations / follow-ups
 
 - No HSTS / HPKP / cert pinning at the SPA layer. We rely on Tailscale
-  trust + browser-native LE chain validation, same as before.
+trust + browser-native LE chain validation, same as before.
 - If `tailscale serve` configuration drifts (e.g. a tailnet rejoin), the
-  next `apply-release.sh` re-asserts the mapping. Manual recovery:
-  `sudo tailscale serve --bg --https=443 http://127.0.0.1:8443`.
+next `apply-release.sh` re-asserts the mapping. Manual recovery:
+`sudo tailscale serve --bg --https=443 http://127.0.0.1:8443`.
 
 ## Addendum 2026-04-18: WebTransport wire format + stream registry
 
@@ -268,13 +267,13 @@ Every WT message — datagram or reliable-stream frame — is a CBOR-encoded
 
 Three properties matter:
 
-1. **`data` is nested, not flattened.** Payload field names can never
-   collide with envelope field names. A future payload that defines its
+1. `**data` is nested, not flattened.** Payload field names can never
+  collide with envelope field names. A future payload that defines its
    own `kind` or `seq` field cannot silently corrupt the envelope.
-2. **`v` is checked on every decode.** A daemon ↔ SPA version skew is a
-   loud failure (`status.error`) instead of a silent decode-as-garbage.
-3. **`seq` enables gap detection on the client.** The bridge logs (and
-   exposes via `onGap`) when a kind's sequence skips ahead; this gives
+2. `**v` is checked on every decode.** A daemon ↔ SPA version skew is a
+  loud failure (`status.error`) instead of a silent decode-as-garbage.
+3. `**seq` enables gap detection on the client.** The bridge logs (and
+  exposes via `onGap`) when a kind's sequence skips ahead; this gives
    us a real signal when datagrams are being dropped on the network or
    dropped by an overloaded `broadcast` channel.
 
@@ -285,10 +284,12 @@ breaking change trips the test + breaks the SPA decoder.
 
 QUIC offers two delivery primitives; we use both:
 
-| Tier      | QUIC mechanism            | Use for                                 |
-| --------- | ------------------------- | --------------------------------------- |
-| Datagram  | `connection.send_datagram`| latest-wins telemetry (motor, system)   |
-| Stream    | one uni-stream per session| events that must not be dropped         |
+
+| Tier     | QUIC mechanism             | Use for                               |
+| -------- | -------------------------- | ------------------------------------- |
+| Datagram | `connection.send_datagram` | latest-wins telemetry (motor, system) |
+| Stream   | one uni-stream per session | events that must not be dropped       |
+
 
 Reliable frames are written into a single per-session uni-stream as
 `u32 BE length | cbor body`. Length-prefixing is necessary because QUIC
@@ -301,9 +302,9 @@ Adding a new "near-realtime" stream (Phase 2 candidates: faults, joint
 state, log tail) is now a fixed-shape change:
 
 1. Define the payload struct in `types.rs` with the usual derives:
-   `Serialize, Deserialize, Clone, TS`.
+  `Serialize, Deserialize, Clone, TS`.
 2. Add a one-line entry to `declare_wt_streams!`:
-   ```rust
+  ```rust
    declare_wt_streams! {
        MotorFeedback   => MotorFeedback   { kind: "motor_feedback",   transport: Datagram, },
        SystemSnapshot  => SystemSnapshot  { kind: "system_snapshot",  transport: Datagram, },
@@ -311,16 +312,16 @@ state, log tail) is now a fixed-shape change:
        //                ^^^^^                                        ^^^^^^^^^^^^^^^^^^^^
        //                payload type                                 reliability tier
    }
-   ```
+  ```
    The macro emits `impl WtPayload for Fault`, the `WtKind::Fault`
    discriminator, and a runtime metadata table.
 3. Add a `broadcast::Sender<Fault>` field to `AppState` and a producer
-   task somewhere (driver, telemetry loop, ...).
+  task somewhere (driver, telemetry loop, ...).
 4. Add one `recv()` arm to `wt_router::run_session`. This is the only
-   per-stream code in `wt_router.rs`; everything else (encoding,
+  per-stream code in `wt_router.rs`; everything else (encoding,
    sequence numbering, transport dispatch, filtering) is generic.
 5. (Optional, frontend) register a reducer in `wtReducers.ts`:
-   ```ts
+  ```ts
    const faultReducer: WtReducer<Fault, Fault[]> = {
      kind: "fault",
      initBucket: () => [],
@@ -329,7 +330,7 @@ state, log tail) is now a fixed-shape change:
        queryClient.setQueryData<Fault[]>(["faults"], (prev) => [...(prev ?? []), ...bucket]);
      },
    };
-   ```
+  ```
 
 What you do NOT need to touch: `useWebTransport.ts`, the bridge
 component, `wt.rs`, the codec test (unless the new payload's CBOR
@@ -355,10 +356,10 @@ SPA evolve its filter without coordinating server-side rollouts.
 ### Observability
 
 - `WT_STREAMS` is a public `&[WtStreamMeta]` slice — exposed for
-  future runtime introspection by an `/api/wt/streams` endpoint or the
-  dashboard's debug pane.
+future runtime introspection by an `/api/wt/streams` endpoint or the
+dashboard's debug pane.
 - The bridge logs a `console.warn` per detected sequence gap; consumers
-  can override via the `onGap` prop for richer telemetry.
+can override via the `onGap` prop for richer telemetry.
 
 ## Addendum 2026-04-18: solo-operator UX simplification
 
@@ -372,32 +373,32 @@ Rudy is operated by exactly one human. The realistic failure modes that
 remain are:
 
 1. Two browser tabs of the operator's own session racing each other on the
-   bus (e.g. an old tab on the phone whose dead-man jog timer fires while
+  bus (e.g. an old tab on the phone whose dead-man jog timer fires while
    the laptop is driving).
 2. A stale tab's mutator landing concurrently with the active tab's.
 
 What was removed:
 
 - `LockBadge` component, the `["lock"]` query, the `lock_changed`
-  invalidation wiring in the SPA.
+invalidation wiring in the SPA.
 - `GET / POST / DELETE /api/lock` route handlers and `crates/rudydae/src/api/lock.rs`.
 - `AppState::has_control / acquire_control / release_control`.
 - The typed-phrase requirement on `ConfirmDialog` (no `phrase` prop;
-  no input field; just Confirm / Cancel).
+no input field; just Confirm / Cancel).
 
 What stayed:
 
 - The `control_lock: RwLock<Option<ControlLockHolder>>` field on `AppState`.
 - The 423-Locked guard at the top of every mutating handler — but it now
-  calls `AppState::ensure_control(session)` which **auto-claims the lock
-  when free**. So a fresh tab "just works" on first click and only a
-  *competing* concurrent session gets refused, which is exactly the
-  failure mode that matters for solo operation.
+calls `AppState::ensure_control(session)` which **auto-claims the lock
+when free**. So a fresh tab "just works" on first click and only a
+*competing* concurrent session gets refused, which is exactly the
+failure mode that matters for solo operation.
 - `LockChanged` SafetyEvent broadcast (still emitted on auto-acquire so
-  the audit trail captures it; useful if a future second tab needs to
-  diagnose "who took the lock from me").
+the audit trail captures it; useful if a future second tab needs to
+diagnose "who took the lock from me").
 - Audit entries: auto-acquires log as `control_lock_auto_acquire`, refused
-  mutators audit-log per existing handler logic with `reason: "lock_held"`.
+mutators audit-log per existing handler logic with `reason: "lock_held"`.
 
 Rationale: the safety story for Rudy is the firmware envelope (travel
 limits, `canTimeout`, enable-gating, dead-man jog watchdog), not modal
@@ -421,7 +422,7 @@ WebTransport bidi stream) and observes *status* (the `motion_status` WT
 broadcast). It does NOT drive the per-tick velocity loop.**
 
 This is encoded as a doc-comment on
-[`crates/rudydae/src/motion/mod.rs`](../../crates/rudydae/src/motion/mod.rs)
+`[crates/rudydae/src/motion/mod.rs](../../crates/rudydae/src/motion/mod.rs)`
 so it's discoverable from the code itself; this addendum is the policy
 counterpart for code review.
 
@@ -431,14 +432,14 @@ Operating the original SPA-driven sweep produced visible / audible
 "jitter every 0.1–0.25 s" because:
 
 1. The SPA fired `POST /api/motors/:role/jog` at ~60 Hz with
-   `ttl_ms: 100`.
+  `ttl_ms: 100`.
 2. Any HTTP latency spike >100 ms tripped the daemon's per-motor TTL
-   watchdog, which issued `cmd_stop`.
+  watchdog, which issued `cmd_stop`.
 3. The next jog frame had to re-enable: `RUN_MODE` + `cmd_enable` +
-   `SPD_REF`. That re-arm sequence is what produced the audible "jolt"
+  `SPD_REF`. That re-arm sequence is what produced the audible "jolt"
    on each lapse.
 4. Browser garbage collection, route switches, and tab backgrounding
-   all silently produce >100 ms gaps. The motor was effectively being
+  all silently produce >100 ms gaps. The motor was effectively being
    start-stopped at the gap rate rather than driven smoothly.
 
 A daemon-side controller eliminates the round-trip from the velocity
@@ -449,22 +450,22 @@ restarts mid-motion.
 
 ### Module layout
 
-* [`crates/rudydae/src/motion/`](../../crates/rudydae/src/motion/) —
-  `intent`, `preflight`, `sweep`, `wave`, `controller`, `registry`.
-* [`crates/rudydae/src/api/motion.rs`](../../crates/rudydae/src/api/motion.rs) —
-  REST surface: `POST /motors/:role/motion/{sweep,wave,jog,stop}` and
-  `GET /motors/:role/motion`.
-* [`crates/rudydae/src/wt_router.rs`](../../crates/rudydae/src/wt_router.rs) —
-  client-to-server WebTransport bidi protocol carrying `ClientFrame`s
-  (Subscribe / MotionJog / MotionHeartbeat / MotionStop) as
-  length-prefixed CBOR. EOF without `MotionStop` is treated as
-  `MotionStopReason::ClientGone` so a torn QUIC session can't leave a
-  motor running.
-* [`link/src/lib/wt/clientStream.ts`](../../link/src/lib/wt/clientStream.ts) —
-  SPA helper that opens / sends on / closes a single bidi stream. Used
-  by the dead-man jog; the slider drag during a held press is one
-  re-emitted `MotionJog` per heartbeat tick rather than a separate
-  protocol message.
+- `[crates/rudydae/src/motion/](../../crates/rudydae/src/motion/)` —
+`intent`, `preflight`, `sweep`, `wave`, `controller`, `registry`.
+- `[crates/rudydae/src/api/motion.rs](../../crates/rudydae/src/api/motion.rs)` —
+REST surface: `POST /motors/:role/motion/{sweep,wave,jog,stop}` and
+`GET /motors/:role/motion`.
+- `[crates/rudydae/src/wt_router.rs](../../crates/rudydae/src/wt_router.rs)` —
+client-to-server WebTransport bidi protocol carrying `ClientFrame`s
+(Subscribe / MotionJog / MotionHeartbeat / MotionStop) as
+length-prefixed CBOR. EOF without `MotionStop` is treated as
+`MotionStopReason::ClientGone` so a torn QUIC session can't leave a
+motor running.
+- `[link/src/lib/wt/clientStream.ts](../../link/src/lib/wt/clientStream.ts)` —
+SPA helper that opens / sends on / closes a single bidi stream. Used
+by the dead-man jog; the slider drag during a held press is one
+re-emitted `MotionJog` per heartbeat tick rather than a separate
+protocol message.
 
 ### Per-motor concurrency
 
@@ -475,26 +476,29 @@ bounded join. Two motors can run independent patterns concurrently.
 
 ### REST + WT: choosing a transport for new motion surfaces
 
-| Surface                          | Transport                             |
-| -------------------------------- | ------------------------------------- |
-| Pattern start (sweep / wave)     | REST POST                             |
-| Pattern stop                     | REST POST                             |
+
+| Surface                            | Transport                                                                                                    |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Pattern start (sweep / wave)       | REST POST                                                                                                    |
+| Pattern stop                       | REST POST                                                                                                    |
 | Hold-to-jog dead-man (interactive) | WT bidi stream (`ClientFrame::MotionJog` + heartbeat); REST `motion/jog` is the fallback when WT is disabled |
-| Pattern status (live + final)    | WT broadcast `motion_status` (Datagram) with replay-on-mount via `GET /motion` |
+| Pattern status (live + final)      | WT broadcast `motion_status` (Datagram) with replay-on-mount via `GET /motion`                               |
+
 
 Adding a new pattern: see the "Adding a new pattern" checklist in
-[`motion/mod.rs`](../../crates/rudydae/src/motion/mod.rs).
+`[motion/mod.rs](../../crates/rudydae/src/motion/mod.rs)`.
 
 ### Migration / deprecation
 
-* `POST /api/motors/:role/jog` is kept for scripted use (CLI tooling,
-  smoke tests). The SPA's old `setInterval`-driven jog loop in
-  `motion-tests-card.tsx` and `dead-man-jog.tsx` is replaced; one
-  release of soak time later the leftover `api.jog` call sites in
-  those two files can be removed.
-* The original D6 "Dead-man jog" wording is amended only in mechanism
-  (server-owned loop, WT bidi stream as preferred dead-man transport).
-  The safety promise — "release / disconnect causes `rudydae` to
-  issue `cmd_stop`" — is unchanged and is now enforced by both the
-  controller's heartbeat watchdog (250 ms) and the bidi stream's
-  EOF-as-`ClientGone` path.
+- `POST /api/motors/:role/jog` is kept for scripted use (CLI tooling,
+smoke tests). The SPA's old `setInterval`-driven jog loop in
+`motion-tests-card.tsx` and `dead-man-jog.tsx` is replaced; one
+release of soak time later the leftover `api.jog` call sites in
+those two files can be removed.
+- The original D6 "Dead-man jog" wording is amended only in mechanism
+(server-owned loop, WT bidi stream as preferred dead-man transport).
+The safety promise — "release / disconnect causes `rudydae` to
+issue `cmd_stop`" — is unchanged and is now enforced by both the
+controller's heartbeat watchdog (250 ms) and the bidi stream's
+EOF-as-`ClientGone` path.
+
