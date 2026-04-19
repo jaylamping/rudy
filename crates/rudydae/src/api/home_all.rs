@@ -23,6 +23,7 @@ use tokio::task::JoinSet;
 use crate::audit::{AuditEntry, AuditResult};
 use crate::boot_state::{self, BootState};
 use crate::limb::ordered_motors_per_limb;
+use crate::limb_health;
 use crate::state::SharedState;
 use crate::types::ApiError;
 use crate::util::session_from_headers;
@@ -47,6 +48,7 @@ fn err(status: StatusCode, error: &str, detail: Option<String>) -> (StatusCode, 
         Json(ApiError {
             error: error.into(),
             detail,
+            ..Default::default()
         }),
     )
 }
@@ -73,6 +75,14 @@ pub async fn home_all(
             "no_assigned_limbs",
             Some("no present motors have a `limb` field set; nothing to home".into()),
         ));
+    }
+
+    for (limb_name, _) in &by_limb {
+        if let limb_health::LimbStatus::Quarantined { failed_motors } =
+            limb_health::limb_status(&state, limb_name)
+        {
+            return Err(limb_health::limb_quarantine_http(limb_name, failed_motors));
+        }
     }
 
     // Pre-flight: every motor must be in InBand or Homed state. Anything

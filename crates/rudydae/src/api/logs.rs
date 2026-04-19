@@ -78,6 +78,7 @@ pub async fn list(
             Json(ApiError {
                 error: "log_query_failed".into(),
                 detail: Some(format!("{e:#}")),
+                ..Default::default()
             }),
         )
     })?;
@@ -106,6 +107,7 @@ pub async fn clear(
             Json(ApiError {
                 error: "log_clear_failed".into(),
                 detail: Some(format!("{e:#}")),
+                ..Default::default()
             }),
         )
     })?;
@@ -143,6 +145,7 @@ pub async fn put_level(
             Json(ApiError {
                 error: "empty_filter".into(),
                 detail: Some("raw filter directive must be non-empty".into()),
+                ..Default::default()
             }),
         ));
     }
@@ -155,6 +158,7 @@ pub async fn put_level(
             Json(ApiError {
                 error: "invalid_filter".into(),
                 detail: Some(format!("{e}")),
+                ..Default::default()
             }),
         )
     })?;
@@ -167,6 +171,7 @@ pub async fn put_level(
                 detail: Some(
                     "the daemon was started without a runtime-mutable filter (test build?)".into(),
                 ),
+                ..Default::default()
             }),
         )
     })?;
@@ -177,6 +182,7 @@ pub async fn put_level(
             Json(ApiError {
                 error: "filter_reload_failed".into(),
                 detail: Some(e),
+                ..Default::default()
             }),
         )
     })?;
@@ -298,6 +304,7 @@ fn store_unavailable_error() -> (StatusCode, Json<ApiError>) {
         Json(ApiError {
             error: "log_store_unavailable".into(),
             detail: Some("daemon started without a log store".into()),
+            ..Default::default()
         }),
     )
 }

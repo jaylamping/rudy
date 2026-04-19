@@ -32,6 +32,7 @@ pub async fn get_motor(
             Json(ApiError {
                 error: "unknown_motor".into(),
                 detail: Some(format!("no motor with role={role}")),
+                ..Default::default()
             }),
         )
     })?;
@@ -84,6 +85,7 @@ pub async fn get_feedback(
             Json(ApiError {
                 error: "no_feedback".into(),
                 detail: Some(format!("no feedback yet for role={role}")),
+                ..Default::default()
             }),
         ))
 }

@@ -35,6 +35,7 @@ pub async fn create(
             Json(ApiError {
                 error: "empty_text".into(),
                 detail: Some("reminder text must be non-empty".into()),
+                ..Default::default()
             }),
         ));
     }
@@ -71,6 +72,7 @@ pub async fn update(
             Json(ApiError {
                 error: "empty_text".into(),
                 detail: Some("reminder text must be non-empty".into()),
+                ..Default::default()
             }),
         ));
     }
@@ -96,6 +98,7 @@ pub async fn update(
             Json(ApiError {
                 error: "unknown_reminder".into(),
                 detail: Some(format!("no reminder with id={id}")),
+                ..Default::default()
             }),
         )),
         Err(e) => Err(persist_error("reminder_update", Some(&id), &input, &e)),
@@ -124,6 +127,7 @@ pub async fn delete_one(
             Json(ApiError {
                 error: "unknown_reminder".into(),
                 detail: Some(format!("no reminder with id={id}")),
+                ..Default::default()
             }),
         )),
         Err(e) => Err((
@@ -131,6 +135,7 @@ pub async fn delete_one(
             Json(ApiError {
                 error: "persist_failed".into(),
                 detail: Some(format!("{e:#}")),
+                ..Default::default()
             }),
         )),
     }
@@ -148,6 +153,7 @@ fn persist_error(
         Json(ApiError {
             error: "persist_failed".into(),
             detail: Some(format!("{e:#}")),
+            ..Default::default()
         }),
     )
 }

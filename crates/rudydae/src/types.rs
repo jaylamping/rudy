@@ -115,12 +115,27 @@ pub struct ParamWrite {
     pub save_after: bool,
 }
 
+/// One motor contributing to a [`limb_quarantined`](ApiError::error) refusal.
+#[derive(Debug, Clone, Serialize, Deserialize, TS, Default)]
+#[ts(export, export_to = "./")]
+pub struct LimbQuarantineMotor {
+    pub role: String,
+    /// [`BootState`](crate::boot_state::BootState) kind string (`snake_case`).
+    pub state_kind: String,
+}
+
 /// Standard error envelope for API responses.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS, Default)]
 #[ts(export, export_to = "./")]
 pub struct ApiError {
     pub error: String,
     pub detail: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub limb: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub failed_motors: Option<Vec<LimbQuarantineMotor>>,
 }
 
 /// GET /api/system - host metrics for the operator-console dashboard.

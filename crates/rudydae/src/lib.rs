@@ -16,6 +16,7 @@ pub mod can;
 pub mod config;
 pub mod inventory;
 pub mod limb;
+pub mod limb_health;
 pub mod log_layer;
 pub mod log_store;
 pub mod motion;

@@ -28,6 +28,7 @@ pub async fn get_params(
                 Json(ApiError {
                     error: "unknown_motor".into(),
                     detail: Some(format!("no motor with role={role}")),
+                    ..Default::default()
                 }),
             )
         })
@@ -44,6 +45,7 @@ pub async fn put_param(
             Json(ApiError {
                 error: error.into(),
                 detail,
+                ..Default::default()
             }),
         )
     };

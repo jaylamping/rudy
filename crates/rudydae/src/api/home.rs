@@ -48,6 +48,7 @@ fn err(status: StatusCode, error: &str, detail: Option<String>) -> (StatusCode, 
         Json(ApiError {
             error: error.into(),
             detail,
+            ..Default::default()
         }),
     )
 }
@@ -99,6 +100,8 @@ pub async fn home(
             Some(format!("inventory entry for {role} has present=false")),
         ));
     }
+
+    crate::limb_health::require_limb_healthy_http(&state, &role)?;
 
     let bs = boot_state::current(&state, &role);
     match bs {

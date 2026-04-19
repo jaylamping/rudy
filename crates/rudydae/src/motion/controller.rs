@@ -280,6 +280,7 @@ fn stop_reason_from_preflight(e: &PreflightFailure) -> MotionStopReason {
         PreflightFailure::UnknownMotor
         | PreflightFailure::Absent
         | PreflightFailure::NotVerified => MotionStopReason::BootStateLost,
+        PreflightFailure::LimbQuarantined { .. } => MotionStopReason::BootStateLost,
         PreflightFailure::Internal(s) => MotionStopReason::BusError(s.clone()),
     }
 }

@@ -43,6 +43,7 @@ fn err(status: StatusCode, error: &str, detail: Option<String>) -> (StatusCode, 
         Json(ApiError {
             error: error.into(),
             detail,
+            ..Default::default()
         }),
     )
 }
@@ -121,6 +122,8 @@ pub async fn enable(
             )),
         ));
     }
+
+    crate::limb_health::require_limb_healthy_http(&state, &role)?;
 
     // Check A (the inviolable physics rule): if travel_limits is set the
     // motor must currently be inside the band. Fires regardless of

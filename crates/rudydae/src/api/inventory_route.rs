@@ -21,6 +21,7 @@ fn err(status: StatusCode, error: &str, detail: Option<String>) -> (StatusCode, 
         Json(ApiError {
             error: error.into(),
             detail,
+            ..Default::default()
         }),
     )
 }

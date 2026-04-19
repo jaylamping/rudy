@@ -47,6 +47,7 @@ fn err(status: StatusCode, error: &str, detail: Option<String>) -> (StatusCode, 
         Json(ApiError {
             error: error.into(),
             detail,
+            ..Default::default()
         }),
     )
 }
@@ -93,6 +94,8 @@ pub async fn run_test(
             Some(format!("inventory entry for {role} has present=false")),
         ));
     }
+
+    crate::limb_health::require_limb_healthy_http(&state, &role)?;
 
     let run_id = Uuid::new_v4().to_string();
 

@@ -64,6 +64,7 @@ fn err(status: StatusCode, error: &str, detail: Option<String>) -> (StatusCode, 
         Json(ApiError {
             error: error.into(),
             detail,
+            ..Default::default()
         }),
     )
 }
@@ -111,6 +112,8 @@ pub async fn jog(
             )),
         ));
     }
+
+    crate::limb_health::require_limb_healthy_http(&state, &role)?;
 
     if !body.vel_rad_s.is_finite() {
         return Err(err(

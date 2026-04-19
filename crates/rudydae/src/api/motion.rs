@@ -55,6 +55,7 @@ fn err(status: StatusCode, error: &str, detail: Option<String>) -> (StatusCode, 
         Json(ApiError {
             error: error.into(),
             detail,
+            ..Default::default()
         }),
     )
 }
@@ -76,6 +77,20 @@ fn preflight_to_http(role: &str, e: PreflightFailure) -> (StatusCode, Json<ApiEr
         | PreflightFailure::PathViolation { .. }
         | PreflightFailure::StepTooLarge { .. } => StatusCode::CONFLICT,
         PreflightFailure::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        PreflightFailure::LimbQuarantined {
+            limb,
+            failed_motors,
+        } => {
+            return (
+                StatusCode::CONFLICT,
+                Json(ApiError {
+                    error: "limb_quarantined".into(),
+                    detail: Some(e.detail(role)),
+                    limb: Some(limb.clone()),
+                    failed_motors: Some(failed_motors.clone()),
+                }),
+            );
+        }
     };
     err(status, e.code(), Some(e.detail(role)))
 }
@@ -266,6 +281,7 @@ pub async fn start_or_update_jog(
     // also refreshes the heartbeat in the controller).
     if let Some(snap) = state.motion.current(&role) {
         if matches!(snap.kind.as_str(), "jog") {
+            crate::limb_health::require_limb_healthy_http(&state, &role)?;
             state.motion.update_intent(&role, intent.clone());
             state.audit.write(AuditEntry {
                 timestamp: Utc::now(),

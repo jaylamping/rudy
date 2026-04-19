@@ -31,7 +31,7 @@ use crate::can::motion::shortest_signed_delta;
 use crate::can::travel::{enforce_position_with_path, BandCheck};
 use crate::inventory::Motor;
 use crate::state::SharedState;
-use crate::types::MotorFeedback;
+use crate::types::{LimbQuarantineMotor, MotorFeedback};
 
 /// Why a motion request was refused. Each variant maps to a distinct
 /// REST status code and a distinct
@@ -71,6 +71,12 @@ pub enum PreflightFailure {
         delta_rad: f32,
         cap_rad: f32,
     },
+    /// Another motor on the same limb is `OutOfBand`, `OffsetChanged`, or
+    /// `HomeFailed`; refuse starting or continuing closed-loop motion.
+    LimbQuarantined {
+        limb: String,
+        failed_motors: Vec<LimbQuarantineMotor>,
+    },
     Internal(String),
 }
 
@@ -90,6 +96,7 @@ impl PreflightFailure {
             PreflightFailure::OutOfBand { .. } => "travel_limit_violation",
             PreflightFailure::PathViolation { .. } => "path_violation",
             PreflightFailure::StepTooLarge { .. } => "step_too_large",
+            PreflightFailure::LimbQuarantined { .. } => "limb_quarantined",
             PreflightFailure::Internal(_) => "internal",
         }
     }
@@ -146,6 +153,14 @@ impl PreflightFailure {
             PreflightFailure::StepTooLarge { delta_rad, cap_rad } => format!(
                 "projected delta {delta_rad:.3} rad exceeds boot_max_step_rad {cap_rad:.3} rad; run /home first"
             ),
+            PreflightFailure::LimbQuarantined { limb, failed_motors } => {
+                let names = failed_motors
+                    .iter()
+                    .map(|f| f.role.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("limb {limb} quarantined ({names})")
+            }
             PreflightFailure::Internal(s) => s.clone(),
         }
     }
@@ -194,6 +209,21 @@ impl PreflightChecks<'_> {
         }
         if self.state.cfg.safety.require_verified && !motor.verified {
             return Err(PreflightFailure::NotVerified);
+        }
+
+        let limb_id = crate::limb_health::effective_limb_id(&motor);
+        let failed = crate::limb_health::sibling_quarantine_failures(self.state, &limb_id, self.role);
+        if !failed.is_empty() {
+            return Err(PreflightFailure::LimbQuarantined {
+                limb: limb_id,
+                failed_motors: failed
+                    .iter()
+                    .map(|(role, bs)| LimbQuarantineMotor {
+                        role: role.clone(),
+                        state_kind: crate::limb_health::boot_state_kind_snake(bs).to_string(),
+                    })
+                    .collect(),
+            });
         }
 
         let bs = boot_state::current(self.state, self.role);

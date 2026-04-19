@@ -2270,6 +2270,91 @@ async fn motion_sweep_clamps_excessive_speed() {
         .unwrap();
 }
 
+/// When any **sibling** on the same `limb` is `HomeFailed` / `OffsetChanged` /
+/// `OutOfBand`, motion on a healthy peer returns `409 limb_quarantined`.
+#[tokio::test]
+async fn limb_quarantine_blocks_sibling_jog() {
+    let (state, _dir) = common::make_state();
+    {
+        let mut inv = state.inventory.write().expect("inventory");
+        for m in &mut inv.motors {
+            m.limb = Some("test_limb".into());
+            if m.role == "shoulder_actuator_b" {
+                m.verified = true;
+            }
+        }
+    }
+    common::seed_feedback(&state);
+    common::set_boot_state(&state, "shoulder_actuator_a", BootState::Homed);
+    common::set_boot_state(
+        &state,
+        "shoulder_actuator_b",
+        BootState::HomeFailed {
+            reason: "fixture".into(),
+            last_pos_rad: 0.0,
+        },
+    );
+    let app = rudydae::build_app(state);
+    let body = serde_json::to_vec(&json!({"vel_rad_s": 0.01, "ttl_ms": 200})).unwrap();
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/motors/shoulder_actuator_a/jog")
+                .header("content-type", "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CONFLICT);
+    let err: ApiError = body_json(resp).await;
+    assert_eq!(err.error, "limb_quarantined");
+    assert_eq!(err.limb.as_deref(), Some("test_limb"));
+    let failed = err.failed_motors.expect("failed_motors");
+    assert!(failed.iter().any(|m| m.role == "shoulder_actuator_b"));
+}
+
+/// Limb quarantine must not block intentional recovery paths that skip the
+/// motion gate — e.g. RAM-only `set_zero` on the failed sibling.
+#[tokio::test]
+async fn limb_quarantine_allows_recovery_set_zero() {
+    let (state, _dir) = common::make_state();
+    {
+        let mut inv = state.inventory.write().expect("inventory");
+        for m in &mut inv.motors {
+            m.limb = Some("test_limb".into());
+            if m.role == "shoulder_actuator_b" {
+                m.verified = true;
+            }
+        }
+    }
+    common::seed_feedback(&state);
+    common::set_boot_state(&state, "shoulder_actuator_a", BootState::Homed);
+    common::set_boot_state(
+        &state,
+        "shoulder_actuator_b",
+        BootState::HomeFailed {
+            reason: "fixture".into(),
+            last_pos_rad: 0.0,
+        },
+    );
+    let app = rudydae::build_app(state);
+    let body = serde_json::to_vec(&json!({"confirm_advanced": true})).unwrap();
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/motors/shoulder_actuator_b/set_zero")
+                .header("content-type", "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
 /// Sanity check: the URL paths the test hits above are exactly the ones the
 /// SPA's `link/src/lib/api.ts` constructs. If someone renames a route in
 /// `crates/rudydae/src/api/mod.rs`, this test file fails to compile because
