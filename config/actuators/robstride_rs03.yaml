@@ -124,23 +124,37 @@ observables:
   firmware_version:
     index: 0x1003
     type: string
+  # NOTE on indices: the canonical numbers in the vendor manual are 0x30xx
+  # (e.g. mechPos = 0x3016), but per ADR-0002 the 0x30xx namespace is NOT
+  # reachable via type-17 single-frame reads. Use the 0x70xx shadow range
+  # (manual §4.1.14), which is the only single-frame read path the Pi has.
+  # `tools/robstride/rs03_can.py:PARAM_MECH_POS` and `crates/rudydae` both
+  # read these via type-17 so we keep the spec aligned with what actually
+  # works on the wire.
   mech_pos:
-    index: 0x3016
+    index: 0x7019                     # shadow of 0x3016
     type: float
     units: rad
-    description: "load-end mechanical angle after gearbox"
+    description: "load-end mechanical angle after gearbox (type-17 shadow of 0x3016)"
   mech_vel:
-    index: 0x3017
+    index: 0x701B                     # shadow of 0x3017
     type: float
     units: rad_per_s
+    description: "load-end mechanical velocity (type-17 shadow of 0x3017)"
   vbus:
-    index: 0x300C
+    index: 0x701C                     # shadow of 0x300C
     type: float
     units: volts
+    description: "DC bus voltage (type-17 shadow of 0x300C)"
   fault_sta:
     index: 0x3022
     type: uint32
-    description: "bit field; see manual §3.3.7"
+    description: |
+      Fault bit field (manual §3.3.7). NOTE: NOT reachable via type-17
+      per ADR-0002; populated only from type-2 motor-feedback frames
+      (bits 16..21 of the reply arb ID) or the type-21 fault-feedback
+      frame. The poll_once aux sweep best-efforts a type-17 read here
+      and silently ignores the read-fail status.
   can_terminator_flag:
     index: 0x3041
     type: uint8

@@ -40,11 +40,11 @@ firmware_limits:
 
 observables:
   mech_pos:
-    index: 0x3016
+    index: 0x7019                       # type-17 shadow of 0x3016
     type: float
     units: rad
   vbus:
-    index: 0x300C
+    index: 0x701C                       # type-17 shadow of 0x300C
     type: float
     units: volts
 "#;

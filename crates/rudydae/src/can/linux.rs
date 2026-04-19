@@ -27,6 +27,8 @@ use anyhow::{anyhow, bail, Context, Result};
 use chrono::Utc;
 use driver::CanBus;
 
+use crate::boot_state::{self, BootState, ClassifyOutcome};
+use crate::can::auto_recovery;
 use crate::can::backoff::MotorBackoff;
 use crate::can::bus_worker::{self, BusHandle, WriteValue};
 use crate::config::Config;
@@ -37,6 +39,19 @@ use crate::types::{MotorFeedback, ParamSnapshot, ParamValue};
 
 const DEFAULT_HOST_ID: u8 = 0xFD;
 const PARAM_TIMEOUT: Duration = Duration::from_millis(30);
+
+/// Result of one type-17 sweep across the auxiliary observables.
+/// Each field is `None` when the motor returned a read-fail status
+/// (or, for `fault_sta`, when the firmware doesn't expose the
+/// shadow). The merge step picks per-field winners between this and
+/// the live type-2 row in `state.latest`.
+#[derive(Debug, Clone, Copy)]
+struct AuxObservables {
+    mech_pos: Option<f32>,
+    mech_vel: Option<f32>,
+    vbus: Option<f32>,
+    fault_sta: Option<u32>,
+}
 
 /// Two-phase lifecycle:
 ///
@@ -328,13 +343,25 @@ impl LinuxCanCore {
         Ok(())
     }
 
-    /// Slow-cadence type-17 sweep for the observables that don't ride
-    /// the type-2 stream (`fault_sta`, `vbus`).
+    /// Slow-cadence type-17 sweep that backstops the type-2 stream.
     ///
-    /// `pos`, `vel`, `torque` and `temp` are now updated by
-    /// [`crate::can::bus_worker`] every time a type-2 frame arrives, so
-    /// this function no longer reads them. Per-motor failures stay
-    /// isolated via [`MotorBackoff`].
+    /// `mech_pos`, `mech_vel`, `vbus`, and `fault_sta` are read here
+    /// every tick. The RS03 only emits type-2 motor-feedback frames
+    /// while the motor is enabled and active, so a disabled / idle
+    /// motor would otherwise have its `state.latest` row stop updating
+    /// — leaving the SPA showing stale or zero telemetry, and the
+    /// jog stale-feedback guard refusing all motion until the first
+    /// jog frame round-trips a type-2 reply. The type-17 fallback
+    /// keeps `state.latest` (and the WT broadcast) live regardless.
+    ///
+    /// Where a type-2 frame arrived more recently than this poll
+    /// completed, the type-2 path's pos / vel / torque / temp values
+    /// win — the merge below only writes the type-17 readings when
+    /// `state.latest[role].t_ms` is older than this poll's start
+    /// timestamp. That preserves the high-cadence type-2 stream as
+    /// the canonical source while the motor is active.
+    ///
+    /// Per-motor failures stay isolated via [`MotorBackoff`].
     pub fn poll_once(&self, state: &SharedState) -> Result<()> {
         let motors: Vec<Motor> = state
             .inventory
@@ -349,10 +376,14 @@ impl LinuxCanCore {
             if !self.backoff.should_poll(&motor.role) {
                 continue;
             }
+            // Snapshot wall-clock before the bus round-trips so the
+            // merge below can correctly decide whether a concurrent
+            // type-2 frame already updated the row.
+            let poll_started_ms = Utc::now().timestamp_millis();
             match self.read_aux_observables(state, motor) {
-                Ok((vbus, fault_sta)) => {
+                Ok(aux) => {
                     self.backoff.record_success(&motor.role);
-                    self.merge_aux_into_latest(state, motor, vbus, fault_sta);
+                    self.merge_aux_into_latest(state, motor, poll_started_ms, aux);
                 }
                 Err(e) => {
                     self.backoff.record_failure(&motor.role, &e);
@@ -384,34 +415,73 @@ impl LinuxCanCore {
         })
     }
 
-    /// Type-17 read of the auxiliary observables that don't ride
-    /// type-2. Returns `(vbus, fault_sta)`. Either may be `None` if
-    /// the motor returned a read-fail.
-    fn read_aux_observables(
-        &self,
-        state: &SharedState,
-        motor: &Motor,
-    ) -> Result<(Option<f32>, Option<u32>)> {
+    /// Per-tick type-17 sweep. Returns the four values the type-2
+    /// stream cannot reliably backstop:
+    ///
+    /// - `mech_pos` / `mech_vel`: the motor only emits type-2 frames
+    ///   while it's enabled and being commanded, so disabled / idle
+    ///   motors need a type-17 fallback or the SPA goes dark and the
+    ///   jog stale-feedback guard refuses every motion command.
+    /// - `vbus`: not on the type-2 payload at all.
+    /// - `fault_sta`: per ADR-0002 NOT reachable via type-17 in
+    ///   theory (it lives at 0x3022 in the manual's read-only
+    ///   namespace), but the read is best-effort here in case a
+    ///   future firmware adds the shadow; success is treated as a
+    ///   bonus, failure is silent.
+    ///
+    /// Each value is `None` when the motor returned a read-fail
+    /// status. Errors at the bus / channel layer propagate so the
+    /// per-motor backoff can rate-limit the chatter.
+    fn read_aux_observables(&self, state: &SharedState, motor: &Motor) -> Result<AuxObservables> {
+        let mech_pos = self.read_named_f32(state, motor, "mech_pos")?;
+        let mech_vel = self.read_named_f32(state, motor, "mech_vel")?;
         let vbus = self.read_named_f32(state, motor, "vbus")?;
-        let fault_sta = self.read_named_u32(state, motor, "fault_sta")?;
-        Ok((vbus, fault_sta))
+        // `fault_sta` lives at 0x3022 (no type-17 shadow per ADR-0002).
+        // The read is kept here as a best-effort: on firmwares that
+        // added a shadow we get it for free; on older firmwares the
+        // motor returns a read-fail status (Ok(None)) and the
+        // request frame times out at the worker's REPLY_TIMEOUT,
+        // surfacing here as a TimedOut io::Error. Either way we
+        // want to keep refreshing the rest of the row, so swallow
+        // both into `None`. Channel / bus errors that are NOT a
+        // simple per-read timeout still propagate so the per-motor
+        // backoff can rate-limit the chatter.
+        let fault_sta = match self.read_named_u32(state, motor, "fault_sta") {
+            Ok(v) => v,
+            Err(e) => {
+                if let Some(io_err) = e.downcast_ref::<std::io::Error>() {
+                    if io_err.kind() == std::io::ErrorKind::TimedOut {
+                        None
+                    } else {
+                        return Err(e);
+                    }
+                } else {
+                    return Err(e);
+                }
+            }
+        };
+        Ok(AuxObservables {
+            mech_pos,
+            mech_vel,
+            vbus,
+            fault_sta,
+        })
     }
 
-    /// Splice freshly-polled vbus / fault_sta into the existing
-    /// `state.latest[role]` row (which the bus_worker keeps refreshing
-    /// from type-2 frames). When no row exists yet (e.g. the motor is
-    /// silent), seed a partial row so the API at least sees the vbus
-    /// reading.
+    /// Splice freshly-polled aux observables into `state.latest[role]`,
+    /// taking care not to clobber a fresher type-2 frame, and broadcast
+    /// the resulting row on `feedback_tx` so SPA subscribers see the
+    /// update at the poll cadence even when the motor is silent.
     fn merge_aux_into_latest(
         &self,
         state: &SharedState,
         motor: &Motor,
-        vbus: Option<f32>,
-        fault_sta: Option<u32>,
+        poll_started_ms: i64,
+        aux: AuxObservables,
     ) {
         // Mirror into the params snapshot too so /api/motors/:role/params
-        // reflects the most recent vbus / fault_sta even between full
-        // refresh sweeps.
+        // reflects the most recent observables even between full refresh
+        // sweeps.
         {
             let mut params = state.params.write().expect("params poisoned");
             let snapshot = params
@@ -422,11 +492,19 @@ impl LinuxCanCore {
                 });
             for (name, desc) in state.spec.observables.iter() {
                 let value = match name.as_str() {
-                    "vbus" => match vbus {
+                    "mech_pos" => match aux.mech_pos {
                         Some(v) => serde_json::json!(v),
                         None => continue,
                     },
-                    "fault_sta" => match fault_sta {
+                    "mech_vel" => match aux.mech_vel {
+                        Some(v) => serde_json::json!(v),
+                        None => continue,
+                    },
+                    "vbus" => match aux.vbus {
+                        Some(v) => serde_json::json!(v),
+                        None => continue,
+                    },
+                    "fault_sta" => match aux.fault_sta {
                         Some(v) => serde_json::json!(v),
                         None => continue,
                     },
@@ -446,42 +524,87 @@ impl LinuxCanCore {
             }
         }
 
-        let mut latest = state.latest.write().expect("latest poisoned");
-        let now_ms = Utc::now().timestamp_millis();
-        match latest.get_mut(&motor.role) {
-            Some(row) => {
-                if let Some(v) = vbus {
-                    row.vbus_v = v;
+        // Build the row to insert / merge, then drop the write lock
+        // before broadcasting. We do classification + recovery + the
+        // broadcast send outside any held lock so a slow subscriber
+        // can never wedge the poll loop.
+        let merged: MotorFeedback = {
+            let mut latest = state.latest.write().expect("latest poisoned");
+            let now_ms = Utc::now().timestamp_millis();
+            match latest.get_mut(&motor.role) {
+                Some(row) => {
+                    // vbus / fault_sta are NOT on the type-2 stream;
+                    // always overwrite when the read succeeded.
+                    if let Some(v) = aux.vbus {
+                        row.vbus_v = v;
+                    }
+                    if let Some(f) = aux.fault_sta {
+                        row.fault_sta = f;
+                    }
+                    // pos / vel ride type-2 too. Only adopt the type-17
+                    // value when nothing fresher has landed since this
+                    // poll started — otherwise we'd backdate a
+                    // 60-Hz-cadence type-2 frame with a slower type-17
+                    // reading. `t_ms < poll_started_ms` means "no
+                    // type-2 frame arrived during this tick".
+                    if row.t_ms < poll_started_ms {
+                        if let Some(p) = aux.mech_pos {
+                            row.mech_pos_rad = p;
+                        }
+                        if let Some(v) = aux.mech_vel {
+                            row.mech_vel_rad_s = v;
+                        }
+                        // Stamp the row with the current wall-clock so
+                        // the jog stale-feedback guard treats the type-17
+                        // reading as fresh telemetry. Without this the
+                        // guard would refuse motion on any motor that's
+                        // been idle long enough for the last type-2 to
+                        // age past `safety.max_feedback_age_ms`.
+                        row.t_ms = now_ms;
+                    }
+                    row.clone()
                 }
-                if let Some(f) = fault_sta {
-                    row.fault_sta = f;
-                }
-                // Don't backdate `t_ms` here: the bus_worker stamps
-                // `t_ms` from the most recent type-2 frame, which is
-                // the canonical "freshness" of the row used by the
-                // jog stale-feedback guard.
-            }
-            None => {
-                // No type-2 yet — seed a partial row so the API has
-                // something to render. mech_pos / vel / torque stay 0
-                // until the first type-2 lands.
-                latest.insert(
-                    motor.role.clone(),
-                    MotorFeedback {
+                None => {
+                    // No type-2 has landed yet — seed the row from
+                    // whatever the type-17 sweep returned. Anything
+                    // that came back `None` (read-fail) starts at 0;
+                    // the next successful poll fills it in.
+                    let seeded = MotorFeedback {
                         t_ms: now_ms,
                         role: motor.role.clone(),
                         can_id: motor.can_id,
-                        mech_pos_rad: 0.0,
-                        mech_vel_rad_s: 0.0,
+                        mech_pos_rad: aux.mech_pos.unwrap_or_default(),
+                        mech_vel_rad_s: aux.mech_vel.unwrap_or_default(),
                         torque_nm: 0.0,
-                        vbus_v: vbus.unwrap_or_default(),
+                        vbus_v: aux.vbus.unwrap_or_default(),
                         temp_c: 0.0,
-                        fault_sta: fault_sta.unwrap_or_default(),
+                        fault_sta: aux.fault_sta.unwrap_or_default(),
                         warn_sta: 0,
-                    },
-                );
+                    };
+                    latest.insert(motor.role.clone(), seeded.clone());
+                    seeded
+                }
+            }
+        };
+
+        // Run the boot-state classifier on the freshly-merged position
+        // so a motor that drifted out of band while disabled (or
+        // simply hasn't been classified yet because no type-2 arrived
+        // since boot) transitions into `OutOfBand` and triggers the
+        // auto-recovery path. Mirrors what `bus_worker::apply_type2`
+        // does on the type-2 hot path.
+        if let ClassifyOutcome::Changed { new, .. } =
+            boot_state::classify(state, &motor.role, merged.mech_pos_rad)
+        {
+            if let BootState::OutOfBand { mech_pos_rad, .. } = new {
+                auto_recovery::maybe_spawn_recovery(state, &motor.role, mech_pos_rad);
             }
         }
+
+        // Fan out to the WT subscribers so the SPA's live position
+        // tracker keeps moving even while the motor is disabled.
+        // Errors here mean nobody is listening, which is fine.
+        let _ = state.feedback_tx.send(merged);
     }
 
     fn read_named_f32(
