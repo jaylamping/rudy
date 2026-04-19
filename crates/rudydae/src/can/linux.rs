@@ -620,7 +620,7 @@ impl LinuxCanCore {
                 aux_fault = ?aux.fault_sta,
                 "aux merge"
             ),
-            MergeOutcome::Type17Stamped => tracing::debug!(
+            MergeOutcome::Type17Stamped => tracing::trace!(
                 role = %motor.role,
                 can_id = motor.can_id,
                 outcome = "type17_stamped",

@@ -35,8 +35,12 @@ export const Route = createFileRoute("/_app/logs")({
   component: LogsPage,
 });
 
-function parseCsvSet<T extends string>(raw: string | undefined, all: Set<T>): Set<T> {
-  if (raw === undefined) return new Set(all);
+function parseCsvSet<T extends string>(
+  raw: string | undefined,
+  all: Set<T>,
+  defaultSet?: Set<T>,
+): Set<T> {
+  if (raw === undefined) return new Set(defaultSet ?? all);
   if (raw === "") return new Set();
   const set = new Set<T>();
   for (const part of raw.split(",")) {
@@ -46,10 +50,27 @@ function parseCsvSet<T extends string>(raw: string | undefined, all: Set<T>): Se
   return set;
 }
 
-function setToCsv<T extends string>(set: Set<T>, all: Set<T>): string | undefined {
-  if (set.size === all.size) return undefined;
+function setEquals<T>(a: Set<T>, b: Set<T>): boolean {
+  if (a.size !== b.size) return false;
+  for (const v of a) if (!b.has(v)) return false;
+  return true;
+}
+
+function setToCsv<T extends string>(
+  set: Set<T>,
+  all: Set<T>,
+  defaultSet?: Set<T>,
+): string | undefined {
+  if (setEquals(set, defaultSet ?? all)) return undefined;
+  if (set.size === 0) return "";
   return Array.from(set).join(",");
 }
+
+// `trace` and `debug` are extremely chatty (the motion loop alone fires
+// several debug events per second), so we hide them by default. The
+// operator can toggle them back on from the filter pill bar; the URL
+// then carries an explicit CSV so the choice survives reloads.
+const DEFAULT_LEVELS = new Set<LogLevel>(["info", "warn", "error"]);
 
 function LogsPage() {
   const search = Route.useSearch();
@@ -58,7 +79,7 @@ function LogsPage() {
 
   const filters: LogFilterValue = useMemo(
     () => ({
-      levels: parseCsvSet<LogLevel>(search.level, ALL_LEVELS),
+      levels: parseCsvSet<LogLevel>(search.level, ALL_LEVELS, DEFAULT_LEVELS),
       sources: parseCsvSet<LogSource>(search.source, ALL_SOURCES),
       q: search.q ?? "",
       target: search.target ?? "",
@@ -129,7 +150,7 @@ function LogsPage() {
 
   const onFiltersChange = (next: LogFilterValue) => {
     updateUrl({
-      level: setToCsv(next.levels, ALL_LEVELS),
+      level: setToCsv(next.levels, ALL_LEVELS, DEFAULT_LEVELS),
       source: setToCsv(next.sources, ALL_SOURCES),
       q: next.q || undefined,
       target: next.target || undefined,

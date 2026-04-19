@@ -16,7 +16,15 @@ export function LogDetail({ entry }: { entry: LogEntry | null }) {
   }
 
   const isoTime = new Date(Number(entry.t_ms)).toISOString();
-  const fieldsJson = JSON.stringify(entry.fields, null, 2);
+  // `entry.fields` may include BigInt values (e.g. ids deserialized from
+  // SuperJSON). Native JSON.stringify throws on those, so coerce to a
+  // string in the replacer. Numbers >= 2^53 lose precision either way,
+  // but the operator only needs a readable view here.
+  const fieldsJson = JSON.stringify(
+    entry.fields,
+    (_k, v) => (typeof v === "bigint" ? v.toString() : v),
+    2,
+  );
   const isAudit = entry.source === "audit";
 
   return (
