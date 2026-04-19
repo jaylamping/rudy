@@ -392,17 +392,28 @@ async fn control_endpoints_return_ok_envelope_for_verified_motor() {
     common::force_homed(&state);
     let app = rudydae::build_app(state);
 
-    for (verb, suffix) in [
-        ("POST", "enable"),
-        ("POST", "stop"),
-        ("POST", "save"),
-        ("POST", "set_zero"),
+    // (verb, suffix, body) triples. `set_zero` is the only one that
+    // requires a body (the `confirm_advanced: true` opt-in flag);
+    // every other control endpoint is bodyless.
+    for (verb, suffix, body_json_str) in [
+        ("POST", "enable", None),
+        ("POST", "stop", None),
+        ("POST", "save", None),
+        (
+            "POST",
+            "set_zero",
+            Some(r#"{"confirm_advanced": true}"#),
+        ),
     ] {
-        let req = Request::builder()
+        let mut builder = Request::builder()
             .method(verb)
-            .uri(format!("/api/motors/shoulder_actuator_a/{suffix}"))
-            .body(Body::empty())
-            .unwrap();
+            .uri(format!("/api/motors/shoulder_actuator_a/{suffix}"));
+        let req = if let Some(s) = body_json_str {
+            builder = builder.header("content-type", "application/json");
+            builder.body(Body::from(s)).unwrap()
+        } else {
+            builder.body(Body::empty()).unwrap()
+        };
         let resp = app.clone().oneshot(req).await.unwrap();
         assert_eq!(
             resp.status(),
@@ -1270,8 +1281,10 @@ async fn jog_refuses_with_no_feedback() {
     assert_eq!(err.error, "stale_telemetry");
 }
 
-/// set_zero resets BootState to Unknown so the operator must re-home before
-/// enable will work.
+/// `set_zero` resets BootState to Unknown so the operator must re-home
+/// before enable will work. The flag is required (see
+/// `set_zero_without_confirm_advanced_returns_400`), so this test sends
+/// the opt-in body to exercise the success path.
 #[tokio::test]
 async fn set_zero_resets_boot_state_to_unknown() {
     let (state, _dir) = common::make_state();
@@ -1283,7 +1296,8 @@ async fn set_zero_resets_boot_state_to_unknown() {
             Request::builder()
                 .method(Method::POST)
                 .uri("/api/motors/shoulder_actuator_a/set_zero")
-                .body(Body::empty())
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"confirm_advanced": true}"#))
                 .unwrap(),
         )
         .await
@@ -1297,10 +1311,14 @@ async fn set_zero_resets_boot_state_to_unknown() {
 /// `set_zero` is RAM-only by design (it issues type-6 only; no type-22
 /// SaveParams). The audit log must record this fact unambiguously so an
 /// operator reviewing history after a "did this survive the reboot?"
-/// question can grep for the marker. Specifically the audit entry's
-/// `details` JSON must contain `"persisted": false`, and the response
-/// body must echo the same `persisted: false` so the SPA can show a
-/// distinct treatment without parsing free-form prose.
+/// question can grep for the marker. Specifically:
+///
+/// - the audit entry's `action` is `set_zero_advanced` (not plain
+///   `set_zero`), so the act of opting in is the act being audited;
+/// - `details.persisted` is `false`;
+/// - `details.confirm_advanced` is `true`;
+/// - the response body echoes `persisted: false` so the SPA can show a
+///   distinct treatment without parsing free-form prose.
 #[tokio::test]
 async fn set_zero_audit_records_not_persisted() {
     let (state, dir) = common::make_state();
@@ -1312,7 +1330,8 @@ async fn set_zero_audit_records_not_persisted() {
             Request::builder()
                 .method(Method::POST)
                 .uri("/api/motors/shoulder_actuator_a/set_zero")
-                .body(Body::empty())
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"confirm_advanced": true}"#))
                 .unwrap(),
         )
         .await
@@ -1335,15 +1354,24 @@ async fn set_zero_audit_records_not_persisted() {
     let last_set_zero = raw
         .lines()
         .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
-        .filter(|entry| entry.get("action").and_then(|v| v.as_str()) == Some("set_zero"))
+        .filter(|entry| {
+            entry.get("action").and_then(|v| v.as_str()) == Some("set_zero_advanced")
+        })
         .last()
-        .expect("audit log should contain a set_zero entry");
+        .expect("audit log should contain a set_zero_advanced entry");
     assert_eq!(
         last_set_zero
             .get("details")
             .and_then(|d| d.get("persisted")),
         Some(&serde_json::Value::Bool(false)),
-        "set_zero audit entry must include details.persisted=false; got {last_set_zero}",
+        "audit entry must include details.persisted=false; got {last_set_zero}",
+    );
+    assert_eq!(
+        last_set_zero
+            .get("details")
+            .and_then(|d| d.get("confirm_advanced")),
+        Some(&serde_json::Value::Bool(true)),
+        "audit entry must include details.confirm_advanced=true; got {last_set_zero}",
     );
     assert_eq!(
         last_set_zero.get("result").and_then(|v| v.as_str()),
@@ -1353,6 +1381,71 @@ async fn set_zero_audit_records_not_persisted() {
         last_set_zero.get("target").and_then(|v| v.as_str()),
         Some("shoulder_actuator_a"),
     );
+}
+
+/// The raw `set_zero` endpoint is gated behind `confirm_advanced: true`
+/// so a misclick from the SPA — or a copy-pasted curl command — can't
+/// silently shift a commissioned motor's frame. Three calling patterns
+/// must all be rejected with the same `400 requires_confirmation`:
+///
+/// 1. completely missing body (the historical SPA call shape, before
+///    Phase A.2 of the commissioned-zero plan);
+/// 2. empty JSON object `{}`, where `confirm_advanced` defaults to
+///    `false` via `#[serde(default)]`;
+/// 3. explicit `{"confirm_advanced": false}`.
+///
+/// Critically, in all three cases the BootState must be UNCHANGED — a
+/// rejected request must not have any side effects, including the
+/// "reset to Unknown" that an accepted re-zero would trigger.
+#[tokio::test]
+async fn set_zero_without_confirm_advanced_returns_400() {
+    let (state, _dir) = common::make_state();
+    let app = rudydae::build_app(state.clone());
+
+    for (label, body) in [
+        ("missing body", None),
+        ("empty object", Some(r#"{}"#)),
+        ("explicit false", Some(r#"{"confirm_advanced": false}"#)),
+    ] {
+        common::set_boot_state(&state, "shoulder_actuator_a", BootState::Homed);
+
+        let mut builder = Request::builder()
+            .method(Method::POST)
+            .uri("/api/motors/shoulder_actuator_a/set_zero");
+        let req = if let Some(b) = body {
+            builder = builder.header("content-type", "application/json");
+            builder.body(Body::from(b)).unwrap()
+        } else {
+            builder.body(Body::empty()).unwrap()
+        };
+
+        let resp = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::BAD_REQUEST,
+            "{label}: expected 400, got {}",
+            resp.status()
+        );
+        let err: ApiError = body_json(resp).await;
+        assert_eq!(err.error, "requires_confirmation", "{label}");
+        let detail = err.detail.as_deref().unwrap_or("");
+        assert!(
+            detail.contains("confirm_advanced"),
+            "{label}: detail must mention confirm_advanced; got {detail:?}"
+        );
+        assert!(
+            detail.contains("/commission"),
+            "{label}: detail must point operators at /commission; got {detail:?}"
+        );
+
+        // Side-effect check: the boot state must be untouched. An accepted
+        // set_zero would have reset it to Unknown.
+        let bs = rudydae::boot_state::current(&state, "shoulder_actuator_a");
+        assert!(
+            matches!(bs, BootState::Homed),
+            "{label}: rejected set_zero must not mutate boot state; got {bs:?}"
+        );
+    }
 }
 
 /// Rename of an enabled motor used to refuse with 409 `motor_active` and

@@ -95,8 +95,22 @@ export const api = {
     apiFetch<{ ok: boolean }>(`/api/motors/${encodeURIComponent(role)}/stop`, { method: "POST" }),
   saveToFlash: (role: string) =>
     apiFetch<{ ok: boolean }>(`/api/motors/${encodeURIComponent(role)}/save`, { method: "POST" }),
+  // RAM-only diagnostic re-zero. The `confirm_advanced: true` flag is
+  // required by the daemon (see `crates/rudydae/src/api/control.rs`) so
+  // a misclick or a copy-pasted curl can't silently shift a commissioned
+  // motor's frame. The SPA always passes the flag — the safety is
+  // enforced at the dialog layer (the operator typed-confirm a destructive
+  // action) and via the explicit "(RAM only — does not persist)" copy.
+  // For a flash-persistent zero that the boot orchestrator can verify
+  // every boot, use `api.commissionMotor` (lands later in the plan).
   setZero: (role: string) =>
-    apiFetch<{ ok: boolean }>(`/api/motors/${encodeURIComponent(role)}/set_zero`, { method: "POST" }),
+    apiFetch<{ ok: boolean; persisted: false }>(
+      `/api/motors/${encodeURIComponent(role)}/set_zero`,
+      {
+        method: "POST",
+        body: JSON.stringify({ confirm_advanced: true }),
+      },
+    ),
   // Travel limits (added by the actuator-detail page work).
   getTravelLimits: (role: string) =>
     apiFetch<import("@/lib/types/TravelLimits").TravelLimits>(

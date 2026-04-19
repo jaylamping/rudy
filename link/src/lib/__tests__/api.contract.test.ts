@@ -151,6 +151,25 @@ describe("REST contract — URL + method per call", () => {
   }
 });
 
+describe("POST /api/motors/:role/set_zero", () => {
+  // The daemon now requires `confirm_advanced: true` in the JSON body
+  // so a misclick or copy-pasted curl can't silently shift a
+  // commissioned motor's frame (see Phase A.2 of the commissioned-zero
+  // plan). The SPA's only call site is the explicit "Set zero (RAM
+  // only)" diagnostic disclosure under typed-confirm — it's safe for
+  // `api.setZero` to pass the flag automatically. If a future refactor
+  // strips the flag, this contract test fails loudly and the daemon
+  // would (correctly) start refusing the request with 400
+  // `requires_confirmation`.
+  it("always sends confirm_advanced:true in a JSON body", async () => {
+    await api.setZero("shoulder_actuator_a");
+    expect(captured?.url).toBe("/api/motors/shoulder_actuator_a/set_zero");
+    expect(captured?.method).toBe("POST");
+    expect(captured?.headers["content-type"]).toBe("application/json");
+    expect(captured?.body).toEqual({ confirm_advanced: true });
+  });
+});
+
 describe("GET /api/motors/:role/motion", () => {
   it("returns null when the server replies 204", async () => {
     nextResponse = { status: 204, body: "" };

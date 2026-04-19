@@ -17,12 +17,25 @@ use axum::{
     Json,
 };
 use chrono::Utc;
+use serde::Deserialize;
 
 use crate::audit::{AuditEntry, AuditResult};
 use crate::boot_state::{self, BootState};
 use crate::can::travel::{enforce_position_with_path, BandCheck};
 use crate::state::SharedState;
 use crate::types::ApiError;
+
+/// JSON body for `POST /api/motors/:role/set_zero`.
+///
+/// The endpoint requires `confirm_advanced: true` to fire — see the
+/// handler docstring. Defaulting `confirm_advanced` to `false` means a
+/// missing body, an empty `{}`, and an explicit `false` all collapse to
+/// the same "you forgot the flag, please be intentional" 400 error.
+#[derive(Debug, Default, Deserialize)]
+pub struct SetZeroBody {
+    #[serde(default)]
+    pub confirm_advanced: bool,
+}
 
 fn err(status: StatusCode, error: &str, detail: Option<String>) -> (StatusCode, Json<ApiError>) {
     (
@@ -267,14 +280,55 @@ pub async fn save_to_flash(
 /// type-6 + type-22 SaveParams sequence and reads back `add_offset` to
 /// confirm the firmware accepted the change.
 ///
-/// This endpoint is retained as a diagnostic tool (an operator may want to
-/// briefly re-zero a motor mid-session for a measurement and not commit
-/// to it). The audit log records every call with `persisted: false` to
-/// make the distinction visible after the fact.
+/// ## Why this endpoint requires `confirm_advanced: true`
+///
+/// A misclick from the SPA — or a copy-pasted curl command — used to be
+/// enough to silently shift a commissioned motor's frame, because the
+/// only signal that a re-zero had happened was a single line in the
+/// audit log. After the orchestrator lands, every commissioned motor
+/// also boots into `BootState::OffsetChanged` after a stray `set_zero`,
+/// which is loud enough — but the operator still has to do the
+/// re-commission round-trip to recover. The `confirm_advanced` flag
+/// turns ad-hoc usage into an explicit two-step act:
+///
+/// 1. Caller (curl, the SPA's "advanced" disclosure, the bench tool) must
+///    POST a JSON body containing `{"confirm_advanced": true}`.
+/// 2. Without the flag (missing body, empty `{}`, or
+///    `{"confirm_advanced": false}`), the response is `400
+///    requires_confirmation` with a body explaining that this is the
+///    diagnostic endpoint and pointing at `POST /commission`.
+///
+/// The SPA's "Set zero (RAM only)" disclosure passes the flag
+/// automatically; only ad-hoc CLI/HTTP usage has to be intentional about
+/// it. The audit-log action is recorded as `set_zero_advanced` (not
+/// plain `set_zero`) when the flag is present, so a post-hoc reviewer
+/// can distinguish "operator confirmed they wanted the diagnostic"
+/// from a future endpoint that might re-use the `set_zero` action name
+/// for a friendlier UX.
 pub async fn set_zero(
     State(state): State<SharedState>,
     Path(role): Path<String>,
+    body: Option<Json<SetZeroBody>>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ApiError>)> {
+    let confirm = body.map(|Json(b)| b.confirm_advanced).unwrap_or(false);
+    if !confirm {
+        return Err(err(
+            StatusCode::BAD_REQUEST,
+            "requires_confirmation",
+            Some(
+                "POST /api/motors/:role/set_zero is the diagnostic endpoint that \
+                 does NOT save to flash and DOES NOT update inventory.yaml; \
+                 to opt in resend with body {\"confirm_advanced\": true}. \
+                 To set a flash-persistent zero (the usual case) call \
+                 POST /api/motors/:role/commission instead — it sequences \
+                 type-6 + type-22 + a readback of add_offset and records the \
+                 result in inventory.yaml so the boot orchestrator can verify \
+                 it on every boot."
+                    .into(),
+            ),
+        ));
+    }
+
     let motor = require_present(&state, "set_zero", &role)?;
 
     if let Some(core) = state.real_can.clone() {
@@ -309,14 +363,24 @@ pub async fn set_zero(
 /// `commission` is unambiguous in the audit trail. Operators reviewing
 /// the log after a "wait, did this survive the reboot?" question can grep
 /// the JSONL for `"persisted":false` to find every RAM-only zero.
+///
+/// The action is `set_zero_advanced` rather than plain `set_zero` to
+/// reflect that the caller had to opt in via `confirm_advanced: true`.
+/// We never reach this helper without that flag (the handler returns
+/// 400 first), so the action name is unconditionally the "advanced"
+/// variant — operators can grep for it to find every intentional
+/// diagnostic re-zero.
 fn audit_set_zero(state: &SharedState, role: &str, result: AuditResult) {
     state.audit.write(AuditEntry {
         timestamp: Utc::now(),
         session_id: None,
         remote: None,
-        action: "set_zero".into(),
+        action: "set_zero_advanced".into(),
         target: Some(role.into()),
-        details: serde_json::json!({ "persisted": false }),
+        details: serde_json::json!({
+            "persisted": false,
+            "confirm_advanced": true,
+        }),
         result,
     });
 }
