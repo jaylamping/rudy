@@ -438,7 +438,8 @@ function VerifyAndHomeCard({ motor }: { motor: MotorSummary }) {
   });
   const bs = motor.boot_state;
   const ready = bs.kind === "in_band";
-  const isAutoRecovering = bs.kind === "auto_recovering";
+  const orchestratorHoming =
+    bs.kind === "auto_homing" || bs.kind === "auto_recovering";
   const live =
     motor.latest != null ? motor.latest.mech_pos_rad * RAD_TO_DEG : null;
 
@@ -449,8 +450,9 @@ function VerifyAndHomeCard({ motor }: { motor: MotorSummary }) {
         <CardDescription>
           Slow-ramp homing ritual (~22 deg/s, low torque/speed,
           aborts on stall). Required once per power-cycle before the
-          enable button works. Auto-recovery and stale telemetry both
-          block this — see the badge in the header.
+          enable button works (unless the boot orchestrator already
+          auto-homed). While the orchestrator is driving auto-homing, wait
+          for it to finish — see the badge in the header.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -486,7 +488,7 @@ function VerifyAndHomeCard({ motor }: { motor: MotorSummary }) {
         <div className="flex flex-wrap items-center justify-end gap-2">
           <Button
             variant="default"
-            disabled={!ready || home.isPending || isAutoRecovering}
+            disabled={!ready || home.isPending || orchestratorHoming}
             onClick={() => home.mutate()}
           >
             {home.isPending ? "Homing..." : "Verify & Home"}

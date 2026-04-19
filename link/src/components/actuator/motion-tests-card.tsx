@@ -204,7 +204,12 @@ export function MotionTestsCard({ motor }: { motor: MotorSummary }) {
       return;
     }
     const bs = motor.boot_state.kind;
-    if (bs === "out_of_band" || bs === "auto_recovering" || bs === "unknown") {
+    if (
+      bs === "out_of_band" ||
+      bs === "auto_recovering" ||
+      bs === "auto_homing" ||
+      bs === "unknown"
+    ) {
       void stopMotion(`Boot state ${bs}; motion stopped.`);
     }
   }, [active, motor.verified, motor.boot_state.kind, stopMotion]);
@@ -277,6 +282,7 @@ export function MotionTestsCard({ motor }: { motor: MotorSummary }) {
     !!limits &&
     bsKind !== "out_of_band" &&
     bsKind !== "auto_recovering" &&
+    bsKind !== "auto_homing" &&
     bsKind !== "unknown";
 
   const limbBlocked = !limb.healthy;

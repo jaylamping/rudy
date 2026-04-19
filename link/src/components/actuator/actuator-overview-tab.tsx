@@ -8,6 +8,7 @@ import { Home, Maximize2 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "@/lib/api";
+import { HomingProgressBar } from "@/components/actuator/homing-progress";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MotorChart, type MotorMetric } from "@/components/motor-chart";
@@ -97,14 +98,36 @@ function GoHomeBar({ motor }: { motor: MotorSummary }) {
     motor.latest != null
       ? ((motor.latest.mech_pos_rad * 180) / Math.PI).toFixed(2)
       : null;
+  const autoHoming =
+    bs.kind === "auto_homing" || bs.kind === "auto_recovering";
 
   return (
     <Card>
       <CardContent className="flex flex-wrap items-center justify-between gap-3 py-3">
+        {autoHoming && (
+          <div className="basis-full rounded-md border border-sky-500/35 bg-sky-500/10 px-3 py-2 text-xs">
+            <div className="font-medium text-sky-100">
+              Boot orchestrator is homing this joint
+            </div>
+            <div className="mt-1.5 flex flex-wrap items-center gap-3 text-muted-foreground">
+              <HomingProgressBar
+                fromRad={bs.from_rad}
+                targetRad={bs.target_rad}
+                progressRad={bs.progress_rad}
+              />
+              <span className="font-mono text-[0.7rem] text-foreground/80">
+                {(bs.progress_rad * (180 / Math.PI)).toFixed(1)}° → target{" "}
+                {(bs.target_rad * (180 / Math.PI)).toFixed(1)}°
+              </span>
+            </div>
+          </div>
+        )}
         <div className="flex flex-col gap-0.5 text-sm">
           <span className="font-medium">Return to home</span>
           <span className="text-xs text-muted-foreground">
-            {homed
+            {autoHoming
+              ? "Wait for auto-homing to finish, or use Travel tab to retry manually if it failed."
+              : homed
               ? "Slow-ramp to 0° using the verified home position."
               : "Run Verify & Home from the Travel tab first."}
             {live != null && (
@@ -116,7 +139,7 @@ function GoHomeBar({ motor }: { motor: MotorSummary }) {
           </span>
         </div>
         <div className="flex items-center gap-2">
-          {!homed && (
+          {!homed && !autoHoming && (
             <Link
               to="/actuators/$role"
               params={{ role: motor.role }}
@@ -126,13 +149,13 @@ function GoHomeBar({ motor }: { motor: MotorSummary }) {
               go to Travel tab
             </Link>
           )}
-          {homeTip ? (
+          {homed && !autoHoming && homeTip ? (
             <Tooltip content={homeTip} className="max-w-xs whitespace-normal">
               <span className="inline-flex">
                 <Button
                   variant="default"
                   size="sm"
-                  disabled={!homed || home.isPending || homeBlocked}
+                  disabled={home.isPending || homeBlocked}
                   onClick={() => home.mutate()}
                 >
                   <Home className="mr-1.5 h-3.5 w-3.5" />
@@ -144,7 +167,12 @@ function GoHomeBar({ motor }: { motor: MotorSummary }) {
             <Button
               variant="default"
               size="sm"
-              disabled={!homed || home.isPending || homeBlocked}
+              disabled={
+                !homed ||
+                autoHoming ||
+                home.isPending ||
+                homeBlocked
+              }
               onClick={() => home.mutate()}
             >
               <Home className="mr-1.5 h-3.5 w-3.5" />

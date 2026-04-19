@@ -10,9 +10,11 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft } from "lucide-react";
 import { useMemo, useState } from "react";
 import { api } from "@/lib/api";
+import { HomingProgressBar } from "@/components/actuator/homing-progress";
 import { useLiveInterval } from "@/lib/hooks/useLiveInterval";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { MotorSummary } from "@/lib/types/MotorSummary";
 import { ActuatorOverviewTab } from "@/components/actuator/actuator-overview-tab";
@@ -204,6 +206,10 @@ function ActuatorHeader({ motor }: { motor: MotorSummary }) {
   );
 }
 
+function bootLabelPrefix(motor: MotorSummary): string {
+  return motor.limb ? `${motor.limb} — ` : "";
+}
+
 // Per-power-cycle gate badge. Drives off the discriminated `boot_state`
 // union from MotorSummary; renders a colored pill plus, for OutOfBand,
 // a tooltip with the offending position.
@@ -213,8 +219,10 @@ function BootStateBadge({ motor }: { motor: MotorSummary }) {
   const [restoreBusy, setRestoreBusy] = useState(false);
   const bs = motor.boot_state;
   const RAD_TO_DEG = 180 / Math.PI;
+  const pre = bootLabelPrefix(motor);
+
   if (bs.kind === "homed") {
-    return <Badge variant="success">homed</Badge>;
+    return <Badge variant="success">{pre}homed</Badge>;
   }
   if (bs.kind === "in_band") {
     return (
@@ -224,7 +232,7 @@ function BootStateBadge({ motor }: { motor: MotorSummary }) {
         search={{ tab: "travel" }}
         title="In band but not yet homed; click to run Verify & Home."
       >
-        <Badge variant="warning">needs verify &amp; home</Badge>
+        <Badge variant="warning">{pre}needs verify &amp; home</Badge>
       </Link>
     );
   }
@@ -235,32 +243,58 @@ function BootStateBadge({ motor }: { motor: MotorSummary }) {
     return (
       <Badge
         variant="destructive"
-        title={`At ${pos}° outside [${lo}°, ${hi}°]; manual recovery required`}
+        title={`${pre}At ${pos}° outside [${lo}°, ${hi}°]; manual recovery required`}
       >
-        out of band: {pos}°
+        {pre}out of band: {pos}°
       </Badge>
     );
   }
-  if (bs.kind === "auto_recovering") {
+  // Legacy daemon builds may still emit `auto_recovering`; same fields as
+  // `auto_homing` — show orchestrator-style progress (Phase H removes Layer 6).
+  if (bs.kind === "auto_recovering" || bs.kind === "auto_homing") {
     const from = (bs.from_rad * RAD_TO_DEG).toFixed(1);
     const target = (bs.target_rad * RAD_TO_DEG).toFixed(1);
+    const prog = (bs.progress_rad * RAD_TO_DEG).toFixed(1);
     return (
-      <Badge variant="warning" className="animate-pulse">
-        auto-recovering {from}° → {target}°
-      </Badge>
+      <div className="flex max-w-[18rem] flex-col items-end gap-1.5 sm:flex-row sm:items-center">
+        <div className="flex flex-col items-end gap-1">
+          <Badge variant="default" className="border border-sky-500/50 bg-sky-500/15 text-sky-100">
+            <span className="animate-pulse">{pre}auto-homing</span>
+          </Badge>
+          <span className="text-[0.65rem] text-muted-foreground">
+            {from}° → {target}° (now {prog}°)
+          </span>
+          <HomingProgressBar
+            fromRad={bs.from_rad}
+            targetRad={bs.target_rad}
+            progressRad={bs.progress_rad}
+          />
+        </div>
+      </div>
     );
   }
   if (bs.kind === "offset_changed") {
     const st = bs.stored_rad.toFixed(4);
     const cur = bs.current_rad.toFixed(4);
     return (
-      <div className="flex flex-col items-end gap-1 sm:flex-row sm:items-center">
+      <div className="flex max-w-[22rem] flex-col items-end gap-1 sm:flex-row sm:items-center sm:gap-2">
         <Badge
           variant="destructive"
-          title={`Commissioned offset ${st} rad but firmware reports ${cur} rad`}
+          title={`${pre}Commissioned offset ${st} rad but firmware reports ${cur} rad`}
         >
-          offset mismatch
+          {pre}offset mismatch
         </Badge>
+        <Link
+          to="/actuators/$role"
+          params={{ role: motor.role }}
+          search={{ tab: "controls" }}
+          className={cn(
+            buttonVariants({ variant: "secondary", size: "sm" }),
+            "h-7 whitespace-nowrap text-xs",
+          )}
+        >
+          Re-commission
+        </Link>
         <Button
           type="button"
           variant="outline"
@@ -282,7 +316,7 @@ function BootStateBadge({ motor }: { motor: MotorSummary }) {
             }
           }}
         >
-          {restoreBusy ? "Restoring…" : `Restore offset (${st} rad)`}
+          {restoreBusy ? "Restoring…" : `Restore (${st} rad)`}
         </Button>
         {restoreErr ? (
           <span className="max-w-[14rem] text-right text-xs text-destructive">{restoreErr}</span>
@@ -290,23 +324,31 @@ function BootStateBadge({ motor }: { motor: MotorSummary }) {
       </div>
     );
   }
-  if (bs.kind === "auto_homing") {
-    const from = (bs.from_rad * RAD_TO_DEG).toFixed(1);
-    const target = (bs.target_rad * RAD_TO_DEG).toFixed(1);
-    return (
-      <Badge variant="default" className="animate-pulse">
-        auto-homing {from}° → {target}°
-      </Badge>
-    );
-  }
   if (bs.kind === "home_failed") {
+    const pos = (bs.last_pos_rad * RAD_TO_DEG).toFixed(1);
     return (
-      <Badge variant="warning" title={bs.reason}>
-        home failed
-      </Badge>
+      <div className="flex max-w-[22rem] flex-col items-end gap-1 sm:flex-row sm:items-center sm:gap-2">
+        <Badge variant="warning" title={bs.reason}>
+          {pre}home failed @ {pos}°
+        </Badge>
+        <span className="max-w-[14rem] text-right text-xs text-amber-200/90">
+          {bs.reason}
+        </span>
+        <Link
+          to="/actuators/$role"
+          params={{ role: motor.role }}
+          search={{ tab: "travel" }}
+          className={cn(
+            buttonVariants({ variant: "outline", size: "sm" }),
+            "h-7 whitespace-nowrap text-xs",
+          )}
+        >
+          Retry home
+        </Link>
+      </div>
     );
   }
-  return <Badge variant="outline">no telemetry</Badge>;
+  return <Badge variant="outline">{pre}no telemetry</Badge>;
 }
 
 function Stat({
