@@ -46,7 +46,7 @@ const MAX_VEL_RAD_S = 2.0;
 // edge at this speed" hint in the sweep subtitle — the daemon is the
 // source of truth for the actual inset that gets baked into the intent.
 const SWEEP_BASE_INSET_RAD = 0.05;
-const OVERSHOOT_S = 0.25;
+const OVERSHOOT_S = 0.15;
 const sweepInsetRad = (speedRadS: number) =>
   SWEEP_BASE_INSET_RAD + Math.abs(speedRadS) * OVERSHOOT_S;
 

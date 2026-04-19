@@ -198,9 +198,17 @@ pub const WAVE_BASE_INSET_RAD: f32 = 0.02;
 /// rather than asymptotically approaching the edge.
 ///
 /// Physical intuition: at v rad/s with deceleration ~1/T_OVERSHOOT, the
-/// stopping distance is roughly v * T_OVERSHOOT / 2. We use the larger
-/// `v * T_OVERSHOOT` form to be conservative (assumes a slower brake).
-pub const OVERSHOOT_S: f32 = 0.25;
+/// stopping distance is roughly v * T_OVERSHOOT / 2.
+///
+/// Empirical re-tune (2 rad/s sweep against a 60° band): with the
+/// previous 0.25 value the controller flipped at 28.5° and peaks landed
+/// at ~38–40°, leaving ~20° of unused range. Measured overshoot past
+/// the flip threshold was ~0.17–0.21 rad, implying an effective T of
+/// ~0.085–0.105 s. Bumped to 0.15 to keep a comfortable safety margin
+/// (~8° to the limit at 2 rad/s) without giving up the conservative
+/// `v * T` framing — if you ever see `travel_limit_violation` come
+/// back, raise this rather than dropping it further.
+pub const OVERSHOOT_S: f32 = 0.15;
 
 /// Resolve the default turnaround inset for a given pattern when the
 /// REST handler / client frame omits it. Centralised so the SPA doesn't
@@ -303,13 +311,13 @@ mod tests {
         // doesn't lose any range.
         let zero = default_turnaround_rad(&sweep, 0.0);
         assert!((zero - SWEEP_BASE_INSET_RAD).abs() < 1e-6);
-        // At 0.5 rad/s (the previous UI cap) the inset is base + half a
-        // second of brake distance ≈ 0.175 rad ≈ 10°.
+        // At 0.5 rad/s (the previous UI cap) the inset is base + a
+        // small brake-distance buffer ≈ 0.125 rad ≈ 7°.
         let mid = default_turnaround_rad(&sweep, 0.5);
         assert!((mid - (SWEEP_BASE_INSET_RAD + 0.5 * OVERSHOOT_S)).abs() < 1e-6);
-        // At 2.0 rad/s (the new UI cap) the inset is ~0.55 rad ≈ 31° —
-        // big, but a fast sweep on a stiff actuator genuinely needs that
-        // much headroom to stop inside the band.
+        // At 2.0 rad/s (the new UI cap) the inset is ~0.35 rad ≈ 20°,
+        // which lands peak excursion ~8° inside a 60° band — enough
+        // headroom for run-to-run variance in the brake distance.
         let fast = default_turnaround_rad(&sweep, 2.0);
         assert!((fast - (SWEEP_BASE_INSET_RAD + 2.0 * OVERSHOOT_S)).abs() < 1e-6);
     }
