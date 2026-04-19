@@ -1833,6 +1833,144 @@ async fn restore_offset_rejects_when_not_offset_changed() {
     assert!(body["detail"].as_str().unwrap_or("").contains("wrong_boot_state"));
 }
 
+/// Successful `commission` on one motor must not write commissioning fields
+/// on sibling inventory rows.
+#[tokio::test]
+async fn commission_leaves_sibling_motor_uncommissioned() {
+    let (state, _dir) = common::make_state();
+    let app = rudydae::build_app(state.clone());
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/motors/shoulder_actuator_a/commission")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let b = state
+        .inventory
+        .read()
+        .expect("inventory poisoned")
+        .by_role("shoulder_actuator_b")
+        .cloned()
+        .expect("fixture motor b");
+    assert_eq!(b.commissioned_zero_offset, None);
+    assert_eq!(b.commissioned_at, None);
+}
+
+/// `restore_offset` records a successful outcome in the audit log with the
+/// restored and readback radians (mock-CAN readback equals inventory).
+#[tokio::test]
+async fn restore_offset_audit_logs_success() {
+    let (state, _dir) = common::make_state();
+    let app = rudydae::build_app(state.clone());
+    let audit_path = state.cfg.paths.audit_log.clone();
+
+    {
+        let mut inv = state.inventory.write().expect("inventory poisoned");
+        let m = inv
+            .motors
+            .iter_mut()
+            .find(|m| m.role == "shoulder_actuator_a")
+            .expect("fixture motor");
+        m.commissioned_zero_offset = Some(0.05);
+    }
+
+    common::set_boot_state(
+        &state,
+        "shoulder_actuator_a",
+        BootState::OffsetChanged {
+            stored_rad: 0.05,
+            current_rad: 0.12,
+        },
+    );
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/motors/shoulder_actuator_a/restore_offset")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let raw = std::fs::read_to_string(&audit_path).expect("read audit log");
+    let last = raw
+        .lines()
+        .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+        .filter(|e| e.get("action").and_then(|v| v.as_str()) == Some("restore_offset"))
+        .last()
+        .expect("audit log must contain restore_offset");
+    assert_eq!(last["result"].as_str(), Some("ok"));
+    assert_eq!(last["target"].as_str(), Some("shoulder_actuator_a"));
+    assert_eq!(last["details"]["step"].as_str(), Some("ok"));
+    let restored = last["details"]["restored_rad"].as_f64().expect("restored_rad");
+    let readback = last["details"]["readback_rad"].as_f64().expect("readback_rad");
+    assert!((restored - 0.05).abs() < 1e-5, "restored_rad: {restored}");
+    assert!((readback - 0.05).abs() < 1e-5, "readback_rad: {readback}");
+}
+
+/// After `restore_offset`, the boot orchestrator idempotency flag is cleared
+/// so a later qualifying telemetry transition can auto-home again.
+#[tokio::test]
+async fn restore_offset_clears_boot_orchestrator_attempted() {
+    let (state, _dir) = common::make_state();
+    let app = rudydae::build_app(state.clone());
+
+    {
+        let mut inv = state.inventory.write().expect("inventory poisoned");
+        let m = inv
+            .motors
+            .iter_mut()
+            .find(|m| m.role == "shoulder_actuator_a")
+            .expect("fixture motor");
+        m.commissioned_zero_offset = Some(0.05);
+    }
+
+    common::set_boot_state(
+        &state,
+        "shoulder_actuator_a",
+        BootState::OffsetChanged {
+            stored_rad: 0.05,
+            current_rad: 0.12,
+        },
+    );
+
+    state
+        .boot_orchestrator_attempted
+        .lock()
+        .expect("poisoned")
+        .insert("shoulder_actuator_a".into());
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/motors/shoulder_actuator_a/restore_offset")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    assert!(
+        !state
+            .boot_orchestrator_attempted
+            .lock()
+            .expect("poisoned")
+            .contains("shoulder_actuator_a")
+    );
+}
+
 /// Rename of an enabled motor used to refuse with 409 `motor_active` and
 /// force the operator to context-switch to the Controls tab to click Stop.
 /// The daemon now does that round-trip itself: stop on the bus, perform

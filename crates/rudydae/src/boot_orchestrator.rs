@@ -341,6 +341,12 @@ async fn read_add_offset_with_retry(
     state: &SharedState,
     motor: &crate::inventory::Motor,
 ) -> Option<f32> {
+    // Mock-CAN (`real_can = None`): mirror `commission` / `restore_offset` —
+    // no frames; readback matches the documented stub contract (0.0 rad).
+    if state.real_can.is_none() {
+        return Some(0.0);
+    }
+
     let core = state.real_can.clone()?;
     let state_for_blocking = state.clone();
     let motor_for_blocking = motor.clone();

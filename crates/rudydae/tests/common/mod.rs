@@ -134,6 +134,40 @@ pub fn make_state() -> (SharedState, tempfile::TempDir) {
     (state, dir)
 }
 
+/// Same as [`make_state`] but toggles `safety.auto_home_on_boot` (rebuilds
+/// `AppState` because `SharedState` is immutable).
+pub fn make_state_auto_home_on_boot(auto_home_on_boot: bool) -> (SharedState, tempfile::TempDir) {
+    let (state, dir) = make_state();
+    let mut cfg = state.cfg.clone();
+    cfg.safety.auto_home_on_boot = auto_home_on_boot;
+    let inv = state.inventory.read().expect("inventory poisoned").clone();
+    let new_state = Arc::new(AppState::new(
+        cfg,
+        state.spec.clone(),
+        inv,
+        AuditLog::open(dir.path().join("audit_auto_home.jsonl")).unwrap(),
+        state.real_can.clone(),
+        ReminderStore::open(dir.path().join("reminders_auto_home.json")).unwrap(),
+    ));
+    (new_state, dir)
+}
+
+/// Set in-memory `travel_limits` for a motor (same pattern as `motion_lifecycle`).
+pub fn set_travel_limits(state: &SharedState, role: &str, min_rad: f32, max_rad: f32) {
+    use rudydae::inventory::TravelLimits;
+    let mut inv = state.inventory.write().expect("inventory poisoned");
+    let m = inv
+        .motors
+        .iter_mut()
+        .find(|m| m.role == role)
+        .unwrap_or_else(|| panic!("inventory missing role {role}"));
+    m.travel_limits = Some(TravelLimits {
+        min_rad,
+        max_rad,
+        updated_at: None,
+    });
+}
+
 /// Same as `make_state` but with `webtransport.enabled = true` so config_route
 /// produces a non-None advert URL. Used by the `/api/config` contract test.
 pub fn make_state_with_wt_advert() -> (SharedState, tempfile::TempDir) {
