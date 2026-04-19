@@ -248,15 +248,10 @@ impl PreflightChecks<'_> {
             None => return Err(PreflightFailure::NoTelemetry),
         };
 
-        let projected =
-            feedback.mech_pos_rad + self.vel_rad_s * (self.horizon_ms as f32 / 1000.0);
-        let check = enforce_position_with_path(
-            self.state,
-            self.role,
-            feedback.mech_pos_rad,
-            projected,
-        )
-        .map_err(|e| PreflightFailure::Internal(format!("{e:#}")))?;
+        let projected = feedback.mech_pos_rad + self.vel_rad_s * (self.horizon_ms as f32 / 1000.0);
+        let check =
+            enforce_position_with_path(self.state, self.role, feedback.mech_pos_rad, projected)
+                .map_err(|e| PreflightFailure::Internal(format!("{e:#}")))?;
 
         match check {
             BandCheck::OutOfBand {

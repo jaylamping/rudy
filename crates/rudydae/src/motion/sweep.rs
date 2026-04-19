@@ -65,7 +65,11 @@ pub fn step(
     // Defensive: if the band collapsed to a point (lower >= upper after
     // turnaround inset), command zero so we don't oscillate at full
     // speed inside a 1 mm window.
-    let vel = if upper <= lower { 0.0 } else { direction * speed };
+    let vel = if upper <= lower {
+        0.0
+    } else {
+        direction * speed
+    };
     (vel, SweepState { direction })
 }
 

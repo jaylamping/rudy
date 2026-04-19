@@ -47,7 +47,10 @@ pub fn router(state: SharedState) -> Router<SharedState> {
         .route("/motors/:role/motion", get(motion::get_motion))
         .route("/motors/:role/motion/sweep", post(motion::start_sweep))
         .route("/motors/:role/motion/wave", post(motion::start_wave))
-        .route("/motors/:role/motion/jog", post(motion::start_or_update_jog))
+        .route(
+            "/motors/:role/motion/jog",
+            post(motion::start_or_update_jog),
+        )
         .route("/motors/:role/motion/stop", post(motion::stop))
         .route("/motors/:role/home", post(home::home))
         .route("/motors/:role/rename", post(rename::rename))

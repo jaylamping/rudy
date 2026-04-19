@@ -474,12 +474,8 @@ async fn read_client_frames(
         // Drain as many complete length-prefixed frames as the buffer
         // currently holds.
         while buffered.len() >= 4 {
-            let len = u32::from_be_bytes([
-                buffered[0],
-                buffered[1],
-                buffered[2],
-                buffered[3],
-            ]) as usize;
+            let len =
+                u32::from_be_bytes([buffered[0], buffered[1], buffered[2], buffered[3]]) as usize;
             if len == 0 {
                 return Err(anyhow::anyhow!("zero-length client frame"));
             }
@@ -506,7 +502,10 @@ async fn read_client_frames(
     // header bytes) is just the operator-tab-closing case. Treat the
     // partial-header tail as a clean EOF.
     if !buffered.is_empty() && buffered.len() < 4 {
-        debug!("wt: client stream closed with {} stray byte(s)", buffered.len());
+        debug!(
+            "wt: client stream closed with {} stray byte(s)",
+            buffered.len()
+        );
     } else if !buffered.is_empty() {
         return Err(anyhow::anyhow!(
             "client stream closed mid-frame with {} buffered bytes",
@@ -577,4 +576,3 @@ async fn dispatch_client_frame(
         }
     }
 }
-

@@ -66,7 +66,11 @@ pub fn step(
         direction = 1.0;
     }
 
-    let vel = if upper <= lower { 0.0 } else { direction * speed };
+    let vel = if upper <= lower {
+        0.0
+    } else {
+        direction * speed
+    };
     (vel, WaveState { direction })
 }
 

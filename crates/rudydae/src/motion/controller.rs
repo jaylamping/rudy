@@ -186,11 +186,13 @@ pub async fn run(mut task: ControllerTask) {
                 // For wave, fabricate a "limits" of the band (or the
                 // hardware envelope when no band is set) so the step
                 // function can apply its own clipping.
-                let limits = limits_opt.clone().unwrap_or(crate::inventory::TravelLimits {
-                    min_rad: -std::f32::consts::PI,
-                    max_rad: std::f32::consts::PI,
-                    updated_at: None,
-                });
+                let limits = limits_opt
+                    .clone()
+                    .unwrap_or(crate::inventory::TravelLimits {
+                        min_rad: -std::f32::consts::PI,
+                        max_rad: std::f32::consts::PI,
+                        updated_at: None,
+                    });
                 let s = wave_state.get_or_insert_with(|| {
                     WaveState::from_position(pf.feedback.mech_pos_rad, *center_rad)
                 });
@@ -350,15 +352,16 @@ fn broadcast_stopped(task: &ControllerTask, mech_pos_rad: f32, reason: &MotionSt
             .by_role(&task.motor.role)
             .and_then(|m| m.travel_limits.clone())
         {
-            let _ = task.state.safety_event_tx.send(
-                crate::types::SafetyEvent::TravelLimitViolation {
-                    t_ms: Utc::now().timestamp_millis(),
-                    role: task.motor.role.clone(),
-                    attempted_rad: mech_pos_rad,
-                    min_rad: limits.min_rad,
-                    max_rad: limits.max_rad,
-                },
-            );
+            let _ =
+                task.state
+                    .safety_event_tx
+                    .send(crate::types::SafetyEvent::TravelLimitViolation {
+                        t_ms: Utc::now().timestamp_millis(),
+                        role: task.motor.role.clone(),
+                        attempted_rad: mech_pos_rad,
+                        min_rad: limits.min_rad,
+                        max_rad: limits.max_rad,
+                    });
         }
     }
 
