@@ -593,12 +593,12 @@ impl LinuxCanCore {
         // since boot) transitions into `OutOfBand` and triggers the
         // auto-recovery path. Mirrors what `bus_worker::apply_type2`
         // does on the type-2 hot path.
-        if let ClassifyOutcome::Changed { new, .. } =
-            boot_state::classify(state, &motor.role, merged.mech_pos_rad)
+        if let ClassifyOutcome::Changed {
+            new: BootState::OutOfBand { mech_pos_rad, .. },
+            ..
+        } = boot_state::classify(state, &motor.role, merged.mech_pos_rad)
         {
-            if let BootState::OutOfBand { mech_pos_rad, .. } = new {
-                auto_recovery::maybe_spawn_recovery(state, &motor.role, mech_pos_rad);
-            }
+            auto_recovery::maybe_spawn_recovery(state, &motor.role, mech_pos_rad);
         }
 
         // Fan out to the WT subscribers so the SPA's live position
