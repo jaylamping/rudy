@@ -2,15 +2,21 @@
 //! sits relative to its configured travel band.
 //!
 //! Lives separately from the on-disk `verified` / `present` flags in
-//! `inventory.yaml` because boot state is **per-power-cycle** — a motor that
+//! `inventory.yaml` because boot state is **per-power-cycle in RAM** — a motor
 //! the operator homed yesterday is still `Unknown` after a daemon restart
-//! today. The classifier runs from the telemetry loop on every successful
-//! `read_live_feedback`; the enable handler consults it to refuse motion
-//! commands until the operator runs the slow-ramp homer.
+//! today (until telemetry re-classifies). Commissioning fields on disk
+//! (`commissioned_zero_offset`, `predefined_home_rad`) **do** persist across
+//! restarts; the boot orchestrator uses them after a successful `add_offset`
+//! readback match.
 //!
-//! See `.cursor/plans/boot-time_travel-band_gate_*.plan.md` for the full
-//! disaster-prevention rationale (multi-turn-encoder confusion across
-//! power-off mechanical motion).
+//! The classifier runs from the telemetry loop on every successful
+//! `read_live_feedback`. `POST /enable` only allows `BootState::Homed`. The
+//! slow-ramp homer (`POST /home`, `slow_ramp::run`) is the operator path to
+//! `Homed`; the boot orchestrator may also reach `Homed` when configured.
+//!
+//! Multi-turn / principal-angle rationale and the commissioned-zero model are
+//! documented in `docs/decisions/0002-rs03-protocol-spec.md` (commissioned
+//! mechanical zero section) and `.cursor/plans/quick-home_commissioned_zero_boot.plan.md`.
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;

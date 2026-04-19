@@ -65,6 +65,8 @@ todos:
 isProject: false
 ---
 
+> **Superseded (2026-04):** This document describes the original boot-time travel-band gate, including **Layer 6 auto-recovery** (`BootState::AutoRecovering`). Layer 6 was **removed** from `rudydae`; out-of-band joints require **manual** recovery, and commissioned actuators rely on the **commissioned-zero boot orchestrator** (`AutoHoming` → `Homed`) plus inventory-backed `commissioned_zero_offset`. Do not treat the todos below as a current implementation checklist. **Canonical follow-on design:** [quick-home_commissioned_zero_boot.plan.md](quick-home_commissioned_zero_boot.plan.md). Wire-protocol and band-gating rationale remain useful; auto-recovery and `auto_recovery_*` config are obsolete.
+
 ## Boot-time travel-band gate + reduced-torque first-boot
 
 ### The disaster this prevents

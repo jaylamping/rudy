@@ -11,8 +11,8 @@
 #                       1 = external termination required)
 #   mech_offset      -> value of 0x2005 MechOffset after mechanical-zero step
 #
-# Everything else is filled in by the commissioning workflow (see
-# tools/robstride/commission.md — to be authored).
+# Everything else is filled in by the commissioning workflow (SPA + daemon:
+# docs/operator-guide/commissioning.md; bench tooling: tools/robstride/commission.md).
 #
 # ── Daemon-managed fields (do NOT hand-edit) ────────────────────────────────
 #

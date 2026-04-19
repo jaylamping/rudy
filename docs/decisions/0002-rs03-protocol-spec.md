@@ -217,6 +217,49 @@ single-precision).
   to 0 so the motor does not leap. On older firmware it will leap toward the
   prior commanded position.
 - After zeroing, issue a type-22 save or the zero is lost on power cycle.
+  For Rudy’s operator console, the persisted commissioning path is
+  `POST /api/motors/:role/commission` (type-6 + type-22 + `add_offset` readback),
+  not ad-hoc type-6 alone — see **Commissioned mechanical zero (rudydae)** below.
+
+### Commissioned mechanical zero (rudydae)
+
+The RS03 exposes the running position offset as parameter **`0x702B`
+`add_offset`** (radians). Together with **type-6 Set mechanical zero** and
+**type-22 Save parameters to flash**, this is how a joint’s “commissioned
+neutral” survives power cycles.
+
+**Invariant.** After commissioning, the daemon stores the firmware’s confirmed
+`add_offset` in `config/actuators/inventory.yaml` as
+`commissioned_zero_offset`. On every subsequent boot it re-reads `0x702B` over
+CAN. If the live value differs from the stored baseline by more than
+`safety.commission_readback_tolerance_rad` in `config/rudyd.toml`, the motor
+enters `BootState::OffsetChanged` and motion is refused until the operator
+either re-runs commission (new baseline) or calls
+`POST /api/motors/:role/restore_offset` (write stored value back to firmware
+and save).
+
+**Operator persistence path.** `POST /api/motors/:role/commission` in `rudydae`
+sequences: type-6 SetZero → type-22 SaveParams → type-17 readback of
+`add_offset` → atomic inventory write. This is the **only** supported way to
+persist a new zero through the SPA “Commission Zero” flow.
+
+**Diagnostic RAM path.** `POST /api/motors/:role/set_zero` issues type-6 (and
+related RAM writes) **without** type-22 unless the operator uses a separate
+save path. It is gated as an advanced/diagnostic action and does **not** update
+`commissioned_zero_offset`. Operators should prefer **Commission** for anything
+intended to survive reboot.
+
+**Boot orchestration.** When `commissioned_zero_offset` is set and readback
+matches, and the wrapped position is inside `travel_limits`, and
+`safety.auto_home_on_boot` is true, `rudydae` may drive the joint to
+`predefined_home_rad` (default `0.0`) via the same slow-ramp loop as manual
+`POST /home`, then mark `BootState::Homed`. Motors with no commissioned baseline
+still require the manual **Verify & Home** ritual each boot.
+
+**Out-of-band behavior.** If the joint boots outside `travel_limits`, it stays
+`OutOfBand` until the operator moves it into band; the daemon **does not**
+auto-ramp from out-of-band (historical “Layer 6” auto-recovery was removed in
+favor of explicit operator recovery and the commissioned-zero path).
 
 ### Firmware-version gating
 
@@ -283,6 +326,9 @@ block enable until investigated.
 
 ## Consequences
 
+- **`rudydae` commissioning** MUST treat type-6 + type-22 + `0x702B` readback as
+  the persisted zero workflow; see **Commissioned mechanical zero (rudydae)**
+  above and `docs/operator-guide/commissioning.md`.
 - The driver crate MUST encode/decode these frames per the table above, with
   unit tests covering the exact worked examples in §4.4 of the manual.
 - Before any firmware-level limits are relied upon for safety, per-motor

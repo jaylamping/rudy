@@ -3,6 +3,7 @@
 | Document | Purpose |
 |----------|---------|
 | [architecture.md](architecture.md) | **System architecture** for the Rudy monorepo (packages, topology, data flow). Update on every structural change. |
+| [operator-guide/commissioning.md](operator-guide/commissioning.md) | **Commissioned zero** workflow in `rudydae` / Link (persist zero, boot orchestrator, recovery). |
 | [runbooks/pi5.md](runbooks/pi5.md) | Raspberry Pi 5 onboard bring-up (CAN HAT, ROS 2 Jazzy, deploy). |
 | [runbooks/isaac_lab.md](runbooks/isaac_lab.md) | Isaac Lab / Isaac Sim workflow notes (desktop GPU). |
 | [decisions/](decisions/) | Architecture decision records (ADR). |

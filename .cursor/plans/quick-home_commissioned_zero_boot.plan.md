@@ -80,6 +80,8 @@ todos:
 isProject: false
 ---
 
+**Active plan:** Commissioned-zero boot orchestration and operator workflows documented here supersede the Layer 6 / auto-recovery portions of [boot-time_travel-band_gate_170c48af.plan.md](boot-time_travel-band_gate_170c48af.plan.md) (that file has a **Superseded** banner). ADR: [docs/decisions/0002-rs03-protocol-spec.md](../docs/decisions/0002-rs03-protocol-spec.md) (**Commissioned mechanical zero**). Operator walkthrough: [docs/operator-guide/commissioning.md](../docs/operator-guide/commissioning.md).
+
 ## Commissioned-zero quick-home boot
 
 ### What this replaces
