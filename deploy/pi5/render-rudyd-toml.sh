@@ -106,6 +106,15 @@ fi
   echo "# Benchtop bring-up stays open until the actuator is fully commissioned."
   echo "# Flip to true after the shoulder passes the verification checklist."
   echo "require_verified = false"
+  echo
+  echo "[logs]"
+  echo "# SQLite-backed log store. MUST live under a path the systemd unit"
+  echo "# lists in ReadWritePaths (see deploy/pi5/rudyd.service). The default"
+  echo "# of .rudyd/logs.db resolves against WorkingDirectory=/opt/rudy, which"
+  echo "# is read-only under ProtectSystem=strict — opening the DB there fails"
+  echo "# with EROFS and the daemon never reaches the HTTP listener, taking"
+  echo "# the whole console offline."
+  echo "db_path = \"/var/lib/rudy/logs.db\""
 } | sudo tee "${CONFIG_PATH}" >/dev/null
 
 sudo chown rudy:rudy "${CONFIG_PATH}"

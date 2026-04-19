@@ -61,4 +61,21 @@ systemctl daemon-reload
 systemctl enable rudyd.service >/dev/null
 systemctl restart rudyd.service
 
+# Smoke-check the restart. Without this, a release that crashes on startup
+# (e.g. the logs commit's SQLite store landing on a read-only path) gets
+# silently absorbed: rudy-update.sh records the new SHA, the systemd unit
+# enters its restart loop, and `tailscale serve` returns 502s for hours
+# before anyone notices the console is down. Failing here makes
+# rudy-update.sh skip the SHA write so the next minute's poll re-attempts
+# the apply, and a human checking `journalctl -u rudy-update` sees the
+# concrete reason instead of "the page just stopped loading".
+sleep 3
+if ! systemctl is-active --quiet rudyd.service; then
+  echo "apply-release: rudyd FAILED to come up after restart" >&2
+  systemctl status rudyd.service --no-pager -n 5 >&2 || true
+  echo "--- last 30 journal lines ---" >&2
+  journalctl -u rudyd.service -n 30 --no-pager >&2 || true
+  exit 1
+fi
+
 echo "apply-release: rudyd restarted"

@@ -278,6 +278,11 @@ impl Default for LogsConfig {
 }
 
 fn default_logs_db_path() -> PathBuf {
+    // Intentionally relative so dev (cwd = repo root) lands at
+    // `./.rudyd/logs.db` next to `./.rudyd/audit.jsonl`. On the Pi
+    // `Config::load -> normalize_paths` rewrites this to live next to the
+    // (absolute) audit log so it doesn't get pinned under the read-only
+    // /opt/rudy by ProtectSystem=strict. See `normalize_paths` for the why.
     PathBuf::from(".rudyd/logs.db")
 }
 
@@ -306,8 +311,132 @@ impl Config {
         let path = path.as_ref();
         let contents =
             std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-        let cfg: Config = toml::from_str(&contents)
+        let mut cfg: Config = toml::from_str(&contents)
             .with_context(|| format!("parsing TOML in {}", path.display()))?;
+        cfg.normalize_paths();
         Ok(cfg)
+    }
+
+    /// Rewrite paths that we know are unsafe at their default to live next to
+    /// a path the operator/render script *did* set explicitly. Only touches
+    /// `logs.db_path` today.
+    ///
+    /// Background: `default_logs_db_path()` is `.rudyd/logs.db`. On the Pi the
+    /// daemon runs with `WorkingDirectory=/opt/rudy` + `ProtectSystem=strict`,
+    /// so a relative default resolves to `/opt/rudy/.rudyd/logs.db` and
+    /// `LogStore::open`'s `create_dir_all` blows up with EROFS — taking the
+    /// HTTP listener with it (caught the hard way: `tailscale serve` returns
+    /// 502, the operator console is unreachable). The render script *does*
+    /// emit a `db_path = "/var/lib/rudy/logs.db"` line, but if any release
+    /// ever ships without that change applied (or someone hand-edits the
+    /// config) we don't want to brick the Pi.
+    ///
+    /// Heuristic: if `logs.db_path` is relative AND `paths.audit_log` is
+    /// rooted (the operator pinned it to a known directory), anchor the log
+    /// DB next to it. They're already supposed to share a backup target per
+    /// the comment on `audit_log`, and the systemd unit's `ReadWritePaths`
+    /// always covers that directory. On dev the audit log default is
+    /// `./.rudyd/audit.jsonl`, so this is a no-op — the log DB stays at
+    /// `./.rudyd/logs.db` next to it.
+    ///
+    /// We use `has_root()` rather than `is_absolute()` because production is
+    /// always Linux and we only care about "did the operator give us an
+    /// anchored path"; `Path::is_absolute()` on Windows would refuse a
+    /// rendered config like `/var/lib/rudy/audit.jsonl` since it has no
+    /// drive letter, which would silently turn the unit tests for this
+    /// function into platform-conditional code.
+    fn normalize_paths(&mut self) {
+        if !self.logs.db_path.has_root() && self.paths.audit_log.has_root() {
+            if let Some(parent) = self.paths.audit_log.parent() {
+                let file_name = self
+                    .logs
+                    .db_path
+                    .file_name()
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|| PathBuf::from("logs.db"));
+                self.logs.db_path = parent.join(file_name);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cfg_with(audit_log: &str, db_path: Option<&str>) -> Config {
+        Config {
+            http: HttpConfig {
+                bind: "127.0.0.1:0".into(),
+            },
+            webtransport: WebTransportConfig {
+                bind: "127.0.0.1:0".into(),
+                enabled: false,
+                cert_path: None,
+                key_path: None,
+            },
+            paths: PathsConfig {
+                actuator_spec: PathBuf::from("spec.yaml"),
+                inventory: PathBuf::from("inv.yaml"),
+                inventory_seed: None,
+                audit_log: PathBuf::from(audit_log),
+            },
+            can: CanConfig {
+                mock: true,
+                buses: vec![],
+            },
+            telemetry: TelemetryConfig {
+                poll_interval_ms: default_poll_ms(),
+            },
+            safety: SafetyConfig {
+                require_verified: true,
+                boot_max_step_rad: default_boot_max_step_rad(),
+                auto_recovery_max_rad: default_auto_recovery_max_rad(),
+                recovery_margin_rad: default_recovery_margin_rad(),
+                step_size_rad: default_step_size_rad(),
+                tick_interval_ms: default_tick_interval_ms(),
+                tracking_error_max_rad: default_tracking_error_max_rad(),
+                target_tolerance_rad: default_target_tolerance_rad(),
+                homer_timeout_ms: default_homer_timeout_ms(),
+                auto_recovery_enabled: true,
+                max_feedback_age_ms: default_max_feedback_age_ms(),
+            },
+            logs: LogsConfig {
+                db_path: db_path
+                    .map(PathBuf::from)
+                    .unwrap_or_else(default_logs_db_path),
+                ..Default::default()
+            },
+        }
+    }
+
+    #[test]
+    fn normalize_relative_db_path_anchors_to_absolute_audit_log_parent() {
+        // Pi-shaped config: absolute audit log + the relative default db_path
+        // (i.e. operator never wrote a `[logs]` section). The fix must
+        // re-home the SQLite DB next to the audit log so it lands on the
+        // writable StateDirectory instead of the read-only release tree.
+        let mut cfg = cfg_with("/var/lib/rudy/audit.jsonl", None);
+        cfg.normalize_paths();
+        assert_eq!(cfg.logs.db_path, PathBuf::from("/var/lib/rudy/logs.db"));
+    }
+
+    #[test]
+    fn normalize_keeps_dev_relative_paths_unchanged() {
+        // Dev workflow: cwd is the repo root and the audit log is
+        // intentionally relative. We must not turn that into an absolute
+        // path or the DB would land outside the repo.
+        let mut cfg = cfg_with("./.rudyd/audit.jsonl", None);
+        cfg.normalize_paths();
+        assert_eq!(cfg.logs.db_path, PathBuf::from(".rudyd/logs.db"));
+    }
+
+    #[test]
+    fn normalize_respects_explicit_absolute_db_path() {
+        // Operator explicitly chose a different absolute db_path; we leave
+        // it alone even if it doesn't share the audit log's parent.
+        let mut cfg = cfg_with("/var/lib/rudy/audit.jsonl", Some("/srv/logs/rudy.db"));
+        cfg.normalize_paths();
+        assert_eq!(cfg.logs.db_path, PathBuf::from("/srv/logs/rudy.db"));
     }
 }
