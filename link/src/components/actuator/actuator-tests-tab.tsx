@@ -44,9 +44,9 @@ const TESTS: TestDef[] = [
   },
   {
     name: "set_zero",
-    label: "Set mechanical zero",
+    label: "Set mechanical zero (RAM only — does not persist)",
     description:
-      "Issues type-6 to re-anchor the shaft's zero at its current position. Optionally type-22 (save) afterwards.",
+      "Issues type-6 to re-anchor the shaft's zero at its current position. RAM-only by design; the new zero is lost on the next power cycle. Toggle 'Save to flash after re-anchoring' to follow with type-22, but for the supported flash-persistent path use the Commissioning workflow (POST /commission) instead — that endpoint also reads back add_offset and records it in inventory.yaml.",
     destructive: true,
     hasParams: true,
   },

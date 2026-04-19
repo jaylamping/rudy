@@ -1,4 +1,15 @@
 //! POST /api/motors/:role/{enable,stop,save,set_zero}.
+//!
+//! Note on persistence: `save` and `set_zero` look like a pair but they
+//! are not. `save` issues a type-22 SaveParams that flushes every
+//! RAM-resident parameter to firmware flash. `set_zero` issues a type-6
+//! that updates `add_offset` in RAM only and is therefore RAM-only by
+//! design — even an immediately-following `save` can race with the
+//! firmware's internal flush bookkeeping in ways that have surprised
+//! operators in the past. The supported flash-persistent zeroing path is
+//! the dedicated `POST /api/motors/:role/commission` endpoint, which
+//! sequences type-6 + type-22 + a readback of `add_offset` and records
+//! the result in `inventory.yaml`.
 
 use axum::{
     extract::{Path, State},
@@ -241,6 +252,25 @@ pub async fn save_to_flash(
     ))
 }
 
+/// RAM-only set-mechanical-zero (firmware type-6).
+///
+/// **This endpoint does NOT persist the new zero across power cycles.** It
+/// issues a single type-6 frame; the firmware updates `add_offset` (param
+/// 0x702B) in RAM but never writes flash. The new zero survives until the
+/// motor loses power, at which point the previously-saved `add_offset`
+/// (or 0.0 if it was never saved) takes effect again. See ADR-0002 §
+/// "type-6 vs type-22" for the wire-protocol detail.
+///
+/// For a flash-persistent zero — and to record the offset in
+/// `inventory.yaml` so the boot orchestrator can verify it on every boot —
+/// use `POST /api/motors/:role/commission` instead. That endpoint runs the
+/// type-6 + type-22 SaveParams sequence and reads back `add_offset` to
+/// confirm the firmware accepted the change.
+///
+/// This endpoint is retained as a diagnostic tool (an operator may want to
+/// briefly re-zero a motor mid-session for a measurement and not commit
+/// to it). The audit log records every call with `persisted: false` to
+/// make the distinction visible after the fact.
 pub async fn set_zero(
     State(state): State<SharedState>,
     Path(role): Path<String>,
@@ -255,7 +285,7 @@ pub async fn set_zero(
         .await
         .expect("set_zero task panicked")
         .map_err(|e| {
-            audit(&state, "set_zero", &role, AuditResult::Denied);
+            audit_set_zero(&state, &role, AuditResult::Denied);
             can_err("set_zero", &role, &e)
         })?;
     }
@@ -266,6 +296,27 @@ pub async fn set_zero(
     // and the operator must explicitly re-home before enable will work.
     boot_state::reset_to_unknown(&state, &role);
 
-    audit(&state, "set_zero", &role, AuditResult::Ok);
-    Ok(Json(serde_json::json!({ "ok": true, "role": role })))
+    audit_set_zero(&state, &role, AuditResult::Ok);
+    Ok(Json(serde_json::json!({
+        "ok": true,
+        "role": role,
+        "persisted": false,
+    })))
+}
+
+/// Audit helper for `set_zero` that always records `persisted: false` so
+/// the distinction between RAM-only `set_zero` and flash-persistent
+/// `commission` is unambiguous in the audit trail. Operators reviewing
+/// the log after a "wait, did this survive the reboot?" question can grep
+/// the JSONL for `"persisted":false` to find every RAM-only zero.
+fn audit_set_zero(state: &SharedState, role: &str, result: AuditResult) {
+    state.audit.write(AuditEntry {
+        timestamp: Utc::now(),
+        session_id: None,
+        remote: None,
+        action: "set_zero".into(),
+        target: Some(role.into()),
+        details: serde_json::json!({ "persisted": false }),
+        result,
+    });
 }

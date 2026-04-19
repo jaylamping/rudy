@@ -1294,6 +1294,67 @@ async fn set_zero_resets_boot_state_to_unknown() {
     assert!(matches!(bs, BootState::Unknown));
 }
 
+/// `set_zero` is RAM-only by design (it issues type-6 only; no type-22
+/// SaveParams). The audit log must record this fact unambiguously so an
+/// operator reviewing history after a "did this survive the reboot?"
+/// question can grep for the marker. Specifically the audit entry's
+/// `details` JSON must contain `"persisted": false`, and the response
+/// body must echo the same `persisted: false` so the SPA can show a
+/// distinct treatment without parsing free-form prose.
+#[tokio::test]
+async fn set_zero_audit_records_not_persisted() {
+    let (state, dir) = common::make_state();
+    common::set_boot_state(&state, "shoulder_actuator_a", BootState::Homed);
+    let app = rudydae::build_app(state.clone());
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/motors/shoulder_actuator_a/set_zero")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let body: serde_json::Value = body_json(resp).await;
+    assert_eq!(
+        body.get("persisted"),
+        Some(&serde_json::Value::Bool(false)),
+        "set_zero response body must include persisted:false; got {body}",
+    );
+
+    // Read the audit JSONL the test fixture wrote to and find our entry.
+    // The `audit::AuditLog::write` flushes after every entry so a single
+    // synchronous read is race-free.
+    let audit_path = dir.path().join("audit.jsonl");
+    let raw = std::fs::read_to_string(&audit_path)
+        .expect("audit log should exist after a successful set_zero");
+    let last_set_zero = raw
+        .lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .filter(|entry| entry.get("action").and_then(|v| v.as_str()) == Some("set_zero"))
+        .last()
+        .expect("audit log should contain a set_zero entry");
+    assert_eq!(
+        last_set_zero
+            .get("details")
+            .and_then(|d| d.get("persisted")),
+        Some(&serde_json::Value::Bool(false)),
+        "set_zero audit entry must include details.persisted=false; got {last_set_zero}",
+    );
+    assert_eq!(
+        last_set_zero.get("result").and_then(|v| v.as_str()),
+        Some("ok"),
+    );
+    assert_eq!(
+        last_set_zero.get("target").and_then(|v| v.as_str()),
+        Some("shoulder_actuator_a"),
+    );
+}
+
 /// Rename of an enabled motor used to refuse with 409 `motor_active` and
 /// force the operator to context-switch to the Controls tab to click Stop.
 /// The daemon now does that round-trip itself: stop on the bus, perform

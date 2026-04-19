@@ -50,8 +50,10 @@ export function ActuatorControlsTab({ motor }: { motor: MotorSummary }) {
           <CardTitle className="text-base">Motion control</CardTitle>
           <CardDescription>
             Enable arms the controller and starts accepting setpoints. Stop
-            issues a type-4 (RS03 motor stop). Set zero re-anchors the
-            mechanical reference at the current shaft position.
+            issues a type-4 (RS03 motor stop). Set zero (RAM only) re-anchors
+            the mechanical reference at the current shaft position but does
+            NOT survive a power cycle — for a flash-persistent zero, use the
+            Commissioning workflow instead.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-2">
@@ -74,7 +76,7 @@ export function ActuatorControlsTab({ motor }: { motor: MotorSummary }) {
             disabled={mutate.isPending}
             onClick={() => setConfirm("set_zero")}
           >
-            Set zero
+            Set zero (RAM only)
           </Button>
           <Button
             variant="outline"
@@ -105,7 +107,7 @@ export function ActuatorControlsTab({ motor }: { motor: MotorSummary }) {
             {
               enable: "Enable motor",
               stop: "Stop motor",
-              set_zero: "Set mechanical zero",
+              set_zero: "Set mechanical zero (RAM only — does not persist)",
               save: "Save parameters to flash",
             }[confirm]
           }
@@ -142,8 +144,14 @@ function describe(action: Action, role: string) {
       return (
         <>
           Issue a type-6 set-mechanical-zero to{" "}
-          <code className="font-mono">{role}</code>. The shaft must be at rest;
-          the new zero offset is RAM-only until you also save to flash.
+          <code className="font-mono">{role}</code>. The shaft must be at rest.
+          <br />
+          <strong>This is the RAM-only diagnostic path: the new zero will
+          NOT survive a power cycle, and inventory.yaml is NOT updated.</strong>
+          {" "}For a flash-persistent zero that the boot orchestrator can
+          verify on every boot, use{" "}
+          <code className="font-mono">POST /api/motors/:role/commission</code>
+          {" "}(the Commissioning workflow on the Controls tab) instead.
         </>
       );
     case "save":
