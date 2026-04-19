@@ -297,6 +297,44 @@ pub enum SafetyEvent {
         role: String,
         offset_rad: f32,
     },
+    /// Boot orchestrator detected a Class-1 shenanigan: the firmware's
+    /// reported `add_offset` (0x702B) disagrees with the
+    /// `commissioned_zero_offset` recorded in `inventory.yaml` by more
+    /// than `safety.commission_readback_tolerance_rad`. Motion is
+    /// refused until the operator either re-commissions
+    /// (`POST /commission`, the new position becomes the recorded
+    /// zero) or restores (`POST /restore_offset`, the daemon writes
+    /// the stored value back to firmware and re-saves to flash).
+    OffsetChanged {
+        t_ms: i64,
+        role: String,
+        stored_rad: f32,
+        current_rad: f32,
+    },
+    /// Boot orchestrator's slow-ramp homer aborted (tracking error,
+    /// fault, timeout, path violation). `BootState::HomeFailed` will
+    /// stick until the operator hits `POST /api/motors/:role/home` to
+    /// retry. Distinct from `AutoRecoveryFailed` (which Layer 6 emits
+    /// — Phase H.1 deletes that) and from a manual-homer abort (which
+    /// already audit-logs but does not get its own SafetyEvent today).
+    HomeFailed {
+        t_ms: i64,
+        role: String,
+        reason: String,
+        last_pos_rad: f32,
+    },
+    /// Boot orchestrator's slow-ramp homer reached its target without
+    /// operator intervention. Distinct from `Homed` (which the manual
+    /// homer endpoint emits) so dashboards can tell apart "operator
+    /// clicked Verify & Home" from "boot orchestrator drove this on
+    /// its own".
+    AutoHomed {
+        t_ms: i64,
+        role: String,
+        from_rad: f32,
+        target_rad: f32,
+        ticks: u32,
+    },
 }
 
 /// One operator reminder. File-backed in `.rudyd/reminders.json`.
