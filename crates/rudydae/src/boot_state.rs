@@ -23,7 +23,12 @@ use crate::types::SafetyEvent;
 /// One motor's boot-time gate state. Initialized to `Unknown` for every
 /// present motor at daemon start; transitions through the states described
 /// in the boot-flow diagram. Only `Homed` permits `enable`.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
+///
+/// Not `Copy`: `HomeFailed` carries the abort reason as a `String` so the
+/// SPA can show what went wrong without a follow-up audit-log query.
+/// All callers that previously relied on implicit copies use `.cloned()`
+/// or pattern-bind by reference.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "./")]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum BootState {
@@ -42,6 +47,11 @@ pub enum BootState {
     /// Layer 6 routine is currently driving the motor toward the band edge.
     /// All other command paths are refused until this finishes (success or
     /// failure transitions to `InBand` or `OutOfBand` respectively).
+    ///
+    /// Slated for removal alongside `crate::can::auto_recovery` in Phase
+    /// H.1 of the commissioned-zero plan; the boot orchestrator's
+    /// `AutoHoming` variant supersedes it. Kept in place for now so
+    /// Layer 6 continues to function during the migration window.
     AutoRecovering {
         from_rad: f32,
         target_rad: f32,
@@ -55,25 +65,62 @@ pub enum BootState {
     /// target without faulting. Full per-motor torque/speed limits restored.
     /// This is the only state in which `enable` is allowed.
     Homed,
+    /// Class-1 shenanigan detected by the boot orchestrator: the
+    /// firmware's reported `add_offset` (0x702B) disagrees with the
+    /// `commissioned_zero_offset` recorded in `inventory.yaml` by more
+    /// than `safety.commission_readback_tolerance_rad`. Refuses motion
+    /// until the operator either re-commissions (POST /commission, the
+    /// new position becomes the recorded zero) or restores
+    /// (POST /restore_offset, the daemon writes the stored value back
+    /// to firmware and re-saves to flash).
+    OffsetChanged {
+        stored_rad: f32,
+        current_rad: f32,
+    },
+    /// Boot orchestrator is currently driving the motor toward
+    /// `predefined_home_rad` via the slow-ramp homer
+    /// (`crate::can::slow_ramp::run`). Refuses operator-initiated motion
+    /// until the homer finishes (Homed) or aborts (HomeFailed).
+    /// `progress_rad` is the orchestrator's tick-by-tick estimate so the
+    /// SPA can render a progress bar without polling.
+    AutoHoming {
+        from_rad: f32,
+        target_rad: f32,
+        progress_rad: f32,
+    },
+    /// Boot orchestrator's slow-ramp homer aborted (tracking error,
+    /// fault, timeout, path violation). Operator must investigate and
+    /// either retry via `POST /api/motors/:role/home` or re-position
+    /// the joint manually. Carries the abort reason from
+    /// `slow_ramp::run` and the last position the homer saw.
+    HomeFailed {
+        reason: String,
+        last_pos_rad: f32,
+    },
 }
 
 impl BootState {
     /// Convenience: does this state allow the enable handler to proceed?
-    pub fn permits_enable(self) -> bool {
+    pub fn permits_enable(&self) -> bool {
         matches!(self, BootState::Homed)
     }
 
     /// Convenience: is the auto-recovery routine currently driving this
     /// motor? While true, jog / enable / params writes / bench tests are
-    /// all refused.
-    pub fn is_auto_recovering(self) -> bool {
+    /// all refused. Slated for removal in Phase H.1 of the
+    /// commissioned-zero plan when Layer 6 goes away.
+    pub fn is_auto_recovering(&self) -> bool {
         matches!(self, BootState::AutoRecovering { .. })
     }
 }
 
 /// Outcome of running [`classify`] once. Returned to callers so the
-/// telemetry loop can decide whether to spawn the auto-recovery routine.
-#[derive(Debug, Clone, Copy)]
+/// telemetry loop can decide whether to spawn the auto-recovery routine
+/// (Layer 6) or the new boot orchestrator (Phase C.5+).
+///
+/// Not `Copy` because `BootState` is no longer `Copy` (HomeFailed
+/// carries a String reason).
+#[derive(Debug, Clone)]
 pub enum ClassifyOutcome {
     /// State did not change. No action needed.
     Unchanged,
@@ -169,7 +216,7 @@ pub fn update_auto_recovery_progress(state: &SharedState, role: &str, progress_r
         from_rad,
         target_rad,
         ..
-    }) = map.get(role).copied()
+    }) = map.get(role).cloned()
     {
         map.insert(
             role.to_string(),
@@ -182,6 +229,84 @@ pub fn update_auto_recovery_progress(state: &SharedState, role: &str, progress_r
     }
 }
 
+/// Mark `role` as Class-1-shenanigan-detected: the firmware's
+/// reported `add_offset` disagrees with the stored
+/// `commissioned_zero_offset` by more than the configured tolerance.
+/// Bypasses the "never demote Homed" rule because this is an explicit
+/// orchestrator-initiated transition.
+pub fn force_set_offset_changed(
+    state: &SharedState,
+    role: &str,
+    stored_rad: f32,
+    current_rad: f32,
+) {
+    force_set(
+        state,
+        role,
+        BootState::OffsetChanged {
+            stored_rad,
+            current_rad,
+        },
+    );
+}
+
+/// Mark `role` as currently being driven by the boot orchestrator's
+/// auto-home flow. Carries the from/target so the UI can render a
+/// progress bar without polling.
+pub fn force_set_auto_homing(
+    state: &SharedState,
+    role: &str,
+    from_rad: f32,
+    target_rad: f32,
+) {
+    force_set(
+        state,
+        role,
+        BootState::AutoHoming {
+            from_rad,
+            target_rad,
+            progress_rad: 0.0,
+        },
+    );
+}
+
+/// Update the in-flight `progress_rad` on an `AutoHoming` state
+/// without emitting a transition event. Mirrors
+/// [`update_auto_recovery_progress`] but for the boot orchestrator's
+/// auto-home flow.
+pub fn update_auto_homing_progress(state: &SharedState, role: &str, progress_rad: f32) {
+    let mut map = state.boot_state.write().expect("boot_state poisoned");
+    if let Some(BootState::AutoHoming {
+        from_rad,
+        target_rad,
+        ..
+    }) = map.get(role).cloned()
+    {
+        map.insert(
+            role.to_string(),
+            BootState::AutoHoming {
+                from_rad,
+                target_rad,
+                progress_rad,
+            },
+        );
+    }
+}
+
+/// Mark `role` as having had its boot-orchestrator auto-home aborted.
+/// Operator must investigate (the SPA renders the reason and a Retry
+/// button against `POST /api/motors/:role/home`).
+pub fn force_set_home_failed(state: &SharedState, role: &str, reason: String, last_pos_rad: f32) {
+    force_set(
+        state,
+        role,
+        BootState::HomeFailed {
+            reason,
+            last_pos_rad,
+        },
+    );
+}
+
 /// Look up the current boot state, returning `Unknown` if the motor isn't
 /// tracked yet. Convenience for handlers that need to gate on it.
 pub fn current(state: &SharedState, role: &str) -> BootState {
@@ -190,7 +315,7 @@ pub fn current(state: &SharedState, role: &str) -> BootState {
         .read()
         .expect("boot_state poisoned")
         .get(role)
-        .copied()
+        .cloned()
         .unwrap_or(BootState::Unknown)
 }
 
@@ -236,7 +361,7 @@ pub fn recovery_target(mech_pos_rad: f32, limits: &TravelLimits, margin_rad: f32
 
 fn transition(state: &SharedState, role: &str, new: BootState) -> ClassifyOutcome {
     let mut map = state.boot_state.write().expect("boot_state poisoned");
-    let prev = map.get(role).copied().unwrap_or(BootState::Unknown);
+    let prev = map.get(role).cloned().unwrap_or(BootState::Unknown);
 
     // Never demote Homed via classify; only set_zero / mark_homed escape this.
     if matches!(prev, BootState::Homed) && !matches!(new, BootState::Homed) {
@@ -247,7 +372,7 @@ fn transition(state: &SharedState, role: &str, new: BootState) -> ClassifyOutcom
         return ClassifyOutcome::Unchanged;
     }
 
-    map.insert(role.to_string(), new);
+    map.insert(role.to_string(), new.clone());
     drop(map);
 
     if let BootState::OutOfBand {
@@ -268,9 +393,17 @@ fn transition(state: &SharedState, role: &str, new: BootState) -> ClassifyOutcom
                 min_rad,
                 max_rad,
             });
+        ClassifyOutcome::Changed {
+            new: BootState::OutOfBand {
+                mech_pos_rad,
+                min_rad,
+                max_rad,
+            },
+            prev,
+        }
+    } else {
+        ClassifyOutcome::Changed { new, prev }
     }
-
-    ClassifyOutcome::Changed { new, prev }
 }
 
 #[cfg(test)]
@@ -326,5 +459,33 @@ mod tests {
             max_rad: 0.0,
         }
         .permits_enable());
+    }
+
+    /// New boot-orchestrator variants must NOT permit enable. Class-1
+    /// shenanigans (OffsetChanged) refuse motion until recovery; the
+    /// orchestrator's own AutoHoming flow refuses operator commands
+    /// while it's running; HomeFailed requires operator investigation
+    /// before any motion is allowed.
+    #[test]
+    fn new_boot_state_variants_refuse_enable() {
+        let oc = BootState::OffsetChanged {
+            stored_rad: 0.0,
+            current_rad: 0.5,
+        };
+        let ah = BootState::AutoHoming {
+            from_rad: 0.0,
+            target_rad: 0.0,
+            progress_rad: 0.0,
+        };
+        let hf = BootState::HomeFailed {
+            reason: "tracking_error".into(),
+            last_pos_rad: 0.42,
+        };
+        assert!(!oc.permits_enable());
+        assert!(!ah.permits_enable());
+        assert!(!hf.permits_enable());
+        assert!(!oc.is_auto_recovering());
+        assert!(!ah.is_auto_recovering());
+        assert!(!hf.is_auto_recovering());
     }
 }

@@ -131,6 +131,33 @@ pub async fn home(
                 )),
             ));
         }
+        BootState::OffsetChanged {
+            stored_rad,
+            current_rad,
+        } => {
+            return Err(err(
+                StatusCode::CONFLICT,
+                "offset_changed",
+                Some(format!(
+                    "{role} commissioned_zero_offset disagrees with firmware \
+                     (stored={stored_rad:.4}, current={current_rad:.4}); \
+                     re-commission or restore_offset before homing"
+                )),
+            ));
+        }
+        BootState::AutoHoming { .. } => {
+            return Err(err(
+                StatusCode::CONFLICT,
+                "auto_homing_in_progress",
+                Some(format!(
+                    "boot orchestrator is already auto-homing {role}; wait for completion"
+                )),
+            ));
+        }
+        BootState::HomeFailed { .. } => {
+            // Operator-initiated retry: this is the recovery path for a
+            // failed auto-home. Allowed to proceed.
+        }
         BootState::Homed => {
             // Re-homing a motor is allowed; it's a no-op if already at target.
         }

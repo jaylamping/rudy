@@ -184,6 +184,28 @@ pub async fn enable(
                 "auto_recovery_in_progress",
                 format!("{role} is being driven by auto-recovery"),
             ),
+            BootState::OffsetChanged {
+                stored_rad,
+                current_rad,
+            } => (
+                "offset_changed",
+                format!(
+                    "{role} commissioned_zero_offset disagrees with firmware: \
+                     stored={stored_rad:.4} current={current_rad:.4}; \
+                     re-commission or restore_offset to recover"
+                ),
+            ),
+            BootState::AutoHoming { .. } => (
+                "auto_homing_in_progress",
+                format!("{role} is being driven by the boot orchestrator's auto-home"),
+            ),
+            BootState::HomeFailed { reason, last_pos_rad } => (
+                "home_failed",
+                format!(
+                    "{role} auto-home aborted: {reason} at {last_pos_rad:.3} rad; \
+                     POST /motors/{role}/home to retry"
+                ),
+            ),
             BootState::InBand => (
                 "not_homed",
                 format!("POST /motors/{role}/home first to verify position"),

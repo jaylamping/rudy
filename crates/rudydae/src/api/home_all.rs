@@ -95,6 +95,18 @@ pub async fn home_all(
                     offenders.push((m.role.clone(), "auto_recovery_in_progress"));
                     false
                 }
+                BootState::OffsetChanged { .. } => {
+                    offenders.push((m.role.clone(), "offset_changed"));
+                    false
+                }
+                BootState::AutoHoming { .. } => {
+                    offenders.push((m.role.clone(), "auto_homing_in_progress"));
+                    false
+                }
+                BootState::HomeFailed { .. } => {
+                    offenders.push((m.role.clone(), "home_failed"));
+                    false
+                }
             };
             let _ = ok;
         }
