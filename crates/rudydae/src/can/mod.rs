@@ -87,6 +87,15 @@ impl RealCanHandle {
         Ok(0.0)
     }
 
+    pub fn write_add_offset_persisted(
+        &self,
+        _state: &SharedState,
+        _motor: &Motor,
+        _value_rad: f32,
+    ) -> Result<()> {
+        anyhow::bail!("real CAN is only available on Linux targets")
+    }
+
     pub fn set_velocity_setpoint(&self, _motor: &Motor, _vel_rad_s: f32) -> Result<()> {
         anyhow::bail!("real CAN is only available on Linux targets")
     }

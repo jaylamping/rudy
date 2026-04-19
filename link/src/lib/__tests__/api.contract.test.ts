@@ -115,6 +115,12 @@ describe("REST contract — URL + method per call", () => {
       "POST",
     ],
     [
+      "POST /api/motors/:role/restore_offset",
+      () => api.restoreOffset("shoulder_actuator_a"),
+      "/api/motors/shoulder_actuator_a/restore_offset",
+      "POST",
+    ],
+    [
       "POST /api/motors/:role/motion/sweep",
       () =>
         api.motion.sweep("shoulder_actuator_a", {

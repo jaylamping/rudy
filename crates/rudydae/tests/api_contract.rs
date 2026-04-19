@@ -1639,6 +1639,86 @@ async fn commission_endpoint_audit_logs_readback() {
     assert_eq!(last["details"]["readback_rad"].as_f64(), Some(0.0));
 }
 
+/// `restore_offset` on mock-CAN writes nothing but clears `OffsetChanged`
+/// after verifying the simulated readback matches `commissioned_zero_offset`.
+#[tokio::test]
+async fn restore_offset_mock_clears_offset_changed() {
+    let (state, _dir) = common::make_state();
+    let app = rudydae::build_app(state.clone());
+
+    {
+        let mut inv = state.inventory.write().expect("inventory poisoned");
+        let m = inv
+            .motors
+            .iter_mut()
+            .find(|m| m.role == "shoulder_actuator_a")
+            .expect("fixture motor");
+        m.commissioned_zero_offset = Some(0.05);
+    }
+
+    common::set_boot_state(
+        &state,
+        "shoulder_actuator_a",
+        BootState::OffsetChanged {
+            stored_rad: 0.05,
+            current_rad: 0.12,
+        },
+    );
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/motors/shoulder_actuator_a/restore_offset")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let body: serde_json::Value = body_json(resp).await;
+    assert_eq!(body["ok"], json!(true));
+    assert_eq!(body["restored_rad"], json!(0.05));
+    assert_eq!(body["readback_rad"], json!(0.05));
+
+    let bs = rudydae::boot_state::current(&state, "shoulder_actuator_a");
+    assert!(matches!(bs, BootState::Unknown));
+}
+
+/// `restore_offset` requires `BootState::OffsetChanged`; other states get
+/// 409 `restore_failed`.
+#[tokio::test]
+async fn restore_offset_rejects_when_not_offset_changed() {
+    let (state, _dir) = common::make_state();
+    let app = rudydae::build_app(state.clone());
+    {
+        let mut inv = state.inventory.write().expect("inventory poisoned");
+        let m = inv
+            .motors
+            .iter_mut()
+            .find(|m| m.role == "shoulder_actuator_a")
+            .expect("fixture motor");
+        m.commissioned_zero_offset = Some(0.05);
+    }
+    common::set_boot_state(&state, "shoulder_actuator_a", BootState::InBand);
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/motors/shoulder_actuator_a/restore_offset")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CONFLICT);
+    let body: serde_json::Value = body_json(resp).await;
+    assert_eq!(body["error"], json!("restore_failed"));
+    assert!(body["detail"].as_str().unwrap_or("").contains("wrong_boot_state"));
+}
+
 /// Rename of an enabled motor used to refuse with 409 `motor_active` and
 /// force the operator to context-switch to the Controls tab to click Stop.
 /// The daemon now does that round-trip itself: stop on the bus, perform
@@ -2100,6 +2180,7 @@ fn endpoint_inventory_documented() {
         "POST   /api/motors/:role/save",
         "POST   /api/motors/:role/set_zero",
         "POST   /api/motors/:role/commission",
+        "POST   /api/motors/:role/restore_offset",
         "GET    /api/motors/:role/travel_limits",
         "PUT    /api/motors/:role/travel_limits",
         "POST   /api/motors/:role/jog",

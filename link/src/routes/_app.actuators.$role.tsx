@@ -6,12 +6,13 @@
 // per-frame updates flow in without any new subscription.
 
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { useLiveInterval } from "@/lib/hooks/useLiveInterval";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { MotorSummary } from "@/lib/types/MotorSummary";
 import { ActuatorOverviewTab } from "@/components/actuator/actuator-overview-tab";
@@ -207,6 +208,9 @@ function ActuatorHeader({ motor }: { motor: MotorSummary }) {
 // union from MotorSummary; renders a colored pill plus, for OutOfBand,
 // a tooltip with the offending position.
 function BootStateBadge({ motor }: { motor: MotorSummary }) {
+  const qc = useQueryClient();
+  const [restoreErr, setRestoreErr] = useState<string | null>(null);
+  const [restoreBusy, setRestoreBusy] = useState(false);
   const bs = motor.boot_state;
   const RAD_TO_DEG = 180 / Math.PI;
   if (bs.kind === "homed") {
@@ -243,6 +247,62 @@ function BootStateBadge({ motor }: { motor: MotorSummary }) {
     return (
       <Badge variant="warning" className="animate-pulse">
         auto-recovering {from}° → {target}°
+      </Badge>
+    );
+  }
+  if (bs.kind === "offset_changed") {
+    const st = bs.stored_rad.toFixed(4);
+    const cur = bs.current_rad.toFixed(4);
+    return (
+      <div className="flex flex-col items-end gap-1 sm:flex-row sm:items-center">
+        <Badge
+          variant="destructive"
+          title={`Commissioned offset ${st} rad but firmware reports ${cur} rad`}
+        >
+          offset mismatch
+        </Badge>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-7 text-xs"
+          disabled={restoreBusy}
+          onClick={async () => {
+            setRestoreErr(null);
+            setRestoreBusy(true);
+            try {
+              await api.restoreOffset(motor.role);
+              await qc.invalidateQueries({ queryKey: ["motors"] });
+            } catch (e) {
+              const msg =
+                e instanceof Error ? e.message : "restore_offset failed";
+              setRestoreErr(msg);
+            } finally {
+              setRestoreBusy(false);
+            }
+          }}
+        >
+          {restoreBusy ? "Restoring…" : `Restore offset (${st} rad)`}
+        </Button>
+        {restoreErr ? (
+          <span className="max-w-[14rem] text-right text-xs text-destructive">{restoreErr}</span>
+        ) : null}
+      </div>
+    );
+  }
+  if (bs.kind === "auto_homing") {
+    const from = (bs.from_rad * RAD_TO_DEG).toFixed(1);
+    const target = (bs.target_rad * RAD_TO_DEG).toFixed(1);
+    return (
+      <Badge variant="default" className="animate-pulse">
+        auto-homing {from}° → {target}°
+      </Badge>
+    );
+  }
+  if (bs.kind === "home_failed") {
+    return (
+      <Badge variant="warning" title={bs.reason}>
+        home failed
       </Badge>
     );
   }

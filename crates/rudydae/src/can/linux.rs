@@ -278,6 +278,29 @@ impl LinuxCanCore {
             .ok_or_else(|| anyhow!("read_add_offset returned no value (firmware read-fail)"))
     }
 
+    /// Write `add_offset` (0x702B) in RAM and issue SaveParams so it persists
+    /// across power-off. Used by `POST /restore_offset` to push the inventory
+    /// commissioning record back to the firmware.
+    pub fn write_add_offset_persisted(
+        &self,
+        state: &SharedState,
+        motor: &Motor,
+        value_rad: f32,
+    ) -> Result<()> {
+        let desc = state
+            .spec
+            .firmware_limits
+            .get("add_offset")
+            .or_else(|| state.spec.observables.get("add_offset"))
+            .ok_or_else(|| {
+                anyhow!(
+                    "add_offset not found in actuator spec (looked in firmware_limits and observables)"
+                )
+            })?;
+        self.write_param(motor, desc, &serde_json::json!(value_rad), true)?;
+        Ok(())
+    }
+
     /// Velocity-mode setpoint. The worker thread implements smart
     /// re-arm: on the first frame after `state.enabled` does NOT
     /// contain the role, the worker writes `RUN_MODE = 2` + sends

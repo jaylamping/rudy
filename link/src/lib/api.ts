@@ -132,6 +132,19 @@ export const api = {
     }>(`/api/motors/${encodeURIComponent(role)}/commission`, {
       method: "POST",
     }),
+  // Recovery from BootState::OffsetChanged: writes inventory
+  // `commissioned_zero_offset` back to firmware (RAM + SaveParams) and
+  // resets boot state to Unknown. Failures use:
+  // `{ error: "restore_failed", detail, readback_rad: number | null }`.
+  restoreOffset: (role: string) =>
+    apiFetch<{
+      ok: boolean;
+      role: string;
+      restored_rad: number;
+      readback_rad: number;
+    }>(`/api/motors/${encodeURIComponent(role)}/restore_offset`, {
+      method: "POST",
+    }),
   // Travel limits (added by the actuator-detail page work).
   getTravelLimits: (role: string) =>
     apiFetch<import("@/lib/types/TravelLimits").TravelLimits>(

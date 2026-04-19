@@ -378,6 +378,13 @@ fn clear_attempted(state: &SharedState, role: &str) {
         .remove(role);
 }
 
+/// Drop `role` from the orchestrator idempotency set so a later qualifying
+/// telemetry transition can spawn [`maybe_run`] again. Used by
+/// `POST /restore_offset` after clearing `OffsetChanged`.
+pub fn clear_orchestrator_attempted(state: &SharedState, role: &str) {
+    clear_attempted(state, role);
+}
+
 /// Audit-log entry for an offset-disagreement detection. Mirrors the
 /// envelope established by `set_zero_advanced` and `commission` so a
 /// post-hoc audit-log review can grep for the orchestrator's actions

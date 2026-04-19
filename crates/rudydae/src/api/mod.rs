@@ -24,6 +24,7 @@ mod motors;
 mod params;
 mod reminders_route;
 mod rename;
+mod restore_offset;
 mod system;
 mod tests;
 mod travel;
@@ -42,6 +43,10 @@ pub fn router(state: SharedState) -> Router<SharedState> {
         .route("/motors/:role/stop", post(control::stop))
         .route("/motors/:role/set_zero", post(control::set_zero))
         .route("/motors/:role/commission", post(commission::commission))
+        .route(
+            "/motors/:role/restore_offset",
+            post(restore_offset::restore_offset),
+        )
         .route(
             "/motors/:role/travel_limits",
             get(travel::get_travel_limits).put(travel::put_travel_limits),
