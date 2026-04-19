@@ -4,6 +4,10 @@
   "version": "0.1.0",
   "type": "module",
   "description": "Rudy operator console (frontend). Served by the `rudydae` daemon via Tailscale-only HTTPS.",
+  "engines": {
+    "node": ">=22.0.0",
+    "npm": ">=10.5.1"
+  },
   "scripts": {
     "dev": "npm run bake:urdf && vite",
     "gen:routes": "node scripts/gen-routetree.mjs",
