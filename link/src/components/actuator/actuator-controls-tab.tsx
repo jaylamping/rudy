@@ -23,6 +23,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/params";
+import { Tooltip } from "@/components/ui/tooltip";
+import { useLimbHealth } from "@/lib/hooks/useLimbHealth";
 import { DeadManJog } from "./dead-man-jog";
 import type { MotorSummary } from "@/lib/types/MotorSummary";
 import type { Motor } from "@/lib/types/Motor";
@@ -34,6 +36,13 @@ const RAD_TO_DEG = 180 / Math.PI;
 export function ActuatorControlsTab({ motor }: { motor: MotorSummary }) {
   const qc = useQueryClient();
   const [confirm, setConfirm] = useState<Action | null>(null);
+  const limb = useLimbHealth(motor.role);
+  const enableTip =
+    !motor.verified
+      ? "Enable requires a verified motor (Inventory tab)."
+      : !limb.healthy && limb.blockReason
+        ? limb.blockReason
+        : "";
 
   const mutate = useMutation({
     mutationFn: async (action: Action) => {
@@ -66,13 +75,31 @@ export function ActuatorControlsTab({ motor }: { motor: MotorSummary }) {
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-2">
-          <Button
-            variant="default"
-            disabled={mutate.isPending || !motor.verified}
-            onClick={() => setConfirm("enable")}
-          >
-            Enable
-          </Button>
+          {enableTip ? (
+            <Tooltip content={enableTip} className="max-w-xs whitespace-normal">
+              <span className="inline-flex">
+                <Button
+                  variant="default"
+                  disabled={
+                    mutate.isPending || !motor.verified || !limb.healthy
+                  }
+                  onClick={() => setConfirm("enable")}
+                >
+                  Enable
+                </Button>
+              </span>
+            </Tooltip>
+          ) : (
+            <Button
+              variant="default"
+              disabled={
+                mutate.isPending || !motor.verified || !limb.healthy
+              }
+              onClick={() => setConfirm("enable")}
+            >
+              Enable
+            </Button>
+          )}
           <Button
             variant="destructive"
             disabled={mutate.isPending}
@@ -87,6 +114,9 @@ export function ActuatorControlsTab({ motor }: { motor: MotorSummary }) {
           >
             Save to flash
           </Button>
+          {!limb.healthy && motor.verified && (
+            <p className="w-full text-xs text-amber-400">{limb.blockReason}</p>
+          )}
           {!motor.verified && (
             <p className="w-full text-xs text-amber-400">
               Enable is locked while the motor is unverified. Mark it verified

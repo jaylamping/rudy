@@ -8,6 +8,7 @@
 // log entries. The session id is minted once per browser tab and stashed in
 // `sessionStorage`; see `./session.ts`.
 
+import { emitLimbQuarantineFromWire } from "./limbQuarantineBus";
 import { sessionId } from "./session";
 
 export class ApiError extends Error {
@@ -39,6 +40,7 @@ export async function apiFetch<T>(
   const body: unknown = text ? safeJson(text) : null;
 
   if (!res.ok) {
+    emitLimbQuarantineFromWire(body);
     const msg =
       (body && typeof body === "object" && "error" in body && typeof body.error === "string")
         ? body.error

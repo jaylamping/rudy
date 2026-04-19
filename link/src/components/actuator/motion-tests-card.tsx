@@ -13,7 +13,7 @@
 // motor; the bus_worker on the Pi does. See the convention doc in
 // `crates/rudydae/src/motion/mod.rs` for the rationale.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Activity, Square, Waves } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -27,7 +27,9 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
+import { useLimbHealth } from "@/lib/hooks/useLimbHealth";
 import { getBridgeWt } from "@/lib/hooks/wtBridgeHandle";
+import { Tooltip } from "@/components/ui/tooltip";
 import type { MotorSummary } from "@/lib/types/MotorSummary";
 import type { MotionStatus } from "@/lib/types/MotionStatus";
 
@@ -66,6 +68,7 @@ interface LiveStatus {
 }
 
 export function MotionTestsCard({ motor }: { motor: MotorSummary }) {
+  const limb = useLimbHealth(motor.role);
   const [waveAmpDeg, setWaveAmpDeg] = useState<[number]>([15]);
   const [waveSpeedRad, setWaveSpeedRad] = useState<[number]>([0.3]);
   const [sweepSpeedRad, setSweepSpeedRad] = useState<[number]>([0.25]);
@@ -276,6 +279,10 @@ export function MotionTestsCard({ motor }: { motor: MotorSummary }) {
     bsKind !== "auto_recovering" &&
     bsKind !== "unknown";
 
+  const limbBlocked = !limb.healthy;
+  const patternStartTip =
+    limbBlocked && limb.blockReason ? limb.blockReason : undefined;
+
   return (
     <Card>
       <CardHeader>
@@ -331,8 +338,12 @@ export function MotionTestsCard({ motor }: { motor: MotorSummary }) {
           subtitle="Symmetric oscillation around the joint's current position. Good for limbering up a fresh actuator without sweeping the whole band."
           running={active === "wave"}
           disabled={
-            !available || !safetyReady || (active !== null && active !== "wave")
+            !available ||
+            !safetyReady ||
+            limbBlocked ||
+            (active !== null && active !== "wave")
           }
+          startTooltip={patternStartTip}
           onStart={() => void startPattern("wave")}
           onStop={() => void stopMotion()}
           controls={
@@ -373,8 +384,12 @@ export function MotionTestsCard({ motor }: { motor: MotorSummary }) {
           }
           running={active === "sweep"}
           disabled={
-            !available || !safetyReady || (active !== null && active !== "sweep")
+            !available ||
+            !safetyReady ||
+            limbBlocked ||
+            (active !== null && active !== "sweep")
           }
+          startTooltip={patternStartTip}
           onStart={() => void startPattern("sweep")}
           onStop={() => void stopMotion()}
           controls={
@@ -410,7 +425,10 @@ export function MotionTestsCard({ motor }: { motor: MotorSummary }) {
             they bound every commanded move.
           </p>
         )}
-        {available && motor.verified && limits && !safetyReady && (
+        {available && motor.verified && limits && limbBlocked && (
+          <p className="text-xs text-amber-400">{limb.blockReason}</p>
+        )}
+        {available && motor.verified && limits && !safetyReady && !limbBlocked && (
           <p className="text-xs text-amber-400">
             Boot state is <code className="font-mono">{bsKind}</code>; resolve
             it (Verify &amp; Home / wait for auto-recovery) before running
@@ -430,18 +448,27 @@ function PatternRow({
   controls,
   running,
   disabled,
+  startTooltip,
   onStart,
   onStop,
 }: {
-  icon: React.ReactNode;
+  icon: ReactNode;
   title: string;
   subtitle: string;
-  controls: React.ReactNode;
+  controls: ReactNode;
   running: boolean;
   disabled: boolean;
+  /** Shown when Start is disabled (e.g. limb quarantine). */
+  startTooltip?: string;
   onStart: () => void;
   onStop: () => void;
 }) {
+  const startButton = (
+    <Button variant="default" disabled={disabled} onClick={onStart}>
+      Start
+    </Button>
+  );
+
   return (
     <div className="rounded-md border border-border/60 bg-background p-3">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -461,10 +488,12 @@ function PatternRow({
           <Button variant="destructive" onClick={onStop}>
             <Square className="h-4 w-4" /> Stop
           </Button>
+        ) : startTooltip && disabled ? (
+          <Tooltip content={startTooltip} className="max-w-xs whitespace-normal">
+            <span className="inline-flex">{startButton}</span>
+          </Tooltip>
         ) : (
-          <Button variant="default" disabled={disabled} onClick={onStart}>
-            Start
-          </Button>
+          startButton
         )}
       </div>
       <div className="mt-3">{controls}</div>

@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { EstopButton } from "@/components/estop-button";
+import { LimbQuarantineToaster } from "@/components/limb-quarantine-toaster";
 
 // `/` resolves to `_app.index.tsx` (the Overview dashboard). All the
 // other entries are siblings of the Overview route and render inside the
@@ -70,6 +71,7 @@ export function AppShell() {
           <Outlet />
         </div>
       </main>
+      <LimbQuarantineToaster />
     </div>
   );
 }

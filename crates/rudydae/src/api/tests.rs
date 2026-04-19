@@ -95,7 +95,10 @@ pub async fn run_test(
         ));
     }
 
-    crate::limb_health::require_limb_healthy_http(&state, &role)?;
+    // `read` is type-17 only; every other bench routine enables / jogs / sets zero.
+    if !matches!(test, TestName::Read) {
+        crate::limb_health::require_limb_healthy_http(&state, &role)?;
+    }
 
     let run_id = Uuid::new_v4().to_string();
 

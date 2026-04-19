@@ -11,7 +11,9 @@ import { api, ApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MotorChart, type MotorMetric } from "@/components/motor-chart";
+import { Tooltip } from "@/components/ui/tooltip";
 import { UrdfViewer } from "@/components/viz/urdf-viewer";
+import { useLimbHealth } from "@/lib/hooks/useLimbHealth";
 import type { MotorSummary } from "@/lib/types/MotorSummary";
 
 const METRICS: { key: MotorMetric; title: string }[] = [
@@ -79,6 +81,7 @@ export function ActuatorOverviewTab({ motor }: { motor: MotorSummary }) {
 // tab where the full Verify & Home ritual lives.
 function GoHomeBar({ motor }: { motor: MotorSummary }) {
   const qc = useQueryClient();
+  const limb = useLimbHealth(motor.role);
   const home = useMutation({
     mutationFn: () => api.homeMotor(motor.role, 0),
     onSuccess: () => {
@@ -87,6 +90,9 @@ function GoHomeBar({ motor }: { motor: MotorSummary }) {
   });
   const bs = motor.boot_state;
   const homed = bs.kind === "homed";
+  const homeBlocked = !limb.healthy;
+  const homeTip =
+    homeBlocked && limb.blockReason ? limb.blockReason : "";
   const live =
     motor.latest != null
       ? ((motor.latest.mech_pos_rad * 180) / Math.PI).toFixed(2)
@@ -120,15 +126,31 @@ function GoHomeBar({ motor }: { motor: MotorSummary }) {
               go to Travel tab
             </Link>
           )}
-          <Button
-            variant="default"
-            size="sm"
-            disabled={!homed || home.isPending}
-            onClick={() => home.mutate()}
-          >
-            <Home className="mr-1.5 h-3.5 w-3.5" />
-            {home.isPending ? "Homing..." : "Go to 0°"}
-          </Button>
+          {homeTip ? (
+            <Tooltip content={homeTip} className="max-w-xs whitespace-normal">
+              <span className="inline-flex">
+                <Button
+                  variant="default"
+                  size="sm"
+                  disabled={!homed || home.isPending || homeBlocked}
+                  onClick={() => home.mutate()}
+                >
+                  <Home className="mr-1.5 h-3.5 w-3.5" />
+                  {home.isPending ? "Homing..." : "Go to 0°"}
+                </Button>
+              </span>
+            </Tooltip>
+          ) : (
+            <Button
+              variant="default"
+              size="sm"
+              disabled={!homed || home.isPending || homeBlocked}
+              onClick={() => home.mutate()}
+            >
+              <Home className="mr-1.5 h-3.5 w-3.5" />
+              {home.isPending ? "Homing..." : "Go to 0°"}
+            </Button>
+          )}
         </div>
         {home.isError && (
           <p className="basis-full text-xs text-destructive">

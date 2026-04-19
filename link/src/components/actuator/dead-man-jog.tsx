@@ -33,8 +33,10 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Slider } from "@/components/ui/slider";
+import { useLimbHealth } from "@/lib/hooks/useLimbHealth";
 import { getBridgeWt } from "@/lib/hooks/wtBridgeHandle";
 import { useWtConnected } from "@/lib/hooks/wtStatus";
+import { Tooltip } from "@/components/ui/tooltip";
 import type { ClientStreamHandle } from "@/lib/wt/clientStream";
 import type { MotorSummary } from "@/lib/types/MotorSummary";
 
@@ -60,6 +62,14 @@ export function DeadManJog({ motor }: { motor: MotorSummary }) {
   const [error, setError] = useState<string | null>(null);
   const [available, setAvailable] = useState(true);
   const wtConnected = useWtConnected();
+  const limb = useLimbHealth(motor.role);
+  const jogBlocked = !limb.healthy;
+  const jogDisableTip =
+    jogBlocked && limb.blockReason
+      ? limb.blockReason
+      : !motor.verified
+        ? "Jog requires a verified motor (Inventory tab)."
+        : "";
 
   // Per-press state. We don't keep these in React state because the
   // pointer handlers run synchronously and a re-render in between
@@ -237,30 +247,74 @@ export function DeadManJog({ motor }: { motor: MotorSummary }) {
           />
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="lg"
-            disabled={!available || !motor.verified}
-            onPointerDown={() => startJog(-1)}
-            onPointerUp={stopJog}
-            onPointerLeave={stopJog}
-            onPointerCancel={stopJog}
-            className="flex-1"
-          >
-            <ChevronLeft className="h-5 w-5" /> Hold to jog -
-          </Button>
-          <Button
-            variant="outline"
-            size="lg"
-            disabled={!available || !motor.verified}
-            onPointerDown={() => startJog(1)}
-            onPointerUp={stopJog}
-            onPointerLeave={stopJog}
-            onPointerCancel={stopJog}
-            className="flex-1"
-          >
-            Hold to jog + <ChevronRight className="h-5 w-5" />
-          </Button>
+          {jogDisableTip ? (
+            <Tooltip
+              content={jogDisableTip}
+              className="max-w-xs whitespace-normal"
+            >
+              <span className="flex flex-1">
+                <Button
+                  variant="outline"
+                  size="lg"
+                  disabled={!available || !motor.verified || jogBlocked}
+                  onPointerDown={() => startJog(-1)}
+                  onPointerUp={stopJog}
+                  onPointerLeave={stopJog}
+                  onPointerCancel={stopJog}
+                  className="flex-1"
+                >
+                  <ChevronLeft className="h-5 w-5" /> Hold to jog -
+                </Button>
+              </span>
+            </Tooltip>
+          ) : (
+            <Button
+              variant="outline"
+              size="lg"
+              disabled={!available || !motor.verified || jogBlocked}
+              onPointerDown={() => startJog(-1)}
+              onPointerUp={stopJog}
+              onPointerLeave={stopJog}
+              onPointerCancel={stopJog}
+              className="flex-1"
+            >
+              <ChevronLeft className="h-5 w-5" /> Hold to jog -
+            </Button>
+          )}
+          {jogDisableTip ? (
+            <Tooltip
+              content={jogDisableTip}
+              className="max-w-xs whitespace-normal"
+            >
+              <span className="flex flex-1">
+                <Button
+                  variant="outline"
+                  size="lg"
+                  disabled={!available || !motor.verified || jogBlocked}
+                  onPointerDown={() => startJog(1)}
+                  onPointerUp={stopJog}
+                  onPointerLeave={stopJog}
+                  onPointerCancel={stopJog}
+                  className="flex-1"
+                >
+                  Hold to jog + <ChevronRight className="h-5 w-5" />
+                </Button>
+              </span>
+            </Tooltip>
+          ) : (
+            <Button
+              variant="outline"
+              size="lg"
+              disabled={!available || !motor.verified || jogBlocked}
+              onPointerDown={() => startJog(1)}
+              onPointerUp={stopJog}
+              onPointerLeave={stopJog}
+              onPointerCancel={stopJog}
+              className="flex-1"
+            >
+              Hold to jog + <ChevronRight className="h-5 w-5" />
+            </Button>
+          )}
         </div>
         {!available && (
           <p className="text-xs text-amber-400">
@@ -268,7 +322,10 @@ export function DeadManJog({ motor }: { motor: MotorSummary }) {
             Deploy a newer daemon or re-enable the operator-console build.
           </p>
         )}
-        {!motor.verified && available && (
+        {jogBlocked && available && (
+          <p className="text-xs text-amber-400">{limb.blockReason}</p>
+        )}
+        {!motor.verified && available && !jogBlocked && (
           <p className="text-xs text-amber-400">
             Jog requires a verified motor. Mark it verified from the
             Inventory tab.

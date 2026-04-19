@@ -22,6 +22,8 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { ConfirmDialog } from "@/components/params";
+import { Tooltip } from "@/components/ui/tooltip";
+import { useLimbHealth } from "@/lib/hooks/useLimbHealth";
 import { useTestProgress } from "@/lib/hooks/useTestProgress";
 import type { MotorSummary } from "@/lib/types/MotorSummary";
 import type { TestName } from "@/lib/types/TestName";
@@ -81,6 +83,7 @@ interface RunState {
 }
 
 export function ActuatorTestsTab({ motor }: { motor: MotorSummary }) {
+  const limb = useLimbHealth(motor.role);
   const [run, setRun] = useState<RunState | null>(null);
   const [confirm, setConfirm] = useState<TestDef | null>(null);
   const [params, setParams] = useState<{
@@ -155,13 +158,40 @@ export function ActuatorTestsTab({ motor }: { motor: MotorSummary }) {
                   {t.description}
                 </p>
               </div>
-              <Button
-                variant={t.destructive ? "destructive" : "default"}
-                disabled={!available || start.isPending || run !== null}
-                onClick={() => setConfirm(t)}
-              >
-                Run
-              </Button>
+              {(() => {
+                const limbGate = !limb.healthy && t.name !== "read";
+                const disabled =
+                  !available ||
+                  start.isPending ||
+                  run !== null ||
+                  limbGate;
+                const runTip =
+                  limbGate && limb.blockReason ? limb.blockReason : "";
+                return runTip ? (
+                  <Tooltip
+                    content={runTip}
+                    className="max-w-xs whitespace-normal"
+                  >
+                    <span className="inline-flex">
+                      <Button
+                        variant={t.destructive ? "destructive" : "default"}
+                        disabled={disabled}
+                        onClick={() => setConfirm(t)}
+                      >
+                        Run
+                      </Button>
+                    </span>
+                  </Tooltip>
+                ) : (
+                  <Button
+                    variant={t.destructive ? "destructive" : "default"}
+                    disabled={disabled}
+                    onClick={() => setConfirm(t)}
+                  >
+                    Run
+                  </Button>
+                );
+              })()}
             </div>
           ))}
           {start.isError && (
