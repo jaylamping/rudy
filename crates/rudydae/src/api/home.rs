@@ -317,15 +317,11 @@ async fn run_homer(
         // Re-check the path on principal angles so a config change
         // mid-ramp (or the motor drifting out of band under us)
         // aborts cleanly.
-        let check = match enforce_position_with_path(
-            &state,
-            &role,
-            last_measured,
-            setpoint_unwrapped,
-        ) {
-            Ok(c) => c,
-            Err(e) => break Err((format!("internal: {e:#}"), last_measured)),
-        };
+        let check =
+            match enforce_position_with_path(&state, &role, last_measured, setpoint_unwrapped) {
+                Ok(c) => c,
+                Err(e) => break Err((format!("internal: {e:#}"), last_measured)),
+            };
         if let BandCheck::OutOfBand { .. } | BandCheck::PathViolation { .. } = check {
             break Err(("path_violation".into(), last_measured));
         }

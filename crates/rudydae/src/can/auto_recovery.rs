@@ -339,8 +339,7 @@ async fn drive_to_target(
         };
         last_measured = measured;
 
-        if (shortest_signed_delta(setpoint_unwrapped, measured)).abs()
-            > cfg.tracking_error_max_rad
+        if (shortest_signed_delta(setpoint_unwrapped, measured)).abs() > cfg.tracking_error_max_rad
         {
             break Err((
                 FailReason::TrackingError {
