@@ -13,7 +13,9 @@ use crate::state::SharedState;
 mod commission;
 mod config_route;
 mod control;
+mod devices;
 mod estop;
+mod hardware;
 mod home;
 mod home_all;
 mod inventory_route;
@@ -34,6 +36,12 @@ pub fn router(state: SharedState) -> Router<SharedState> {
     Router::new()
         .route("/config", get(config_route::get_config))
         .route("/system", get(system::get_system))
+        .route("/devices", get(devices::list_devices))
+        .route(
+            "/hardware/unassigned",
+            get(hardware::list_unassigned),
+        )
+        .route("/hardware/scan", post(hardware::scan))
         .route("/motors", get(motors::list_motors))
         .route("/motors/:role", get(motors::get_motor))
         .route("/motors/:role/feedback", get(motors::get_feedback))

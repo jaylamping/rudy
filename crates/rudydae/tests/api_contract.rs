@@ -70,6 +70,70 @@ async fn get_config_returns_server_config_shape() {
     assert!(require_verified);
 }
 
+#[tokio::test]
+async fn get_devices_returns_v2_inventory_devices() {
+    let (state, _dir) = common::make_state();
+    let app = rudydae::build_app(state);
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/devices")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let v: serde_json::Value = body_json(resp).await;
+    assert!(v.is_array());
+    assert_eq!(v.as_array().unwrap().len(), 2);
+    assert_eq!(v[0]["kind"], json!("actuator"));
+}
+
+#[tokio::test]
+async fn get_hardware_unassigned_returns_empty_array_stub() {
+    let (state, _dir) = common::make_state();
+    let app = rudydae::build_app(state);
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/hardware/unassigned")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let v: serde_json::Value = body_json(resp).await;
+    assert_eq!(v, json!([]));
+}
+
+#[tokio::test]
+async fn post_hardware_scan_returns_stub_envelope() {
+    let (state, _dir) = common::make_state();
+    let app = rudydae::build_app(state);
+
+    let body = serde_json::to_vec(&json!({})).unwrap();
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/hardware/scan")
+                .header("content-type", "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let v: serde_json::Value = body_json(resp).await;
+    assert_eq!(v["ok"], json!(true));
+    assert_eq!(v["discovered"], json!([]));
+    assert!(v["message"].as_str().unwrap().contains("not implemented"));
+}
+
 /// When WT is enabled, `/api/config` advertises a URL the browser opens
 /// directly. The host is taken from the inbound `Host` header (which is what
 /// the browser already resolved to reach the SPA — on the Pi this is the

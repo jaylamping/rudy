@@ -74,6 +74,18 @@ export const api = {
   config: () => apiFetch<import("@/lib/types/ServerConfig").ServerConfig>("/api/config"),
   system: () =>
     apiFetch<import("@/lib/types/SystemSnapshot").SystemSnapshot>("/api/system"),
+  /** Full polymorphic inventory (`devices:` from `inventory.yaml`). */
+  listDevices: () =>
+    apiFetch<import("@/lib/types/Device").Device[]>("/api/devices"),
+  /** CAN IDs seen on the bus but not in inventory (empty until passive tracking lands). */
+  listUnassignedHardware: () =>
+    apiFetch<import("@/lib/types/UnassignedDevice").UnassignedDevice[]>("/api/hardware/unassigned"),
+  /** Active scan — stub until daemon probes are implemented. */
+  scanHardware: (body: Record<string, unknown> = {}) =>
+    apiFetch<{ ok: boolean; discovered: unknown[]; message?: string }>("/api/hardware/scan", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   listMotors: () =>
     apiFetch<import("@/lib/types/MotorSummary").MotorSummary[]>("/api/motors"),
   getMotor: (role: string) =>
