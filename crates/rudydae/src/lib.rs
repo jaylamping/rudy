@@ -10,6 +10,7 @@
 
 pub mod api;
 pub mod audit;
+pub mod boot_orchestrator;
 pub mod boot_state;
 pub mod can;
 pub mod config;

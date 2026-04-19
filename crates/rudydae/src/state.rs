@@ -149,6 +149,22 @@ pub struct AppState {
     /// enforced by `auto_recovery::GLOBAL_RECOVERY_LOCK`.
     pub auto_recovery_attempted: Mutex<std::collections::HashSet<String>>,
 
+    /// Per-role idempotency set for the boot orchestrator's auto-home
+    /// flow (commissioned-zero plan, Phase C.5). The orchestrator
+    /// inserts a role when it begins, removes it on terminal-failure
+    /// states the operator might still resolve (specifically: leaves
+    /// the role IN the set on `OffsetChanged` / `HomeFailed` so a
+    /// later telemetry tick doesn't re-trigger the same flow without
+    /// operator action; removes it on `OutOfBand` so a future
+    /// `OutOfBand → InBand` transition retriggers).
+    ///
+    /// Distinct from `auto_recovery_attempted` because the two flows
+    /// have different "should this fire again?" semantics:
+    /// auto-recovery is one-shot per daemon lifetime; the orchestrator
+    /// can fire multiple times in one lifetime if the operator
+    /// physically moves a joint OutOfBand → InBand.
+    pub boot_orchestrator_attempted: Mutex<std::collections::HashSet<String>>,
+
     /// Persistent log store handle. Set once at startup by
     /// `attach_log_store`; tests that don't need the Logs API leave it
     /// empty and the read endpoints return 503 in that case.
@@ -227,6 +243,7 @@ impl AppState {
             boot_state: RwLock::new(HashMap::new()),
             enabled: RwLock::new(BTreeSet::new()),
             auto_recovery_attempted: Mutex::new(std::collections::HashSet::new()),
+            boot_orchestrator_attempted: Mutex::new(std::collections::HashSet::new()),
             log_store: OnceLock::new(),
             log_event_tx,
             filter_reload: OnceLock::new(),
