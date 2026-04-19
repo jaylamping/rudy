@@ -57,6 +57,10 @@ export function ActuatorTravelTab({ motor }: { motor: MotorSummary }) {
   const baseline: TravelLimits | null = limitsQ.data ?? motor.travel_limits ?? null;
   const [minDeg, setMinDeg] = useState<number>(toDeg(baseline?.min_rad ?? -Math.PI / 3));
   const [maxDeg, setMaxDeg] = useState<number>(toDeg(baseline?.max_rad ?? Math.PI / 3));
+  const bandForHome =
+    limitsQ.data ?? motor.travel_limits ?? null;
+  const baselineHomeDeg = toDeg(motor.predefined_home_rad ?? 0);
+  const [homeDeg, setHomeDeg] = useState<number>(baselineHomeDeg);
   const [confirm, setConfirm] = useState(false);
 
   // Re-baseline when the server-side data swaps in (or motor changes).
@@ -67,6 +71,10 @@ export function ActuatorTravelTab({ motor }: { motor: MotorSummary }) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [motor.role, baseline?.min_rad, baseline?.max_rad]);
+
+  useEffect(() => {
+    setHomeDeg(toDeg(motor.predefined_home_rad ?? 0));
+  }, [motor.role, motor.predefined_home_rad]);
 
   const save = useMutation({
     mutationFn: () =>
@@ -81,6 +89,16 @@ export function ActuatorTravelTab({ motor }: { motor: MotorSummary }) {
     },
   });
 
+  const saveHome = useMutation({
+    mutationFn: () =>
+      api.setPredefinedHome(motor.role, {
+        predefined_home_rad: homeDeg * DEG_TO_RAD,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["motors"] });
+    },
+  });
+
   if (limitsQ.isPending) {
     return <div className="text-muted-foreground">Loading travel limits...</div>;
   }
@@ -91,6 +109,15 @@ export function ActuatorTravelTab({ motor }: { motor: MotorSummary }) {
     baseline == null ||
     Math.abs(minDeg - toDeg(baseline.min_rad)) > 1e-6 ||
     Math.abs(maxDeg - toDeg(baseline.max_rad)) > 1e-6;
+
+  const homeRad = homeDeg * DEG_TO_RAD;
+  const homeInBand =
+    bandForHome != null &&
+    homeRad >= bandForHome.min_rad &&
+    homeRad <= bandForHome.max_rad;
+  const homeDirty =
+    Math.abs(homeDeg - baselineHomeDeg) > 1e-6 ||
+    (motor.predefined_home_rad == null && Math.abs(homeDeg) > 1e-6);
 
   return (
     <div className="space-y-4">
@@ -137,6 +164,77 @@ export function ActuatorTravelTab({ motor }: { motor: MotorSummary }) {
             onChange={setMaxDeg}
             disabled={endpointMissing || save.isPending}
           />
+
+          <div className="space-y-1.5 rounded-md border border-border/60 bg-muted/20 p-3">
+            <div className="text-sm font-medium">Predefined home</div>
+            <p className="text-xs text-muted-foreground">
+              Boot-time auto-home drives toward this angle (within the soft
+              band above). Default 0°. Requires saved travel limits.
+            </p>
+            <LimitRow
+              label="Target at boot"
+              valueDeg={homeDeg}
+              min={bandForHome ? toDeg(bandForHome.min_rad) : -RAIL_DEG}
+              max={bandForHome ? toDeg(bandForHome.max_rad) : RAIL_DEG}
+              onChange={setHomeDeg}
+              disabled={
+                endpointMissing ||
+                needsConfig ||
+                saveHome.isPending ||
+                bandForHome == null
+              }
+            />
+            {!homeInBand && bandForHome != null && (
+              <p className="text-xs text-destructive">
+                Must be between {toDeg(bandForHome.min_rad).toFixed(1)}° and{" "}
+                {toDeg(bandForHome.max_rad).toFixed(1)}° (saved travel band).
+              </p>
+            )}
+            {needsConfig && (
+              <p className="text-xs text-muted-foreground">
+                Save travel limits first to enable predefined home.
+              </p>
+            )}
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={
+                  !homeDirty || saveHome.isPending || bandForHome == null
+                }
+                onClick={() => setHomeDeg(baselineHomeDeg)}
+              >
+                Reset
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={
+                  endpointMissing ||
+                  needsConfig ||
+                  !homeDirty ||
+                  !homeInBand ||
+                  saveHome.isPending ||
+                  bandForHome == null
+                }
+                onClick={() => saveHome.mutate()}
+              >
+                {saveHome.isPending ? "Saving…" : "Save predefined home"}
+              </Button>
+            </div>
+            {saveHome.isError && (
+              <p className="text-xs text-destructive">
+                {(saveHome.error as ApiError).message}
+              </p>
+            )}
+            {saveHome.isSuccess && (
+              <p className="text-xs text-emerald-400">
+                Saved predefined home at {(saveHome.data.predefined_home_rad * RAD_TO_DEG).toFixed(2)}°.
+              </p>
+            )}
+          </div>
 
           <div className="rounded-md border border-border bg-background p-3 text-xs">
             <div className="mb-1 flex items-baseline justify-between">

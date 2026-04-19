@@ -22,6 +22,7 @@ mod logs;
 mod motion;
 mod motors;
 mod params;
+mod predefined_home;
 mod reminders_route;
 mod rename;
 mod restore_offset;
@@ -50,6 +51,10 @@ pub fn router(state: SharedState) -> Router<SharedState> {
         .route(
             "/motors/:role/travel_limits",
             get(travel::get_travel_limits).put(travel::put_travel_limits),
+        )
+        .route(
+            "/motors/:role/predefined_home",
+            put(predefined_home::put_predefined_home),
         )
         .route("/motors/:role/jog", post(jog::jog))
         .route("/motors/:role/motion", get(motion::get_motion))

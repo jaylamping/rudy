@@ -60,6 +60,7 @@ fn summary_for(
         verified: m.verified,
         present: m.present,
         travel_limits: m.travel_limits.clone(),
+        predefined_home_rad: m.predefined_home_rad,
         latest,
         boot_state: boot_state::current(state, &m.role),
         limb: m.limb.clone(),

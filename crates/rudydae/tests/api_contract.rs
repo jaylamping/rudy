@@ -190,6 +190,7 @@ async fn list_motors_matches_motor_summary() {
     assert_eq!(a.can_id, 0x08);
     assert_eq!(a.can_bus, "can1");
     assert!(a.verified);
+    assert!(a.predefined_home_rad.is_none());
     assert!(a.latest.is_some(), "we just seeded feedback");
 
     let b = by_role
@@ -717,6 +718,119 @@ async fn put_travel_limits_rejects_inverted_band() {
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     let err: ApiError = body_json(resp).await;
     assert_eq!(err.error, "out_of_range");
+}
+
+/// PUT predefined_home without travel_limits returns 409 `no_travel_limits`.
+#[tokio::test]
+async fn put_predefined_home_requires_travel_limits() {
+    let (state, _dir) = common::make_state();
+    let app = rudydae::build_app(state);
+
+    let body = serde_json::to_vec(&json!({"predefined_home_rad": 0.0})).unwrap();
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::PUT)
+                .uri("/api/motors/shoulder_actuator_a/predefined_home")
+                .header("content-type", "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CONFLICT);
+    let err: ApiError = body_json(resp).await;
+    assert_eq!(err.error, "no_travel_limits");
+}
+
+/// PUT predefined_home within the saved band persists to inventory.yaml.
+#[tokio::test]
+async fn put_predefined_home_persists_when_within_band() {
+    let (state, dir) = common::make_state();
+    let app = rudydae::build_app(state.clone());
+
+    let tlim = serde_json::to_vec(&json!({"min_rad": -1.0, "max_rad": 1.0})).unwrap();
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::PUT)
+                .uri("/api/motors/shoulder_actuator_a/travel_limits")
+                .header("content-type", "application/json")
+                .body(Body::from(tlim))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let body = serde_json::to_vec(&json!({"predefined_home_rad": 0.25})).unwrap();
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::PUT)
+                .uri("/api/motors/shoulder_actuator_a/predefined_home")
+                .header("content-type", "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let j: serde_json::Value = body_json(resp).await;
+    assert_eq!(j["ok"], json!(true));
+    assert_eq!(j["predefined_home_rad"], json!(0.25));
+
+    let inv = rudydae::inventory::Inventory::load(dir.path().join("inventory.yaml")).unwrap();
+    let m = inv.by_role("shoulder_actuator_a").unwrap();
+    assert_eq!(m.predefined_home_rad, Some(0.25_f32));
+
+    let in_mem = state
+        .inventory
+        .read()
+        .expect("inventory poisoned")
+        .by_role("shoulder_actuator_a")
+        .cloned()
+        .unwrap();
+    assert_eq!(in_mem.predefined_home_rad, Some(0.25_f32));
+}
+
+/// Values outside the soft travel band are rejected.
+#[tokio::test]
+async fn put_predefined_home_rejects_outside_band() {
+    let (state, _dir) = common::make_state();
+    let app = rudydae::build_app(state.clone());
+
+    let tlim = serde_json::to_vec(&json!({"min_rad": -1.0, "max_rad": 1.0})).unwrap();
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::PUT)
+                .uri("/api/motors/shoulder_actuator_a/travel_limits")
+                .header("content-type", "application/json")
+                .body(Body::from(tlim))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let body = serde_json::to_vec(&json!({"predefined_home_rad": 1.5})).unwrap();
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::PUT)
+                .uri("/api/motors/shoulder_actuator_a/predefined_home")
+                .header("content-type", "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    let err: ApiError = body_json(resp).await;
+    assert_eq!(err.error, "outside_travel_band");
 }
 
 /// `GET /api/motors/:role/inventory` returns the typed scalars + free-form
@@ -2183,6 +2297,7 @@ fn endpoint_inventory_documented() {
         "POST   /api/motors/:role/restore_offset",
         "GET    /api/motors/:role/travel_limits",
         "PUT    /api/motors/:role/travel_limits",
+        "PUT    /api/motors/:role/predefined_home",
         "POST   /api/motors/:role/jog",
         "GET    /api/motors/:role/motion",
         "POST   /api/motors/:role/motion/sweep",

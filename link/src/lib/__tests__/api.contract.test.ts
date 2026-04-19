@@ -121,6 +121,15 @@ describe("REST contract — URL + method per call", () => {
       "POST",
     ],
     [
+      "PUT /api/motors/:role/predefined_home",
+      () =>
+        api.setPredefinedHome("shoulder_actuator_a", {
+          predefined_home_rad: 0,
+        }),
+      "/api/motors/shoulder_actuator_a/predefined_home",
+      "PUT",
+    ],
+    [
       "POST /api/motors/:role/motion/sweep",
       () =>
         api.motion.sweep("shoulder_actuator_a", {

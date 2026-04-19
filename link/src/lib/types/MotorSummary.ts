@@ -7,7 +7,12 @@ import type { TravelLimits } from "./TravelLimits";
 /**
  * GET /api/motors — list summary.
  */
-export type MotorSummary = { role: string, can_bus: string, can_id: number, firmware_version: string | null, verified: boolean, present: boolean, travel_limits: TravelLimits | null, latest: MotorFeedback | null, 
+export type MotorSummary = { role: string, can_bus: string, can_id: number, firmware_version: string | null, verified: boolean, present: boolean, travel_limits: TravelLimits | null, 
+/**
+ * Target angle (radians) for boot-time auto-home. `None` uses 0.0 rad;
+ * when set, must stay within `travel_limits`.
+ */
+predefined_home_rad: number | null, latest: MotorFeedback | null, 
 /**
  * Per-power-cycle gate state. UI renders a colored badge driven off
  * the variant; OutOfBand carries enough detail to display

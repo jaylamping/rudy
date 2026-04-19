@@ -48,6 +48,10 @@ pub struct MotorSummary {
     pub verified: bool,
     pub present: bool,
     pub travel_limits: Option<crate::inventory::TravelLimits>,
+    /// Target angle (radians) for boot-time auto-home. `None` uses 0.0 rad;
+    /// when set, must stay within `travel_limits`.
+    #[serde(default)]
+    pub predefined_home_rad: Option<f32>,
     pub latest: Option<MotorFeedback>,
     /// Per-power-cycle gate state. UI renders a colored badge driven off
     /// the variant; OutOfBand carries enough detail to display

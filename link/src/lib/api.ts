@@ -158,6 +158,16 @@ export const api = {
       `/api/motors/${encodeURIComponent(role)}/travel_limits`,
       { method: "PUT", body: JSON.stringify(body) },
     ),
+  /** Boot orchestrator target (rad); must lie within saved travel_limits. */
+  setPredefinedHome: (role: string, body: { predefined_home_rad: number }) =>
+    apiFetch<{
+      ok: boolean;
+      role: string;
+      predefined_home_rad: number;
+    }>(`/api/motors/${encodeURIComponent(role)}/predefined_home`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
   // Hold-to-jog. The TTL is also a server-side watchdog: if no follow-up
   // jog frame arrives within ttl_ms the daemon issues `cmd_stop`.
   //
