@@ -9,16 +9,16 @@ Any time the user asks to **commit**, **push**, **deploy**, or otherwise ship co
 
 ## Rust changes (anything under `crates/`)
 
-Run from the `crates/` directory:
+**Always** run from the `crates/` directory before staging:
 
 ```sh
-cargo fmt -p <crate> -- --check
+cargo fmt
 cargo check -p <crate>
 ```
 
-If `--check` reports diff, run `cargo fmt -p <crate>` (no `--check`) and re-stage. If `cargo check` reports warnings or errors, fix them before committing — the codebase is warning-free and we keep it that way.
+`cargo fmt` (no `--check`) is mandatory on every commit that touches `*.rs` — the repo's `scripts/git-hooks/pre-commit` hook will reject the commit otherwise. Don't rely on the hook; format proactively, then re-`git add` any files fmt touched. If `cargo check` reports warnings or errors, fix them before committing — the codebase is warning-free and we keep it that way.
 
-For broader changes (multiple crates, workspace-level files), use `cargo fmt --check` and `cargo check --workspace` instead. When tests are relevant to the change (e.g. anything in `api/`, `state.rs`, `can/`, or `types.rs`), also run `cargo test -p rudydae` and confirm 0 failures.
+For broader changes (multiple crates, workspace-level files), `cargo fmt` already covers the whole workspace; pair it with `cargo check --workspace`. When tests are relevant to the change (e.g. anything in `api/`, `state.rs`, `can/`, or `types.rs`), also run `cargo test -p rudydae` and confirm 0 failures.
 
 ## SPA changes (anything under `link/`)
 

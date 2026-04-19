@@ -1,0 +1,29 @@
+#!/usr/bin/env sh
+# Pre-commit hook: enforce `cargo fmt` on Rust files in the crates/ workspace.
+#
+# Install once per clone:
+#   git config core.hooksPath scripts/git-hooks
+#
+# Skip in an emergency with `git commit --no-verify` (don't make a habit of it).
+
+set -e
+
+staged_rs=$(git diff --cached --name-only --diff-filter=ACMR -- '*.rs')
+if [ -z "$staged_rs" ]; then
+    exit 0
+fi
+
+if ! command -v cargo >/dev/null 2>&1; then
+    echo "pre-commit: cargo not on PATH; cannot run rustfmt check" >&2
+    exit 1
+fi
+
+if ! cargo fmt --manifest-path crates/Cargo.toml -- --check >/dev/null 2>&1; then
+    echo "pre-commit: rustfmt would reformat staged Rust files." >&2
+    echo "  Run: cargo fmt --manifest-path crates/Cargo.toml" >&2
+    echo "  Then re-stage the affected files and commit again." >&2
+    echo "  (Bypass with --no-verify if you really mean it.)" >&2
+    exit 1
+fi
+
+exit 0
