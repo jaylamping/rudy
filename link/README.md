@@ -58,13 +58,13 @@ src/
   routes/                  file-based TanStack Router routes
     __root.tsx
     index.tsx              /-> /telemetry
-    _authed.tsx            layout route: AppShell (name kept for routing tree;
-                           no auth guard - tailnet/localhost only)
-    _authed.telemetry.tsx  /telemetry
-    _authed.params.tsx     /params
-    _authed.jog.tsx        /jog    (Phase 2 stub)
-    _authed.viz.tsx        /viz    (Phase 2 stub)
-    _authed.logs.tsx       /logs   (Phase 2 stub)
+    _app.tsx               layout route: AppShell (pathless layout - no auth
+                           guard, console is tailnet/localhost only)
+    _app.telemetry.tsx     /telemetry
+    _app.params.tsx        /params
+    _app.jog.tsx           /jog    (Phase 2 stub)
+    _app.viz.tsx           /viz    (Phase 2 stub)
+    _app.logs.tsx          /logs   (Phase 2 stub)
   components/
     app-shell.tsx
     telemetry-grid.tsx

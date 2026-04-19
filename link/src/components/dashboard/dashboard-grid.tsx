@@ -1,5 +1,5 @@
 // CSS grid for the Overview page. Adding a new card is one line in
-// `_authed.index.tsx` — children just drop in.
+// `_app.index.tsx` — children just drop in.
 
 import { cn } from "@/lib/utils";
 

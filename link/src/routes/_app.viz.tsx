@@ -14,7 +14,7 @@ import {
 import { useJointStates } from "@/components/viz/use-joint-states";
 import { api } from "@/lib/api";
 
-export const Route = createFileRoute("/_authed/viz")({
+export const Route = createFileRoute("/_app/viz")({
   component: VizPage,
 });
 

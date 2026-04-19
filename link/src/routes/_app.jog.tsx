@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { ComingSoon } from "@/components/coming-soon";
 
-export const Route = createFileRoute("/_authed/jog")({
+export const Route = createFileRoute("/_app/jog")({
   component: () => (
     <ComingSoon
       title="Jog"

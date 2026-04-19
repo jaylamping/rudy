@@ -4,7 +4,7 @@ import { api } from "@/lib/api";
 import { useLiveInterval } from "@/lib/hooks/useLiveInterval";
 import { TelemetryGrid } from "@/components/telemetry-grid";
 
-export const Route = createFileRoute("/_authed/telemetry")({
+export const Route = createFileRoute("/_app/telemetry")({
   component: TelemetryPage,
 });
 

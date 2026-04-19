@@ -1,6 +1,6 @@
 // One row of the firmware-params table.
 //
-// Originally inlined inside `_authed.params.tsx`; pulled out so the
+// Originally inlined inside `_app.params.tsx`; pulled out so the
 // per-actuator detail page can reuse the same row + confirm dialog.
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";

@@ -1,7 +1,7 @@
 // Reusable per-motor uPlot chart driven by the cached `["motors"]` query.
 //
 // Originally inlined inside `<TelemetryGrid>`'s `<MotorCard>`; pulled out so
-// the per-actuator detail page (`/_authed/actuators/:role`) can render one
+// the per-actuator detail page (`/actuators/:role`) can render one
 // chart per metric without duplicating the rolling-window buffer.
 //
 // Rendering contract:

@@ -24,7 +24,7 @@ interface LogsSearch {
   follow?: boolean;
 }
 
-export const Route = createFileRoute("/_authed/logs")({
+export const Route = createFileRoute("/_app/logs")({
   validateSearch: (s: Record<string, unknown>): LogsSearch => ({
     level: typeof s.level === "string" ? s.level : undefined,
     source: typeof s.source === "string" ? s.source : undefined,

@@ -55,10 +55,7 @@ pub async fn list(
     State(state): State<SharedState>,
     Query(q): Query<ListQuery>,
 ) -> Result<Json<ListResponse>, (StatusCode, Json<ApiError>)> {
-    let store = state
-        .log_store
-        .get()
-        .ok_or_else(|| store_unavailable_error())?;
+    let store = state.log_store.get().ok_or_else(store_unavailable_error)?;
 
     let levels = parse_levels(q.level.as_deref());
     let sources = parse_sources(q.source.as_deref());
@@ -100,10 +97,7 @@ pub async fn list(
 pub async fn clear(
     State(state): State<SharedState>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ApiError>)> {
-    let store = state
-        .log_store
-        .get()
-        .ok_or_else(|| store_unavailable_error())?;
+    let store = state.log_store.get().ok_or_else(store_unavailable_error)?;
 
     store.clear().await.map_err(|e| {
         tracing::error!("logs clear failed: {e:#}");

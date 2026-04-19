@@ -16,7 +16,7 @@ import {
   SystemHealthCard,
 } from "@/components/dashboard";
 
-export const Route = createFileRoute("/_authed/")({
+export const Route = createFileRoute("/_app/")({
   component: OverviewPage,
 });
 

@@ -1,6 +1,6 @@
 // Firmware tab: the full parameter catalog for one motor.
 //
-// Reuses `ParamRow` (writable + observables) from `_authed.params.tsx`'s
+// Reuses `ParamRow` (writable + observables) from `_app.params.tsx`'s
 // extracted version, plus a sticky "Save to flash" button at the bottom for
 // the once-per-batch persistence step.
 

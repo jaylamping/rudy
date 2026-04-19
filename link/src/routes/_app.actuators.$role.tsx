@@ -34,7 +34,7 @@ const TABS = [
 ] as const;
 type TabValue = (typeof TABS)[number]["value"];
 
-export const Route = createFileRoute("/_authed/actuators/$role")({
+export const Route = createFileRoute("/_app/actuators/$role")({
   // Pre-fetch the motors list before the route renders so we can fail fast
   // on an unknown role with a clean 404 instead of "Loading..." -> empty.
   loader: async ({ context, params }) => {

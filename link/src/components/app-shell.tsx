@@ -10,7 +10,7 @@ import {
 import { cn } from "@/lib/utils";
 import { EstopButton } from "@/components/estop-button";
 
-// `/` resolves to `_authed.index.tsx` (the Overview dashboard). All the
+// `/` resolves to `_app.index.tsx` (the Overview dashboard). All the
 // other entries are siblings of the Overview route and render inside the
 // same shell.
 interface NavItem {

@@ -6,7 +6,7 @@ import { ParamRow } from "@/components/params";
 import type { ParamSnapshot } from "@/lib/types/ParamSnapshot";
 import type { ParamValue } from "@/lib/types/ParamValue";
 
-export const Route = createFileRoute("/_authed/params")({
+export const Route = createFileRoute("/_app/params")({
   validateSearch: (s: Record<string, unknown>): { role?: string } => ({
     role: typeof s.role === "string" ? s.role : undefined,
   }),
