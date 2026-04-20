@@ -31,6 +31,12 @@ pub trait RsActuator: sealed::Sealed {
     fn model(&self) -> RsModel;
     fn host_id(&self) -> u8;
     fn motor_id(&self) -> u8;
+
+    /// `run_mode` firmware value for velocity closed-loop (RS03: `2`).
+    fn run_mode_velocity(&self) -> u8;
+
+    fn param_index_run_mode(&self) -> u16;
+    fn param_index_spd_ref(&self) -> u16;
 }
 
 #[cfg(test)]
@@ -45,5 +51,8 @@ mod tests {
         assert_eq!(r.model(), RsModel::Rs03);
         assert_eq!(r.host_id(), 0xFD);
         assert_eq!(r.motor_id(), 0x08);
+        assert_eq!(r.run_mode_velocity(), 2);
+        assert_eq!(r.param_index_run_mode(), crate::rs03::params::RUN_MODE);
+        assert_eq!(r.param_index_spd_ref(), crate::rs03::params::SPD_REF);
     }
 }

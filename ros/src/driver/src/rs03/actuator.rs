@@ -7,6 +7,7 @@ use std::io;
 use crate::robstride::{sealed, RsActuator, RsModel};
 use crate::socketcan_bus::CanBus;
 
+use super::params;
 use super::session;
 
 /// RS03 motor on the CAN bus (host and motor IDs per ADR-0002).
@@ -51,5 +52,17 @@ impl RsActuator for Rs03 {
 
     fn motor_id(&self) -> u8 {
         self.motor_id
+    }
+
+    fn run_mode_velocity(&self) -> u8 {
+        2
+    }
+
+    fn param_index_run_mode(&self) -> u16 {
+        params::RUN_MODE
+    }
+
+    fn param_index_spd_ref(&self) -> u16 {
+        params::SPD_REF
     }
 }

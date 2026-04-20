@@ -25,7 +25,7 @@ todos:
     status: completed
   - id: rsactuator-trait-adoption
     content: "rudydae's CAN paths (`bus_worker.rs`, `linux.rs`) currently `use driver::rs03::{session, feedback, frame, params}` directly — RS03 is hardcoded by import. Refactor to dispatch through the existing-but-unused `driver::robstride::RsActuator` trait (already defined in `ros/src/driver/src/robstride/mod.rs`). Each `Actuator` value in the inventory resolves to a concrete impl: `Robstride { model: Rs03 }` → `driver::rs03::Rs03`, `Robstride { model: Rs04 }` → `driver::rs04::Rs04` (when that module exists). The bus worker's hardcoded `params::RUN_MODE = 2` and `params::SPD_REF` calls become `actuator.run_mode_velocity()` and `actuator.spd_ref_index()` trait methods. This is a non-trivial refactor of bus_worker.rs and linux.rs but is the structural change that makes the polymorphism real. AUDIT scope before starting: every `driver::rs03::*` use statement in `crates/rudydae/src/` must either move behind the trait or be deleted. Document this audit in the PR description."
-    status: pending
+    status: completed
   - id: travel-rail-from-spec
     content: "`crates/rudydae/src/can/travel.rs:18-24` hardcodes `HARDWARE_*_RAD = ±4π` as the outer rail, with a comment 'matches the RS03 spec.protocol.position_min_rad/position_max_rad'. Move this to `RobstrideSpec` (read from `op_control_scaling.position.range` per model) and resolve per-actuator via the new `state.spec_for(model)`. Different models may have different MIT position ranges; today's hardcoding is a latent bug that this todo eliminates. Add `travel_rail_from_spec_per_model` test."
     status: completed
@@ -85,9 +85,9 @@ isProject: false
 
 ## Progress (update as work lands)
 
-**Last updated:** 2026-04-19 (`travel-rail-from-spec` landed).
+**Last updated:** 2026-04-19 (Phase C complete: `rsactuator-trait-adoption` initial adoption — velocity jog path via `RsActuator`; type-2 decode / `session::*` still `rs03` until additional SKUs).
 
-**Current phase:** **Phase C — per-model spec resolution**. Next todo: `rsactuator-trait-adoption`.
+**Current phase:** **Phase D onward** (discovery / passive listener, etc.). **Follow-up:** inventory-driven `RobstrideModel` → concrete actuator in `bus_worker` when RS04 session exists; optional trait surface for `decode_motor_feedback` + frame helpers.
 
 ### Phase C handoff (for new chat / new session)
 
@@ -97,8 +97,7 @@ isProject: false
 
 3. **`travel-rail-from-spec`** — **done**: `ActuatorSpec::mit_position_rail_rad`, `validate_band(..., hw_min, hw_max)`, `PUT travel_limits` resolves rail per actuator model; tests in `spec.rs` + `travel_rail_from_spec_per_model` in `can/travel.rs`.
 
-4. **`rsactuator-trait-adoption`** — `bus_worker`, `can/linux.rs`, `ros/src/driver/.../robstride`  
-   Route `driver::rs03::*` use through `RsActuator` trait; dispatch per `RobstrideModel` from inventory.
+4. **`rsactuator-trait-adoption`** — **partial (shipped):** `RsActuator` gains `run_mode_velocity`, `param_index_run_mode`, `param_index_spd_ref`; `bus_worker` `SetVelocity` uses `Rs03` + trait (inventory SKU dispatch + RS04 module = follow-up). Remaining `driver::rs03` in `bus_worker`: `feedback`/`frame`/`session` for shared RobStride wire format until per-model codecs land.
 
 **Deferred (not Phase C):** Phase B items `motor-summary-rename`, `spa-consumer-migration`, and full `ts-bindings-regen` (beyond existing inventory TS) remain optional follow-ups — they can run in parallel with Phase C only if you want cleaner API names; **not required** to start Phase C.
 

@@ -43,9 +43,8 @@ use anyhow::{Context, Result};
 use chrono::Utc;
 use driver::rs03::feedback::{decode_motor_feedback, MotorFeedback as DriverFeedback};
 use driver::rs03::frame::{comm_type_from_id, strip_eff_flag};
-use driver::rs03::params;
 use driver::rs03::session;
-use driver::CanBus;
+use driver::{CanBus, Rs03, RsActuator};
 use tokio::runtime::Handle;
 use tracing::{debug, info, warn};
 
@@ -702,11 +701,26 @@ fn handle_cmd(
             let result: io::Result<()> = {
                 let guard = bus.lock().expect("bus mutex poisoned");
                 (|| {
+                    // `Rs03` implements [`RsActuator`]; future SKUs (RS04, …) dispatch here
+                    // from inventory `RobstrideModel` once their session modules exist.
+                    let dev = Rs03::new(host_id, motor_id);
                     if need_rearm {
-                        session::write_param_u8(&guard, host_id, motor_id, params::RUN_MODE, 2)?;
-                        session::cmd_enable(&guard, host_id, motor_id)?;
+                        session::write_param_u8(
+                            &guard,
+                            dev.host_id(),
+                            dev.motor_id(),
+                            dev.param_index_run_mode(),
+                            dev.run_mode_velocity(),
+                        )?;
+                        session::cmd_enable(&guard, dev.host_id(), dev.motor_id())?;
                     }
-                    session::write_param_f32(&guard, host_id, motor_id, params::SPD_REF, vel_rad_s)
+                    session::write_param_f32(
+                        &guard,
+                        dev.host_id(),
+                        dev.motor_id(),
+                        dev.param_index_spd_ref(),
+                        vel_rad_s,
+                    )
                 })()
             };
             log_send_result(iface, "set_velocity", motor_id, &result);
