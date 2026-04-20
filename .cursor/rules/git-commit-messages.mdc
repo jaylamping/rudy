@@ -1,0 +1,9 @@
+---
+description: Git commit messages — no IDE branding in commits
+alwaysApply: true
+---
+
+# Git commits
+
+- Do **not** append footers such as `Made-with: Cursor`, `Co-authored-by: Cursor`, or similar tooling branding to commit messages.
+- Use only the conventional subject/body the user or the task calls for (e.g. `feat(scope): …`).
