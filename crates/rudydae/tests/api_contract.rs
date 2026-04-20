@@ -54,7 +54,7 @@ async fn get_config_returns_server_config_shape() {
 
     // Every TS-exported field must be populated.
     assert!(!cfg.version.is_empty(), "version must be present");
-    assert_eq!(cfg.actuator_model, "TEST_RS03");
+    assert_eq!(cfg.actuator_models, vec!["RS03".to_string()]);
 
     // Disabled-WT advert: enabled=false AND url=None — the SPA's
     // useWebTransport hook reads exactly this shape.

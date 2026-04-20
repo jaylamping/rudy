@@ -120,7 +120,7 @@ pub enum ActuatorFamily {
 }
 
 /// Concrete RobStride SKU; drives `config/actuators/robstride_rs0X.yaml` lookup.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(export, export_to = "./")]
 pub enum RobstrideModel {
@@ -128,6 +128,40 @@ pub enum RobstrideModel {
     Rs02,
     Rs03,
     Rs04,
+}
+
+impl RobstrideModel {
+    /// Value of YAML `actuator_model` for this SKU (e.g. `RS03`).
+    pub fn as_spec_label(self) -> &'static str {
+        match self {
+            Self::Rs01 => "RS01",
+            Self::Rs02 => "RS02",
+            Self::Rs03 => "RS03",
+            Self::Rs04 => "RS04",
+        }
+    }
+
+    /// Filename fragment after `robstride_` (e.g. `rs03` → `robstride_rs03.yaml`).
+    pub fn robstride_yaml_suffix(self) -> &'static str {
+        match self {
+            Self::Rs01 => "rs01",
+            Self::Rs02 => "rs02",
+            Self::Rs03 => "rs03",
+            Self::Rs04 => "rs04",
+        }
+    }
+
+    /// Parse `actuator_model` from a `robstride_*.yaml` hardware spec.
+    pub fn from_spec_actuator_model(label: &str) -> Result<Self> {
+        let u = label.trim().to_ascii_uppercase();
+        match u.as_str() {
+            "RS01" => Ok(Self::Rs01),
+            "RS02" => Ok(Self::Rs02),
+            "RS03" => Ok(Self::Rs03),
+            "RS04" => Ok(Self::Rs04),
+            _ => anyhow::bail!("unknown RobStride actuator_model in spec: {label:?}"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -246,6 +280,13 @@ fn default_true() -> bool {
 }
 
 impl Actuator {
+    /// RobStride model for this actuator (inventory is RobStride-only today).
+    pub fn robstride_model(&self) -> RobstrideModel {
+        match self.family {
+            ActuatorFamily::Robstride { model } => model,
+        }
+    }
+
     /// `{limb}.{joint_kind}` when both are set.
     pub fn canonical_role(&self) -> Option<String> {
         Some(format!(

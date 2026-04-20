@@ -22,8 +22,9 @@ pub fn spawn(state: SharedState) {
         .cloned()
         .collect();
     for motor in &inventory_snap {
+        let spec = state.spec_for(motor.robstride_model());
         let mut values = BTreeMap::new();
-        for (name, desc) in state.spec.catalog() {
+        for (name, desc) in spec.catalog() {
             let default = match desc.ty.as_str() {
                 "float" | "f32" | "f64" => serde_json::json!(0.0f32),
                 "uint8" | "u8" | "uint16" | "u16" | "uint32" | "u32" => serde_json::json!(0u32),

@@ -17,12 +17,12 @@ use rudydae::config::{
 };
 use rudydae::inventory::{Actuator, Device, Inventory};
 use rudydae::reminders::ReminderStore;
-use rudydae::spec::ActuatorSpec;
+use rudydae::spec;
 use rudydae::state::{AppState, SharedState};
 
 const SPEC_YAML: &str = r#"
 schema_version: 2
-actuator_model: TEST_RS03
+actuator_model: RS03
 
 firmware_limits:
   limit_torque:
@@ -80,7 +80,7 @@ devices:
 pub fn make_state() -> (SharedState, tempfile::TempDir) {
     let dir = tempfile::tempdir().expect("tempdir");
 
-    let spec_path = dir.path().join("spec.yaml");
+    let spec_path = dir.path().join("robstride_rs03.yaml");
     std::fs::write(&spec_path, SPEC_YAML).unwrap();
 
     let inv_path = dir.path().join("inventory.yaml");
@@ -134,13 +134,13 @@ pub fn make_state() -> (SharedState, tempfile::TempDir) {
         },
     };
 
-    let spec = ActuatorSpec::load(&spec_path).expect("load spec");
+    let specs = spec::load_robstride_specs(dir.path(), Some(&spec_path)).expect("load specs");
     let inv = Inventory::load(&inv_path).expect("load inventory");
     let audit = AuditLog::open(&audit_path).expect("open audit");
     let real_can = can::build_handle(&cfg, &inv).expect("build can");
     let reminders = ReminderStore::open(dir.path().join("reminders.json")).expect("open reminders");
 
-    let state = Arc::new(AppState::new(cfg, spec, inv, audit, real_can, reminders));
+    let state = Arc::new(AppState::new(cfg, specs, inv, audit, real_can, reminders));
     (state, dir)
 }
 
@@ -164,7 +164,7 @@ pub fn actuator_mut<'a>(inv: &'a mut Inventory, role: &str) -> Option<&'a mut Ac
 pub fn make_state_commission_can_path_fails() -> (SharedState, tempfile::TempDir) {
     let dir = tempfile::tempdir().expect("tempdir");
 
-    let spec_path = dir.path().join("spec.yaml");
+    let spec_path = dir.path().join("robstride_rs03.yaml");
     std::fs::write(&spec_path, SPEC_YAML).unwrap();
 
     let inv_path = dir.path().join("inventory.yaml");
@@ -217,13 +217,13 @@ pub fn make_state_commission_can_path_fails() -> (SharedState, tempfile::TempDir
         },
     };
 
-    let spec = ActuatorSpec::load(&spec_path).expect("load spec");
+    let specs = spec::load_robstride_specs(dir.path(), Some(&spec_path)).expect("load specs");
     let inv = Inventory::load(&inv_path).expect("load inventory");
     let audit = AuditLog::open(&audit_path).expect("open audit");
     let real_can = Some(Arc::new(can::RealCanHandle));
     let reminders = ReminderStore::open(dir.path().join("reminders.json")).expect("open reminders");
 
-    let state = Arc::new(AppState::new(cfg, spec, inv, audit, real_can, reminders));
+    let state = Arc::new(AppState::new(cfg, specs, inv, audit, real_can, reminders));
     (state, dir)
 }
 
@@ -238,7 +238,7 @@ pub fn make_state_auto_home_on_boot(auto_home_on_boot: bool) -> (SharedState, te
     let inv = state.inventory.read().expect("inventory poisoned").clone();
     let new_state = Arc::new(AppState::new(
         cfg,
-        state.spec.clone(),
+        state.specs.clone(),
         inv,
         AuditLog::open(&audit_path).unwrap(),
         state.real_can.clone(),
@@ -261,7 +261,7 @@ pub fn make_state_homer_times_out_quickly() -> (SharedState, tempfile::TempDir) 
     let inv = state.inventory.read().expect("inventory poisoned").clone();
     let new_state = Arc::new(AppState::new(
         cfg,
-        state.spec.clone(),
+        state.specs.clone(),
         inv,
         AuditLog::open(&audit_path).unwrap(),
         state.real_can.clone(),
@@ -304,7 +304,7 @@ pub fn make_state_with_wt_advert() -> (SharedState, tempfile::TempDir) {
     let inv = state.inventory.read().expect("inventory poisoned").clone();
     let new_state = Arc::new(AppState::new(
         cfg,
-        state.spec.clone(),
+        state.specs.clone(),
         inv,
         AuditLog::open(&audit_path).unwrap(),
         state.real_can.clone(),
@@ -323,7 +323,8 @@ pub fn seed_params(state: &SharedState) {
     let inv = state.inventory.read().expect("inventory poisoned");
     for motor in inv.actuators() {
         let mut values = BTreeMap::new();
-        for (name, desc) in state.spec.catalog() {
+        let spec = state.spec_for(motor.robstride_model());
+        for (name, desc) in spec.catalog() {
             let default = match desc.ty.as_str() {
                 "float" | "f32" | "f64" => serde_json::json!(0.0_f32),
                 "uint8" | "u8" | "uint16" | "u16" | "uint32" | "u32" => serde_json::json!(0_u32),

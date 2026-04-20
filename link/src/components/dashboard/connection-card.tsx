@@ -26,7 +26,7 @@ export function ConnectionCard({ className }: { className?: string }) {
       )}
       {cfg && (
         <dl className="grid grid-cols-2 gap-2 text-xs">
-          <Field label="Actuator">{cfg.actuator_model}</Field>
+          <Field label="Actuator">{cfg.actuator_models.join(", ")}</Field>
           <Field label="CAN">
             <span
               className={cn(

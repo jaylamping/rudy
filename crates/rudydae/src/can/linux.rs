@@ -260,11 +260,11 @@ impl LinuxCanCore {
     /// spec reorganization that promotes it. Hardcoding `0x702B` would
     /// duplicate the source-of-truth that lives in the YAML.
     pub fn read_add_offset(&self, state: &SharedState, motor: &Motor) -> Result<f32> {
-        let desc = state
-            .spec
+        let spec = state.spec_for(motor.robstride_model());
+        let desc = spec
             .firmware_limits
             .get("add_offset")
-            .or_else(|| state.spec.observables.get("add_offset"))
+            .or_else(|| spec.observables.get("add_offset"))
             .ok_or_else(|| {
                 anyhow!(
                     "add_offset not found in actuator spec (looked in firmware_limits and observables)"
@@ -286,11 +286,11 @@ impl LinuxCanCore {
         motor: &Motor,
         value_rad: f32,
     ) -> Result<()> {
-        let desc = state
-            .spec
+        let spec = state.spec_for(motor.robstride_model());
+        let desc = spec
             .firmware_limits
             .get("add_offset")
-            .or_else(|| state.spec.observables.get("add_offset"))
+            .or_else(|| spec.observables.get("add_offset"))
             .ok_or_else(|| {
                 anyhow!(
                     "add_offset not found in actuator spec (looked in firmware_limits and observables)"
@@ -339,29 +339,28 @@ impl LinuxCanCore {
             .cloned()
             .collect();
 
-        let limit_torque_nm = state
-            .spec
-            .commissioning_defaults
-            .get("limit_torque_nm")
-            .and_then(|v| v.as_f64())
-            .map(|v| v as f32);
-        let limit_spd_rad_s = state
-            .spec
-            .commissioning_defaults
-            .get("limit_spd_rad_s")
-            .and_then(|v| v.as_f64())
-            .map(|v| v as f32);
-
         for motor in motors {
+            let spec = state.spec_for(motor.robstride_model());
+            let limit_torque_nm = spec
+                .commissioning_defaults
+                .get("limit_torque_nm")
+                .and_then(|v| v.as_f64())
+                .map(|v| v as f32);
+            let limit_spd_rad_s = spec
+                .commissioning_defaults
+                .get("limit_spd_rad_s")
+                .and_then(|v| v.as_f64())
+                .map(|v| v as f32);
+
             if let (Some(t), Some(_)) = (limit_torque_nm, &motor.common.travel_limits) {
-                if let Some(desc) = state.spec.firmware_limits.get("limit_torque") {
+                if let Some(desc) = spec.firmware_limits.get("limit_torque") {
                     if let Err(e) = self.write_param(&motor, desc, &serde_json::json!(t), false) {
                         tracing::warn!(role = %motor.common.role, error = ?e, "boot-time limit_torque RAM write failed");
                     }
                 }
             }
             if let Some(s) = limit_spd_rad_s {
-                if let Some(desc) = state.spec.firmware_limits.get("limit_spd") {
+                if let Some(desc) = spec.firmware_limits.get("limit_spd") {
                     if let Err(e) = self.write_param(&motor, desc, &serde_json::json!(s), false) {
                         tracing::warn!(role = %motor.common.role, error = ?e, "boot-time limit_spd RAM write failed");
                     }
@@ -458,8 +457,9 @@ impl LinuxCanCore {
     }
 
     fn read_full_snapshot(&self, state: &SharedState, motor: &Motor) -> Result<ParamSnapshot> {
+        let spec = state.spec_for(motor.robstride_model());
         let mut values = BTreeMap::new();
-        for (name, desc) in state.spec.catalog() {
+        for (name, desc) in spec.catalog() {
             let value = self.read_param_value(motor, &name, &desc)?;
             values.insert(
                 name.clone(),
@@ -554,7 +554,8 @@ impl LinuxCanCore {
                     role: motor.common.role.clone(),
                     values: BTreeMap::new(),
                 });
-            for (name, desc) in state.spec.observables.iter() {
+            let spec = state.spec_for(motor.robstride_model());
+            for (name, desc) in spec.observables.iter() {
                 let value = match name.as_str() {
                     "mech_pos" => match aux.mech_pos {
                         Some(v) => serde_json::json!(v),
@@ -728,8 +729,8 @@ impl LinuxCanCore {
         motor: &Motor,
         name: &str,
     ) -> Result<Option<f32>> {
-        let desc = state
-            .spec
+        let spec = state.spec_for(motor.robstride_model());
+        let desc = spec
             .observables
             .get(name)
             .ok_or_else(|| anyhow!("observable {name} not found in actuator spec"))?;
@@ -744,8 +745,8 @@ impl LinuxCanCore {
         motor: &Motor,
         name: &str,
     ) -> Result<Option<u32>> {
-        let desc = state
-            .spec
+        let spec = state.spec_for(motor.robstride_model());
+        let desc = spec
             .observables
             .get(name)
             .ok_or_else(|| anyhow!("observable {name} not found in actuator spec"))?;

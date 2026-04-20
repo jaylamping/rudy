@@ -16,7 +16,8 @@ use ts_rs::TS;
 #[ts(export, export_to = "./")]
 pub struct ServerConfig {
     pub version: String,
-    pub actuator_model: String,
+    /// RobStride models with a loaded `robstride_*.yaml` (e.g. `RS03`), sorted for stable JSON.
+    pub actuator_models: Vec<String>,
     pub webtransport: WebTransportAdvert,
     pub features: ServerFeatures,
 }

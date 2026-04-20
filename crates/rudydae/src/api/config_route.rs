@@ -6,6 +6,7 @@ use axum::{
     Json,
 };
 
+use crate::inventory::RobstrideModel;
 use crate::state::SharedState;
 use crate::types::{ServerConfig, ServerFeatures, WebTransportAdvert};
 
@@ -40,9 +41,18 @@ pub async fn get_config(
         None
     };
 
+    let mut actuator_models: Vec<String> = state
+        .specs
+        .keys()
+        .copied()
+        .map(RobstrideModel::as_spec_label)
+        .map(str::to_string)
+        .collect();
+    actuator_models.sort();
+
     Json(ServerConfig {
         version: env!("CARGO_PKG_VERSION").to_string(),
-        actuator_model: state.spec.actuator_model.clone(),
+        actuator_models,
         webtransport: WebTransportAdvert {
             enabled: state.cfg.webtransport.enabled,
             url: wt_url,

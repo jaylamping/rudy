@@ -7,12 +7,15 @@
 //! For `robstride_<model>.yaml`, [`ActuatorSpec::load`] checks that `actuator_model`
 //! matches the filename (e.g. `robstride_rs03.yaml` ⇒ `RS03`).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
+use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
+
+use crate::inventory::RobstrideModel;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ActuatorSpec {
@@ -209,6 +212,66 @@ mod serde_hex_u16 {
     {
         v.serialize(s)
     }
+}
+
+/// Load every `robstride_*.yaml` under `actuators_dir`, keyed by [`RobstrideModel`].
+///
+/// If the directory has no matching files, falls back to `legacy_fallback` (e.g.
+/// `paths.actuator_spec`) so tests can use a single ad-hoc YAML path.
+pub fn load_robstride_specs(
+    actuators_dir: &Path,
+    legacy_fallback: Option<&Path>,
+) -> Result<HashMap<RobstrideModel, Arc<ActuatorSpec>>> {
+    let mut out: HashMap<RobstrideModel, Arc<ActuatorSpec>> = HashMap::new();
+
+    if actuators_dir.is_dir() {
+        for entry in std::fs::read_dir(actuators_dir).with_context(|| {
+            format!(
+                "reading actuator spec directory {}",
+                actuators_dir.display()
+            )
+        })? {
+            let entry = entry?;
+            let path = entry.path();
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !name.starts_with("robstride_") {
+                continue;
+            }
+            let lower = name.to_ascii_lowercase();
+            if !lower.ends_with(".yaml") && !lower.ends_with(".yml") {
+                continue;
+            }
+            let spec = Arc::new(ActuatorSpec::load(&path)?);
+            let model = RobstrideModel::from_spec_actuator_model(&spec.actuator_model)?;
+            if out.contains_key(&model) {
+                anyhow::bail!(
+                    "duplicate RobStride spec for model {} (second file {})",
+                    model.as_spec_label(),
+                    path.display()
+                );
+            }
+            out.insert(model, spec);
+        }
+    }
+
+    if out.is_empty() {
+        if let Some(path) = legacy_fallback {
+            let spec = Arc::new(ActuatorSpec::load(path)?);
+            let model = RobstrideModel::from_spec_actuator_model(&spec.actuator_model)?;
+            out.insert(model, spec);
+        }
+    }
+
+    if out.is_empty() {
+        anyhow::bail!(
+            "no robstride_*.yaml specs found in {} and no legacy actuator_spec fallback",
+            actuators_dir.display()
+        );
+    }
+
+    Ok(out)
 }
 
 impl ActuatorSpec {

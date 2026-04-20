@@ -82,8 +82,17 @@ async fn main() -> Result<()> {
         .install_default()
         .expect("install rustls ring CryptoProvider");
 
-    let spec = spec::ActuatorSpec::load(&cfg.paths.actuator_spec)
-        .with_context(|| format!("loading actuator spec {:?}", cfg.paths.actuator_spec))?;
+    let actuators_dir = cfg.paths.actuator_spec.parent().ok_or_else(|| {
+        anyhow::anyhow!(
+            "actuator_spec path {:?} has no parent directory",
+            cfg.paths.actuator_spec
+        )
+    })?;
+    let specs = spec::load_robstride_specs(actuators_dir, Some(&cfg.paths.actuator_spec))
+        .with_context(|| format!("loading RobStride specs under {:?}", actuators_dir))?;
+    let mut loaded_models: Vec<&'static str> = specs.keys().map(|m| m.as_spec_label()).collect();
+    loaded_models.sort();
+    info!(?loaded_models, "loaded RobStride actuator specs");
 
     // First-boot bootstrap on the Pi: the release tarball ships a baseline
     // inventory in the read-only `/opt/rudy/...` tree, while rudydae reads
@@ -100,6 +109,22 @@ async fn main() -> Result<()> {
 
     let inv = inventory::Inventory::load(&cfg.paths.inventory)
         .with_context(|| format!("loading inventory {:?}", cfg.paths.inventory))?;
+
+    for d in &inv.devices {
+        if let inventory::Device::Actuator(a) = d {
+            let m = a.robstride_model();
+            if !specs.contains_key(&m) {
+                anyhow::bail!(
+                    "inventory actuator {:?} requires spec for model {}, but no robstride_{}.yaml was loaded from {:?}",
+                    a.common.role,
+                    m.as_spec_label(),
+                    m.robstride_yaml_suffix(),
+                    actuators_dir
+                );
+            }
+        }
+    }
+
     info!(
         devices = inv.devices.len(),
         actuators = inv.actuators().count(),
@@ -129,7 +154,7 @@ async fn main() -> Result<()> {
     // sides hold clones of the same channel.
     let app_state = Arc::new(state::AppState::new_with_log_tx(
         cfg.clone(),
-        spec,
+        specs,
         inv,
         audit,
         real_can,

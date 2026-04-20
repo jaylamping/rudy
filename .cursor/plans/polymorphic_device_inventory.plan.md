@@ -19,7 +19,7 @@ todos:
     status: completed
   - id: per-device-spec-resolution
     content: "Replace the global `state.spec: Arc<ActuatorSpec>` (`crates/rudydae/src/state.rs`, single field loaded from `cfg.paths.actuator_spec`) with `state.specs: HashMap<RobstrideModel, Arc<ActuatorSpec>>`. Loading: at daemon start, scan `config/actuators/robstride_*.yaml`, parse each, key by `actuator_model` field. Today only `robstride_rs03.yaml` exists; the loader should not fail if other model files are absent. Add `state.spec_for(model: RobstrideModel) -> Arc<ActuatorSpec>` lookup with a clear panic-on-missing message. Update every `state.spec.*` consumer (5+ files per the exploration: `telemetry.rs`, `api/params.rs`, `api/config_route.rs`, `can/linux.rs::seed_boot_low_limits`, `tests/common/mod.rs`) to first resolve the actuator's family/model and look up the appropriate spec. The `api/config_route.rs` exposed `actuator_model` becomes a list of supported models. NEW: ensure `Spec` parsing covers `protocol`, `hardware`, `op_control_scaling`, `thermal` sections (currently silently ignored — the polymorphism will need them as soon as we have a non-RS03 model with a different op_control range or different gear ratio)."
-    status: pending
+    status: completed
   - id: extend-spec-struct
     content: "Extend `ActuatorSpec` (`crates/rudydae/src/spec.rs:13-24`) to actually parse the YAML sections it currently ignores: `protocol` (id_layout, comm_types map, bitrate), `hardware` (gear_ratio, encoder_resolution_bits, torque_constant_nm_per_arms, etc.), `op_control_scaling` (position/velocity/kp/kd/torque_ff ranges — used for MIT mode), `thermal` (derating curves). Add validation: `actuator_model` field must match the filename (e.g. `robstride_rs03.yaml` must contain `actuator_model: RS03`) so the spec loader's filename→model mapping can't go wrong. Add a `RobstrideSpec` newtype that wraps `ActuatorSpec` plus the additional protocol/hardware sections, since (long-term) non-RobStride actuator families will need their own spec shape and we want the type system to catch family-mismatch at compile time."
     status: completed
@@ -85,16 +85,15 @@ isProject: false
 
 ## Progress (update as work lands)
 
-**Last updated:** 2026-04-19 (`extend-spec-struct` landed).
+**Last updated:** 2026-04-19 (`per-device-spec-resolution` landed).
 
-**Current phase:** **Phase C — per-model spec resolution**. Next todo: `per-device-spec-resolution` → `travel-rail-from-spec` → `rsactuator-trait-adoption`.
+**Current phase:** **Phase C — per-model spec resolution**. Next todo: `travel-rail-from-spec` → `rsactuator-trait-adoption`.
 
 ### Phase C handoff (for new chat / new session)
 
 1. **`extend-spec-struct`** — **done** (`crates/rudydae/src/spec.rs`): `protocol`, `hardware`, `op_control_scaling`, `thermal`, optional `manual_ref` / `notes`; filename check for `robstride_*.yaml`; `RobstrideSpec` wrapper + unit tests.
 
-2. **`per-device-spec-resolution`** — `crates/rudydae/src/state.rs` (+ `AppState::new`)  
-   Replace single `spec: Arc<ActuatorSpec>` with `specs: HashMap<RobstrideModel, Arc<ActuatorSpec>>` (or `Arc<RobstrideSpec>` once step 1 exists). Load all `config/actuators/robstride_*.yaml` at startup; add `spec_for(model: RobstrideModel)`. Update call sites: `telemetry.rs`, `api/params.rs`, `api/config_route.rs`, `can/linux.rs` (e.g. `seed_boot_low_limits`), `tests/common/mod.rs`. Expose supported models from `/api/config` if the SPA needs them.
+2. **`per-device-spec-resolution`** — **done**: `spec::load_robstride_specs`, `AppState.specs` + `spec_for`, boot inventory-vs-spec check; `/api/config` exposes `actuator_models`; Linux CAN + telemetry + params resolve per actuator model; tests use `robstride_rs03.yaml` fixtures.
 
 3. **`travel-rail-from-spec`** — `crates/rudydae/src/can/travel.rs`  
    Replace hardcoded `HARDWARE_*_RAD` with per-model rails from `op_control_scaling` (or equivalent) via `state.spec_for`.

@@ -236,16 +236,16 @@ mod path_check_tests {
     };
     use crate::inventory::Inventory;
     use crate::reminders::ReminderStore;
-    use crate::spec::ActuatorSpec;
+    use crate::spec;
     use crate::state::AppState;
     use std::sync::Arc;
 
     fn state_with_band(min: f32, max: f32) -> (crate::state::SharedState, tempfile::TempDir) {
         let dir = tempfile::tempdir().unwrap();
-        let spec_path = dir.path().join("spec.yaml");
+        let spec_path = dir.path().join("robstride_rs03.yaml");
         std::fs::write(
             &spec_path,
-            "schema_version: 2\nactuator_model: T\nfirmware_limits: {}\nobservables: {}\n",
+            "schema_version: 2\nactuator_model: RS03\nfirmware_limits: {}\nobservables: {}\n",
         )
         .unwrap();
         let inv_path = dir.path().join("inv.yaml");
@@ -296,13 +296,13 @@ mod path_check_tests {
                 ..LogsConfig::default()
             },
         };
-        let spec = ActuatorSpec::load(&spec_path).unwrap();
+        let specs = spec::load_robstride_specs(dir.path(), Some(&spec_path)).unwrap();
         let inv = Inventory::load(&inv_path).unwrap();
         let audit = AuditLog::open(dir.path().join("audit.jsonl")).unwrap();
         let real_can = can::build_handle(&cfg, &inv).unwrap();
         let reminders = ReminderStore::open(dir.path().join("reminders.json")).unwrap();
         (
-            Arc::new(AppState::new(cfg, spec, inv, audit, real_can, reminders)),
+            Arc::new(AppState::new(cfg, specs, inv, audit, real_can, reminders)),
             dir,
         )
     }
@@ -336,10 +336,10 @@ mod path_check_tests {
     #[test]
     fn path_check_no_band_returns_nolimit() {
         let dir = tempfile::tempdir().unwrap();
-        let spec_path = dir.path().join("spec.yaml");
+        let spec_path = dir.path().join("robstride_rs03.yaml");
         std::fs::write(
             &spec_path,
-            "schema_version: 2\nactuator_model: T\nfirmware_limits: {}\nobservables: {}\n",
+            "schema_version: 2\nactuator_model: RS03\nfirmware_limits: {}\nobservables: {}\n",
         )
         .unwrap();
         let inv_path = dir.path().join("inv.yaml");
@@ -388,12 +388,12 @@ mod path_check_tests {
                 ..LogsConfig::default()
             },
         };
-        let spec = ActuatorSpec::load(&spec_path).unwrap();
+        let specs = spec::load_robstride_specs(dir.path(), Some(&spec_path)).unwrap();
         let inv = Inventory::load(&inv_path).unwrap();
         let audit = AuditLog::open(dir.path().join("audit.jsonl")).unwrap();
         let real_can = can::build_handle(&cfg, &inv).unwrap();
         let reminders = ReminderStore::open(dir.path().join("reminders.json")).unwrap();
-        let s = Arc::new(AppState::new(cfg, spec, inv, audit, real_can, reminders));
+        let s = Arc::new(AppState::new(cfg, specs, inv, audit, real_can, reminders));
         let r = enforce_position_with_path(&s, "m", 100.0, 100.0).unwrap();
         assert!(matches!(r, BandCheck::NoLimit));
     }

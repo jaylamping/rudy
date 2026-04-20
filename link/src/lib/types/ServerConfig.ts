@@ -5,4 +5,8 @@ import type { WebTransportAdvert } from "./WebTransportAdvert";
 /**
  * GET /api/config — what the UI needs to bootstrap.
  */
-export type ServerConfig = { version: string, actuator_model: string, webtransport: WebTransportAdvert, features: ServerFeatures, };
+export type ServerConfig = { version: string, 
+/**
+ * RobStride models with a loaded `robstride_*.yaml` (e.g. `RS03`), sorted for stable JSON.
+ */
+actuator_models: Array<string>, webtransport: WebTransportAdvert, features: ServerFeatures, };

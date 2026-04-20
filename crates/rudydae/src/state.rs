@@ -10,7 +10,7 @@ use crate::audit::{AuditEntry, AuditLog, AuditResult};
 use crate::boot_state::BootState;
 use crate::can::RealCanHandle;
 use crate::config::Config;
-use crate::inventory::Inventory;
+use crate::inventory::{Inventory, RobstrideModel};
 use crate::log_store::LogStore;
 use crate::motion::{MotionRegistry, MotionStatus};
 use crate::reminders::ReminderStore;
@@ -44,7 +44,8 @@ pub struct ControlLockHolder {
 
 pub struct AppState {
     pub cfg: Config,
-    pub spec: ActuatorSpec,
+    /// Per–RobStride-model hardware spec (`robstride_rs0X.yaml`).
+    pub specs: HashMap<RobstrideModel, Arc<ActuatorSpec>>,
     /// Live inventory. Behind a lock so the per-motor PUT endpoints
     /// (`travel_limits`, `verified`) can swap in the freshly-rewritten
     /// disk copy without restarting the daemon.
@@ -172,7 +173,7 @@ pub struct AppState {
 impl AppState {
     pub fn new(
         cfg: Config,
-        spec: ActuatorSpec,
+        specs: HashMap<RobstrideModel, Arc<ActuatorSpec>>,
         inventory: Inventory,
         audit: AuditLog,
         real_can: Option<Arc<RealCanHandle>>,
@@ -181,7 +182,7 @@ impl AppState {
         let (log_event_tx, _) = broadcast::channel::<LogEntry>(2048);
         Self::new_with_log_tx(
             cfg,
-            spec,
+            specs,
             inventory,
             audit,
             real_can,
@@ -196,7 +197,7 @@ impl AppState {
     /// short form.
     pub fn new_with_log_tx(
         cfg: Config,
-        spec: ActuatorSpec,
+        specs: HashMap<RobstrideModel, Arc<ActuatorSpec>>,
         inventory: Inventory,
         audit: AuditLog,
         real_can: Option<Arc<RealCanHandle>>,
@@ -210,7 +211,7 @@ impl AppState {
         let (motion_status_tx, _) = broadcast::channel::<MotionStatus>(256);
         Self {
             cfg,
-            spec,
+            specs,
             inventory: RwLock::new(inventory),
             audit,
             real_can,
@@ -233,6 +234,17 @@ impl AppState {
             log_event_tx,
             filter_reload: OnceLock::new(),
         }
+    }
+
+    /// Resolve the YAML spec for a RobStride model. Panics if startup loading missed a file.
+    pub fn spec_for(&self, model: RobstrideModel) -> Arc<ActuatorSpec> {
+        self.specs.get(&model).cloned().unwrap_or_else(|| {
+            panic!(
+                "no ActuatorSpec loaded for {}; add config/actuators/robstride_{}.yaml",
+                model.as_spec_label(),
+                model.robstride_yaml_suffix()
+            )
+        })
     }
 
     /// Wire the persistent log store + fan out the audit log into both it

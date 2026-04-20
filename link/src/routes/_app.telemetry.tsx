@@ -31,7 +31,7 @@ function TelemetryPage() {
         <h1 className="text-2xl font-semibold">Telemetry</h1>
         <div className="text-xs text-muted-foreground">
           {configQ.data?.features.mock_can ? "mock CAN (no hardware)" : "live CAN"} -{" "}
-          actuator: {configQ.data?.actuator_model}
+          actuator: {configQ.data?.actuator_models?.join(", ")}
         </div>
       </header>
       <TelemetryGrid motors={motorsQ.data ?? []} />

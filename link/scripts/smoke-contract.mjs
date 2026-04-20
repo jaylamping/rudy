@@ -123,7 +123,7 @@ async function main() {
       const r = await http("GET", "/api/config");
       try {
         if (r.status !== 200) throw new Error(`status=${r.status}`);
-        assertHas(r.body, ["version", "actuator_model", "webtransport", "features"], "ServerConfig");
+        assertHas(r.body, ["version", "actuator_models", "webtransport", "features"], "ServerConfig");
         assertHas(r.body.webtransport, ["enabled", "url"], "WebTransportAdvert");
         assertHas(r.body.features, ["mock_can", "require_verified"], "ServerFeatures");
         if (r.body.webtransport.enabled) {

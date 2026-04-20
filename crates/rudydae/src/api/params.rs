@@ -83,11 +83,11 @@ pub async fn put_param(
         ));
     }
 
-    let desc = state
-        .spec
+    let spec = state.spec_for(motor.robstride_model());
+    let desc = spec
         .firmware_limits
         .get(&name)
-        .or_else(|| state.spec.observables.get(&name))
+        .or_else(|| spec.observables.get(&name))
         .cloned()
         .ok_or_else(|| {
             err(
