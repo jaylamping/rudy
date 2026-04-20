@@ -43,10 +43,10 @@ todos:
     status: pending
   - id: hardware-page-route
     content: "New `link/src/routes/_app.hardware.tsx` route. Layout: header with global health summary (reuses the global health bar from the boot-orchestrator plan's `ui-troublemaker-identification` todo), then two main sections: (1) **Assigned** — list of all `Device`s in inventory grouped by kind (Actuators, Sensors, Batteries) and within Actuators by limb. Each row shows role, can_bus, can_id, family, model, BootState badge (actuators only), and quick-link to the existing detail page. (2) **Unassigned** — list of discovered-but-not-inventoried devices from `GET /api/hardware/unassigned`. Each row shows bus, can_id, source (passive/active/both), family hint, last seen timestamp, and a 'Onboard' button that launches the wizard. A persistent 'Discover' button at the top of the Unassigned section triggers `POST /api/hardware/scan` and shows progress. Default sort: Unassigned section first when non-empty (operator's eye is drawn there), Assigned second. Empty-state copy on Unassigned: 'No new devices detected. Click Discover to actively scan, or plug in a new device and wait for it to transmit.'"
-    status: pending
+    status: completed
   - id: hardware-page-extensibility
     content: "Structure the hardware page with a `<HardwareSection title=\"Actuators\" items={...} renderRow={...} />` component pattern in `link/src/components/hardware/hardware-section.tsx` so future Sensor / Battery / Camera / Lidar sections drop in without restructuring. Each row renderer is a per-kind component (`<ActuatorRow>`, `<SensorRow>`, etc.) so each can show kind-appropriate details. Today only `<ActuatorRow>` has real content; the others render placeholder rows with role + can_id + 'Configuration UI coming soon' until concrete consumers exist. The Unassigned section uses a single `<UnassignedRow>` regardless of family hint."
-    status: pending
+    status: completed
   - id: onboarding-wizard
     content: "New `link/src/components/hardware/onboarding-wizard.tsx`. Modal/sheet launched from clicking 'Onboard' on an Unassigned row. Steps (skipping non-applicable steps based on family): (1) **Confirm device family** — pre-filled from probe's family hint, operator can override (dropdown of registered families); (2) **Confirm model** — for actuators, dropdown of models within the family; for sensors, dropdown of models within the sensor family; (3) **Assign role** — text input with validation against the canonical role format; for actuators, encourages the `{limb}.{joint_kind}` form; (4) **Assign limb + joint_kind** (actuators only) — dropdowns with the existing `JointKind` enum values; (5) **Set travel limits** (actuators only) — same UI as the existing travel tab, defaulting to a conservative ±30°; (6) **Set predefined home** (actuators only) — defaults to 0.0 rad, must be inside the band; (7) **Commission zero** (actuators only) — operator physically positions joint, clicks 'Commission', system runs the commission flow from the boot-orchestrator plan; (8) **First auto-home** — observe the boot orchestrator drive the joint to predefined home; success → motor is now Homed and operational. Each step persists incrementally to inventory.yaml via `inventory::write_atomic` so the operator can stop and resume between sessions; partial state is shown as 'partially configured' on the Hardware page Assigned section. Add `onboarding_wizard_persists_per_step` integration test."
     status: pending
@@ -85,11 +85,31 @@ isProject: false
 
 ## Progress (update as work lands)
 
-**Last updated:** 2026-04-19.
+**Last updated:** 2026-04-19 (Phase C handoff).
 
-- **Done (on `main`):** Phase A–B — v2 `Device` schema, migration binary + docs, `Inventory` accessors, rudydae ported to `ActuatorCommon`, TS-rs inventory types.
-- **In progress (this session):** `/hardware` SPA route (Assigned + Unassigned UI), `GET /api/devices`, stub `GET /api/hardware/unassigned` + `POST /api/hardware/scan`. Onboard button disabled until wizard exists.
-- **Next step in plan order:** **`passive-seen-ids-tracker`** (populate unassigned from CAN), then **`device-probe-trait`** + real **`active-scan-endpoint`**, then **`onboarding-wizard`**.
+**Current phase (start here in a new session):** **Phase C — per-model spec resolution** (`implementation-order` below). Complete these todos **in order:** `extend-spec-struct` → `per-device-spec-resolution` → `travel-rail-from-spec` → `rsactuator-trait-adoption`.
+
+### Phase C handoff (for new chat / new session)
+
+1. **`extend-spec-struct`** — `crates/rudydae/src/spec.rs`  
+   Parse YAML sections that exist in `config/actuators/robstride_rs03.yaml` but are currently ignored: `protocol`, `hardware`, `op_control_scaling`, `thermal`. Validate `actuator_model` matches filename. Introduce a `RobstrideSpec` (or equivalent) wrapper if it keeps non–RobStride families separable later.
+
+2. **`per-device-spec-resolution`** — `crates/rudydae/src/state.rs` (+ `AppState::new`)  
+   Replace single `spec: Arc<ActuatorSpec>` with `specs: HashMap<RobstrideModel, Arc<ActuatorSpec>>` (or `Arc<RobstrideSpec>` once step 1 exists). Load all `config/actuators/robstride_*.yaml` at startup; add `spec_for(model: RobstrideModel)`. Update call sites: `telemetry.rs`, `api/params.rs`, `api/config_route.rs`, `can/linux.rs` (e.g. `seed_boot_low_limits`), `tests/common/mod.rs`. Expose supported models from `/api/config` if the SPA needs them.
+
+3. **`travel-rail-from-spec`** — `crates/rudydae/src/can/travel.rs`  
+   Replace hardcoded `HARDWARE_*_RAD` with per-model rails from `op_control_scaling` (or equivalent) via `state.spec_for`.
+
+4. **`rsactuator-trait-adoption`** — `bus_worker`, `can/linux.rs`, `ros/src/driver/.../robstride`  
+   Route `driver::rs03::*` use through `RsActuator` trait; dispatch per `RobstrideModel` from inventory.
+
+**Deferred (not Phase C):** Phase B items `motor-summary-rename`, `spa-consumer-migration`, and full `ts-bindings-regen` (beyond existing inventory TS) remain optional follow-ups — they can run in parallel with Phase C only if you want cleaner API names; **not required** to start Phase C.
+
+**Already shipped (do not redo):** Phase A–B (v2 inventory, migration, accessors). **Phase E partial:** `/hardware` page, `GET /api/devices`, stub `GET /api/hardware/unassigned` + `POST /api/hardware/scan` (real discovery = Phase D: `passive-seen-ids-tracker` onward).
+
+**After Phase C:** Phase D (discovery), then finish Phase E (onboarding wizard, reassign CAN ID), then Phase F tests and Phase G docs.
+
+---
 
 ## Polymorphic device inventory
 
