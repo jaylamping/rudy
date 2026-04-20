@@ -77,12 +77,17 @@ export const api = {
   /** Full polymorphic inventory (`devices:` from `inventory.yaml`). */
   listDevices: () =>
     apiFetch<import("@/lib/types/Device").Device[]>("/api/devices"),
-  /** CAN IDs seen on the bus but not in inventory (empty until passive tracking lands). */
+  /** CAN IDs seen on the bus but not in inventory (passive + optional active scan). */
   listUnassignedHardware: () =>
     apiFetch<import("@/lib/types/UnassignedDevice").UnassignedDevice[]>("/api/hardware/unassigned"),
-  /** Active scan — stub until daemon probes are implemented. */
+  /** Active discovery scan (no-op on mock CAN; populates `seen_can_ids` on real Linux SocketCAN). */
   scanHardware: (body: Record<string, unknown> = {}) =>
-    apiFetch<{ ok: boolean; discovered: unknown[]; message?: string }>("/api/hardware/scan", {
+    apiFetch<{
+      ok: boolean;
+      discovered: unknown[];
+      attempts?: unknown[];
+      message?: string;
+    }>("/api/hardware/scan", {
       method: "POST",
       body: JSON.stringify(body),
     }),

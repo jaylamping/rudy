@@ -1,12 +1,14 @@
 //! Hardware discovery: unassigned CAN IDs and active scan.
 //!
 //! `GET /api/hardware/unassigned` lists `(bus, can_id)` in `state.seen_can_ids`
-//! that are not in inventory (passive traffic). Active scan merges are still
-//! future work — see the polymorphic inventory plan Phase D.
+//! that are not in inventory. Passive traffic and `POST /api/hardware/scan`
+//! both populate that map (with `source` and optional probe metadata).
 
 use axum::{extract::State, Json};
 use serde::{Deserialize, Serialize};
 
+use crate::can;
+use crate::discovery::{DiscoveredDevice, ScanAttempt};
 use crate::state::SharedState;
 
 /// A CAN ID seen on the bus (or reported by a scan) that is not in inventory.
@@ -41,8 +43,8 @@ pub async fn list_unassigned(State(state): State<SharedState>) -> Json<Vec<Unass
             source: info.source,
             first_seen_ms: info.first_seen_ms,
             last_seen_ms: info.last_seen_ms,
-            family_hint: None,
-            identification_payload: None,
+            family_hint: info.family_hint,
+            identification_payload: info.identification_payload,
         })
         .collect();
 
@@ -66,20 +68,43 @@ pub struct ScanBody {
 #[derive(Debug, Serialize)]
 pub struct ScanResponse {
     pub ok: bool,
-    /// Devices discovered this run (empty until probes are implemented).
-    pub discovered: Vec<serde_json::Value>,
+    pub discovered: Vec<DiscoveredDevice>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub attempts: Vec<ScanAttempt>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
 }
 
-/// Stub: accepts body for forward compatibility; returns empty `discovered`.
-pub async fn scan(State(_state): State<SharedState>, Json(_body): Json<ScanBody>) -> Json<ScanResponse> {
-    Json(ScanResponse {
-        ok: true,
-        discovered: vec![],
-        message: Some(
-            "active scan not implemented yet — passive CAN tracking and device probes pending"
-                .into(),
-        ),
+pub async fn scan(State(state): State<SharedState>, Json(body): Json<ScanBody>) -> Json<ScanResponse> {
+    let id_min = body.id_min.unwrap_or(1);
+    let id_max = body.id_max.unwrap_or(0x7F);
+    let timeout_ms = body.timeout_ms.unwrap_or(50).clamp(10, 500);
+    let timeout = std::time::Duration::from_millis(timeout_ms);
+    let bus = body.bus.clone();
+
+    let report = tokio::task::spawn_blocking(move || {
+        can::hardware_active_scan(&state, bus.as_deref(), id_min, id_max, timeout)
     })
+    .await;
+
+    match report {
+        Ok(Ok(r)) => Json(ScanResponse {
+            ok: true,
+            discovered: r.discovered,
+            attempts: r.attempts,
+            message: r.message,
+        }),
+        Ok(Err(e)) => Json(ScanResponse {
+            ok: false,
+            discovered: vec![],
+            attempts: vec![],
+            message: Some(e.to_string()),
+        }),
+        Err(e) => Json(ScanResponse {
+            ok: false,
+            discovered: vec![],
+            attempts: vec![],
+            message: Some(format!("scan task failed: {e}")),
+        }),
+    }
 }

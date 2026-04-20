@@ -3,6 +3,7 @@
 //! See docs/decisions/0004-operator-console.md for architecture + safety.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 use tokio::sync::broadcast;
@@ -183,6 +184,35 @@ async fn main() -> Result<()> {
     app_state.attach_filter_reload(filter_setter);
 
     can::spawn(app_state.clone())?;
+
+    if app_state.cfg.safety.scan_on_boot
+        && !app_state.cfg.can.mock
+        && app_state.real_can.is_some()
+    {
+        let st = app_state.clone();
+        tokio::spawn(async move {
+            let join = tokio::task::spawn_blocking(move || {
+                can::hardware_active_scan(&st, None, 1, 0x7F, Duration::from_millis(50))
+            })
+            .await;
+            match join {
+                Ok(Ok(report)) => {
+                    info!(
+                        discovered = report.discovered.len(),
+                        attempts = report.attempts.len(),
+                        "boot-time hardware scan finished"
+                    );
+                }
+                Ok(Err(e)) => {
+                    tracing::warn!(error = %e, "boot-time hardware scan failed");
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "boot-time hardware scan task panicked");
+                }
+            }
+        });
+    }
+
     telemetry::spawn(app_state.clone());
     system::spawn(app_state.clone());
 

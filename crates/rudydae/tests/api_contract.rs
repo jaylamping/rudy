@@ -139,7 +139,7 @@ async fn get_hardware_unassigned_lists_passive_seen_not_in_inventory() {
 }
 
 #[tokio::test]
-async fn post_hardware_scan_returns_stub_envelope() {
+async fn post_hardware_scan_noops_on_mock_can_with_message() {
     let (state, _dir) = common::make_state();
     let app = rudydae::build_app(state);
 
@@ -159,7 +159,11 @@ async fn post_hardware_scan_returns_stub_envelope() {
     let v: serde_json::Value = body_json(resp).await;
     assert_eq!(v["ok"], json!(true));
     assert_eq!(v["discovered"], json!([]));
-    assert!(v["message"].as_str().unwrap().contains("not implemented"));
+    let msg = v["message"].as_str().unwrap();
+    assert!(
+        msg.contains("mock") || msg.contains("non-Linux") || msg.contains("did not touch"),
+        "unexpected scan message: {msg}"
+    );
 }
 
 /// When WT is enabled, `/api/config` advertises a URL the browser opens

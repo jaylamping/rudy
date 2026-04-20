@@ -123,6 +123,7 @@ pub fn make_state() -> (SharedState, tempfile::TempDir) {
             max_feedback_age_ms: 100,
             commission_readback_tolerance_rad: 1e-3,
             auto_home_on_boot: true,
+            scan_on_boot: true,
         },
         logs: LogsConfig {
             db_path: dir.path().join("logs.db"),
@@ -206,6 +207,7 @@ pub fn make_state_commission_can_path_fails() -> (SharedState, tempfile::TempDir
             max_feedback_age_ms: 100,
             commission_readback_tolerance_rad: 1e-3,
             auto_home_on_boot: true,
+            scan_on_boot: true,
         },
         logs: LogsConfig {
             db_path: dir.path().join("logs.db"),

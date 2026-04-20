@@ -51,6 +51,8 @@ pub struct SeenInfo {
     pub last_seen_ms: i64,
     /// `passive` | `active_scan` | `both`
     pub source: String,
+    pub family_hint: Option<String>,
+    pub identification_payload: Option<serde_json::Value>,
 }
 
 pub struct AppState {
@@ -322,6 +324,44 @@ impl AppState {
                     first_seen_ms: now_ms,
                     last_seen_ms: now_ms,
                     source: "passive".into(),
+                    family_hint: None,
+                    identification_payload: None,
+                });
+            }
+        }
+    }
+
+    /// Record a device discovered via `POST /api/hardware/scan`. Merges with
+    /// passive entries (`both` when both paths have seen this ID).
+    pub fn record_active_scan_seen(
+        &self,
+        iface: &str,
+        can_id: u8,
+        family_hint: String,
+        identification_payload: Option<serde_json::Value>,
+    ) {
+        let now_ms = chrono::Utc::now().timestamp_millis();
+        let mut map = self.seen_can_ids.write().expect("seen_can_ids poisoned");
+        let key = (iface.to_string(), can_id);
+        match map.entry(key) {
+            Entry::Occupied(mut e) => {
+                let info = e.get_mut();
+                info.last_seen_ms = now_ms;
+                info.family_hint = Some(family_hint);
+                info.identification_payload = identification_payload;
+                if info.source == "passive" {
+                    info.source = "both".into();
+                } else if info.source != "both" {
+                    info.source = "active_scan".into();
+                }
+            }
+            Entry::Vacant(e) => {
+                e.insert(SeenInfo {
+                    first_seen_ms: now_ms,
+                    last_seen_ms: now_ms,
+                    source: "active_scan".into(),
+                    family_hint: Some(family_hint),
+                    identification_payload,
                 });
             }
         }

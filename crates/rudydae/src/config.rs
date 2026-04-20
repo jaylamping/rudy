@@ -189,6 +189,11 @@ pub struct SafetyConfig {
     /// and restart the daemon without losing any commissioning state.
     #[serde(default = "default_true")]
     pub auto_home_on_boot: bool,
+
+    /// Run `POST /api/hardware/scan` once after SocketCAN workers start.
+    /// Disable on noisy benches or when startup latency matters.
+    #[serde(default = "default_true")]
+    pub scan_on_boot: bool,
 }
 
 fn default_true() -> bool {
@@ -400,6 +405,7 @@ mod tests {
                 max_feedback_age_ms: default_max_feedback_age_ms(),
                 commission_readback_tolerance_rad: default_commission_readback_tolerance_rad(),
                 auto_home_on_boot: true,
+                scan_on_boot: true,
             },
             logs: LogsConfig {
                 db_path: db_path

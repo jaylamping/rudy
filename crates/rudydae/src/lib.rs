@@ -14,6 +14,7 @@ pub mod boot_orchestrator;
 pub mod boot_state;
 pub mod can;
 pub mod config;
+pub mod discovery;
 pub mod inventory;
 pub mod limb;
 pub mod limb_health;

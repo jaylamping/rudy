@@ -309,6 +309,7 @@ mod path_check_tests {
                 max_feedback_age_ms: 100,
                 commission_readback_tolerance_rad: 1e-3,
                 auto_home_on_boot: true,
+                scan_on_boot: true,
             },
             logs: LogsConfig {
                 db_path: dir.path().join("logs.db"),
@@ -401,6 +402,7 @@ mod path_check_tests {
                 max_feedback_age_ms: 100,
                 commission_readback_tolerance_rad: 1e-3,
                 auto_home_on_boot: true,
+                scan_on_boot: true,
             },
             logs: LogsConfig {
                 db_path: dir.path().join("logs.db"),

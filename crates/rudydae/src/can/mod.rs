@@ -9,6 +9,7 @@
 //!   hardware.
 //!
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Result;
 use tracing::info;
@@ -16,6 +17,7 @@ use tracing::info;
 use tracing::warn;
 
 use crate::config::Config;
+use crate::discovery::HardwareScanReport;
 use crate::inventory::Inventory;
 #[cfg(not(target_os = "linux"))]
 use crate::inventory::Motor;
@@ -144,4 +146,26 @@ pub fn spawn(state: SharedState) -> Result<()> {
 
     info!("rudydae: real SocketCAN core initialized");
     Ok(())
+}
+
+/// Run active discovery probes on configured buses (no-op on mock / non-Linux).
+pub fn hardware_active_scan(
+    state: &SharedState,
+    bus_filter: Option<&str>,
+    id_min: u8,
+    id_max: u8,
+    timeout: Duration,
+) -> anyhow::Result<HardwareScanReport> {
+    #[cfg(target_os = "linux")]
+    {
+        if !state.cfg.can.mock {
+            if let Some(core) = state.real_can.as_deref() {
+                return linux::run_hardware_scan(core, state, bus_filter, id_min, id_max, timeout);
+            }
+        }
+    }
+    let _ = (state, bus_filter, id_min, id_max, timeout);
+    Ok(HardwareScanReport::empty(
+        "mock or non-Linux build — active scan did not touch the bus",
+    ))
 }
