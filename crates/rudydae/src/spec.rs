@@ -341,7 +341,8 @@ mod tests {
     use std::io::Write;
 
     fn repo_rs03_path() -> std::path::PathBuf {
-        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../config/actuators/robstride_rs03.yaml")
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../config/actuators/robstride_rs03.yaml")
     }
 
     #[test]
@@ -353,8 +354,8 @@ mod tests {
         assert_eq!(spec.protocol.id_layout.comm_type_bits, [24, 28]);
         assert_eq!(spec.hardware.gear_ratio, 9.0);
         assert_eq!(spec.hardware.encoder_resolution_bits, 14);
-        assert!((spec.op_control_scaling.position.range[0] + 12.5663706).abs() < 1e-5);
-        assert!((spec.op_control_scaling.position.range[1] - 12.5663706).abs() < 1e-5);
+        assert!((spec.op_control_scaling.position.range[0] + 12.566_371).abs() < 1e-5);
+        assert!((spec.op_control_scaling.position.range[1] - 12.566_371).abs() < 1e-5);
         assert_eq!(spec.thermal.max_winding_temp_c, 120.0);
         assert_eq!(spec.thermal.derating_start_c, 100.0);
         assert!(!spec.notes.is_empty());

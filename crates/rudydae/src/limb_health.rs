@@ -79,11 +79,7 @@ pub fn sibling_quarantine_failures(
     }
 }
 
-fn limb_status_inner(
-    state: &SharedState,
-    limb_id: &str,
-    exclude_role: Option<&str>,
-) -> LimbStatus {
+fn limb_status_inner(state: &SharedState, limb_id: &str, exclude_role: Option<&str>) -> LimbStatus {
     let inv = state.inventory.read().expect("inventory poisoned");
     let mut failed = Vec::new();
     for m in inv.actuators() {
@@ -110,7 +106,10 @@ fn limb_status_inner(
     }
 }
 
-pub(crate) fn limb_quarantine_api_error(limb_id: &str, failed: Vec<(String, BootState)>) -> ApiError {
+pub(crate) fn limb_quarantine_api_error(
+    limb_id: &str,
+    failed: Vec<(String, BootState)>,
+) -> ApiError {
     let failed_motors: Vec<LimbQuarantineMotor> = failed
         .iter()
         .map(|(r, bs)| LimbQuarantineMotor {

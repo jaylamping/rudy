@@ -564,11 +564,7 @@ async fn control_endpoints_return_ok_envelope_for_verified_motor() {
         ("POST", "enable", None),
         ("POST", "stop", None),
         ("POST", "save", None),
-        (
-            "POST",
-            "set_zero",
-            Some(r#"{"confirm_advanced": true}"#),
-        ),
+        ("POST", "set_zero", Some(r#"{"confirm_advanced": true}"#)),
     ] {
         let mut builder = Request::builder()
             .method(verb)
@@ -1239,7 +1235,7 @@ async fn enable_homed_but_drifted_outside_band_is_forbidden() {
     // Configure a band on the motor.
     {
         let mut inv = state.inventory.write().expect("inventory");
-        let a = common::actuator_mut(&mut *inv, "shoulder_actuator_a").unwrap();
+        let a = common::actuator_mut(&mut inv, "shoulder_actuator_a").unwrap();
         a.common.travel_limits = Some(rudydae::inventory::TravelLimits {
             min_rad: -1.0,
             max_rad: 1.0,
@@ -1365,7 +1361,7 @@ async fn home_target_outside_band_is_forbidden() {
     let (state, _dir) = common::make_state();
     {
         let mut inv = state.inventory.write().expect("inventory");
-        let a = common::actuator_mut(&mut *inv, "shoulder_actuator_a").unwrap();
+        let a = common::actuator_mut(&mut inv, "shoulder_actuator_a").unwrap();
         a.common.travel_limits = Some(rudydae::inventory::TravelLimits {
             min_rad: -1.0,
             max_rad: 1.0,
@@ -1401,7 +1397,7 @@ async fn jog_step_too_large_when_not_homed_is_forbidden() {
     let (state, _dir) = common::make_state();
     {
         let mut inv = state.inventory.write().expect("inventory");
-        let a = common::actuator_mut(&mut *inv, "shoulder_actuator_a").unwrap();
+        let a = common::actuator_mut(&mut inv, "shoulder_actuator_a").unwrap();
         a.common.travel_limits = Some(rudydae::inventory::TravelLimits {
             min_rad: -1.0,
             max_rad: 1.0,
@@ -1442,7 +1438,7 @@ async fn jog_refuses_on_stale_feedback() {
     let (state, _dir) = common::make_state();
     {
         let mut inv = state.inventory.write().expect("inventory");
-        let a = common::actuator_mut(&mut *inv, "shoulder_actuator_a").unwrap();
+        let a = common::actuator_mut(&mut inv, "shoulder_actuator_a").unwrap();
         a.common.travel_limits = Some(TravelLimits {
             min_rad: -1.0,
             max_rad: 1.0,
@@ -1505,7 +1501,7 @@ async fn jog_refuses_with_no_feedback() {
     let (state, _dir) = common::make_state();
     {
         let mut inv = state.inventory.write().expect("inventory");
-        let a = common::actuator_mut(&mut *inv, "shoulder_actuator_a").unwrap();
+        let a = common::actuator_mut(&mut inv, "shoulder_actuator_a").unwrap();
         a.common.travel_limits = Some(TravelLimits {
             min_rad: -1.0,
             max_rad: 1.0,
@@ -1606,10 +1602,7 @@ async fn set_zero_audit_records_not_persisted() {
     let last_set_zero = raw
         .lines()
         .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
-        .filter(|entry| {
-            entry.get("action").and_then(|v| v.as_str()) == Some("set_zero_advanced")
-        })
-        .last()
+        .rfind(|entry| entry.get("action").and_then(|v| v.as_str()) == Some("set_zero_advanced"))
         .expect("audit log should contain a set_zero_advanced entry");
     assert_eq!(
         last_set_zero
@@ -1737,10 +1730,15 @@ async fn commission_endpoint_writes_inventory() {
 
     let body: serde_json::Value = body_json(resp).await;
     assert_eq!(body["ok"], serde_json::Value::Bool(true));
-    assert_eq!(body["role"], serde_json::Value::String("shoulder_actuator_a".into()));
+    assert_eq!(
+        body["role"],
+        serde_json::Value::String("shoulder_actuator_a".into())
+    );
     // Mock-CAN readback is 0.0 by stub contract.
     assert_eq!(body["offset_rad"].as_f64(), Some(0.0));
-    let commissioned_at = body["commissioned_at"].as_str().expect("commissioned_at must be a string");
+    let commissioned_at = body["commissioned_at"]
+        .as_str()
+        .expect("commissioned_at must be a string");
     chrono::DateTime::parse_from_rfc3339(commissioned_at)
         .expect("commissioned_at must be ISO 8601 RFC 3339");
 
@@ -1762,7 +1760,10 @@ async fn commission_endpoint_writes_inventory() {
         .cloned()
         .unwrap();
     assert_eq!(in_memory.common.commissioned_zero_offset, Some(0.0_f32));
-    assert_eq!(in_memory.common.commissioned_at.as_deref(), Some(commissioned_at));
+    assert_eq!(
+        in_memory.common.commissioned_at.as_deref(),
+        Some(commissioned_at)
+    );
 
     // SafetyEvent::Commissioned must fire so the dashboard can refresh.
     let evt = tokio::time::timeout(std::time::Duration::from_millis(200), safety_rx.recv())
@@ -1770,7 +1771,9 @@ async fn commission_endpoint_writes_inventory() {
         .expect("safety event must fire within 200ms")
         .expect("safety_event_tx must not be closed");
     match evt {
-        rudydae::types::SafetyEvent::Commissioned { role, offset_rad, .. } => {
+        rudydae::types::SafetyEvent::Commissioned {
+            role, offset_rad, ..
+        } => {
             assert_eq!(role, "shoulder_actuator_a");
             assert_eq!(offset_rad, 0.0);
         }
@@ -1803,7 +1806,10 @@ async fn commission_endpoint_can_failure_leaves_inventory_clean() {
     assert_eq!(resp.status(), StatusCode::BAD_GATEWAY);
 
     let body: serde_json::Value = body_json(resp).await;
-    assert_eq!(body["error"], serde_json::Value::String("commission_failed".into()));
+    assert_eq!(
+        body["error"],
+        serde_json::Value::String("commission_failed".into())
+    );
     assert!(
         body["detail"]
             .as_str()
@@ -1853,15 +1859,30 @@ async fn commission_endpoint_unknown_role_leaves_inventory_clean() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 
     let body: serde_json::Value = body_json(resp).await;
-    assert_eq!(body["error"], serde_json::Value::String("commission_failed".into()));
+    assert_eq!(
+        body["error"],
+        serde_json::Value::String("commission_failed".into())
+    );
     let detail = body["detail"].as_str().unwrap_or("");
-    assert!(detail.starts_with("step 2"), "detail must name failing step; got {detail:?}");
-    assert!(detail.contains("unknown_motor"), "detail must mention unknown_motor; got {detail:?}");
-    assert!(body["readback_rad"].is_null(), "no readback was performed; got {body}");
+    assert!(
+        detail.starts_with("step 2"),
+        "detail must name failing step; got {detail:?}"
+    );
+    assert!(
+        detail.contains("unknown_motor"),
+        "detail must mention unknown_motor; got {detail:?}"
+    );
+    assert!(
+        body["readback_rad"].is_null(),
+        "no readback was performed; got {body}"
+    );
 
     // Inventory file must be byte-identical to the pre-request snapshot.
     let inv_after = std::fs::read_to_string(&inv_path).expect("re-read inventory");
-    assert_eq!(inv_before, inv_after, "rejected commission must not touch inventory.yaml");
+    assert_eq!(
+        inv_before, inv_after,
+        "rejected commission must not touch inventory.yaml"
+    );
 }
 
 /// `commission` against an absent motor (inventory.yaml has
@@ -1875,7 +1896,7 @@ async fn commission_endpoint_motor_absent_rejected_cleanly() {
     // Mark shoulder_actuator_a as absent.
     {
         let mut inv = state.inventory.write().expect("inventory");
-        let a = common::actuator_mut(&mut *inv, "shoulder_actuator_a").unwrap();
+        let a = common::actuator_mut(&mut inv, "shoulder_actuator_a").unwrap();
         a.common.present = false;
     }
     let app = rudydae::build_app(state.clone());
@@ -1895,14 +1916,26 @@ async fn commission_endpoint_motor_absent_rejected_cleanly() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::CONFLICT);
     let body: serde_json::Value = body_json(resp).await;
-    assert_eq!(body["error"], serde_json::Value::String("commission_failed".into()));
+    assert_eq!(
+        body["error"],
+        serde_json::Value::String("commission_failed".into())
+    );
     let detail = body["detail"].as_str().unwrap_or("");
-    assert!(detail.starts_with("step 2"), "detail must name failing step; got {detail:?}");
-    assert!(detail.contains("motor_absent"), "detail must mention motor_absent; got {detail:?}");
+    assert!(
+        detail.starts_with("step 2"),
+        "detail must name failing step; got {detail:?}"
+    );
+    assert!(
+        detail.contains("motor_absent"),
+        "detail must mention motor_absent; got {detail:?}"
+    );
     assert!(body["readback_rad"].is_null());
 
     let inv_after = std::fs::read_to_string(&inv_path).expect("re-read inventory");
-    assert_eq!(inv_before, inv_after, "rejected commission must not touch inventory.yaml");
+    assert_eq!(
+        inv_before, inv_after,
+        "rejected commission must not touch inventory.yaml"
+    );
 }
 
 /// `commission` records its outcome in the audit log, including the
@@ -1925,13 +1958,12 @@ async fn commission_endpoint_audit_logs_readback() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 
-    let raw = std::fs::read_to_string(dir.path().join("audit.jsonl"))
-        .expect("audit log must exist");
+    let raw =
+        std::fs::read_to_string(dir.path().join("audit.jsonl")).expect("audit log must exist");
     let last = raw
         .lines()
         .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
-        .filter(|e| e.get("action").and_then(|v| v.as_str()) == Some("commission"))
-        .last()
+        .rfind(|e| e.get("action").and_then(|v| v.as_str()) == Some("commission"))
         .expect("audit log must contain a commission entry");
     assert_eq!(last["result"].as_str(), Some("ok"));
     assert_eq!(last["target"].as_str(), Some("shoulder_actuator_a"));
@@ -1948,7 +1980,7 @@ async fn restore_offset_mock_clears_offset_changed() {
 
     {
         let mut inv = state.inventory.write().expect("inventory poisoned");
-        let a = common::actuator_mut(&mut *inv, "shoulder_actuator_a").expect("fixture motor");
+        let a = common::actuator_mut(&mut inv, "shoulder_actuator_a").expect("fixture motor");
         a.common.commissioned_zero_offset = Some(0.05);
     }
 
@@ -1990,7 +2022,7 @@ async fn restore_offset_rejects_when_not_offset_changed() {
     let app = rudydae::build_app(state.clone());
     {
         let mut inv = state.inventory.write().expect("inventory poisoned");
-        let a = common::actuator_mut(&mut *inv, "shoulder_actuator_a").expect("fixture motor");
+        let a = common::actuator_mut(&mut inv, "shoulder_actuator_a").expect("fixture motor");
         a.common.commissioned_zero_offset = Some(0.05);
     }
     common::set_boot_state(&state, "shoulder_actuator_a", BootState::InBand);
@@ -2008,7 +2040,10 @@ async fn restore_offset_rejects_when_not_offset_changed() {
     assert_eq!(resp.status(), StatusCode::CONFLICT);
     let body: serde_json::Value = body_json(resp).await;
     assert_eq!(body["error"], json!("restore_failed"));
-    assert!(body["detail"].as_str().unwrap_or("").contains("wrong_boot_state"));
+    assert!(body["detail"]
+        .as_str()
+        .unwrap_or("")
+        .contains("wrong_boot_state"));
 }
 
 /// Successful `commission` on one motor must not write commissioning fields
@@ -2051,7 +2086,7 @@ async fn restore_offset_audit_logs_success() {
 
     {
         let mut inv = state.inventory.write().expect("inventory poisoned");
-        let a = common::actuator_mut(&mut *inv, "shoulder_actuator_a").expect("fixture motor");
+        let a = common::actuator_mut(&mut inv, "shoulder_actuator_a").expect("fixture motor");
         a.common.commissioned_zero_offset = Some(0.05);
     }
 
@@ -2080,14 +2115,17 @@ async fn restore_offset_audit_logs_success() {
     let last = raw
         .lines()
         .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
-        .filter(|e| e.get("action").and_then(|v| v.as_str()) == Some("restore_offset"))
-        .last()
+        .rfind(|e| e.get("action").and_then(|v| v.as_str()) == Some("restore_offset"))
         .expect("audit log must contain restore_offset");
     assert_eq!(last["result"].as_str(), Some("ok"));
     assert_eq!(last["target"].as_str(), Some("shoulder_actuator_a"));
     assert_eq!(last["details"]["step"].as_str(), Some("ok"));
-    let restored = last["details"]["restored_rad"].as_f64().expect("restored_rad");
-    let readback = last["details"]["readback_rad"].as_f64().expect("readback_rad");
+    let restored = last["details"]["restored_rad"]
+        .as_f64()
+        .expect("restored_rad");
+    let readback = last["details"]["readback_rad"]
+        .as_f64()
+        .expect("readback_rad");
     assert!((restored - 0.05).abs() < 1e-5, "restored_rad: {restored}");
     assert!((readback - 0.05).abs() < 1e-5, "readback_rad: {readback}");
 }
@@ -2101,7 +2139,7 @@ async fn restore_offset_clears_boot_orchestrator_attempted() {
 
     {
         let mut inv = state.inventory.write().expect("inventory poisoned");
-        let a = common::actuator_mut(&mut *inv, "shoulder_actuator_a").expect("fixture motor");
+        let a = common::actuator_mut(&mut inv, "shoulder_actuator_a").expect("fixture motor");
         a.common.commissioned_zero_offset = Some(0.05);
     }
 
@@ -2132,13 +2170,11 @@ async fn restore_offset_clears_boot_orchestrator_attempted() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 
-    assert!(
-        !state
-            .boot_orchestrator_attempted
-            .lock()
-            .expect("poisoned")
-            .contains("shoulder_actuator_a")
-    );
+    assert!(!state
+        .boot_orchestrator_attempted
+        .lock()
+        .expect("poisoned")
+        .contains("shoulder_actuator_a"));
 }
 
 /// Rename of an enabled motor used to refuse with 409 `motor_active` and
@@ -2439,7 +2475,7 @@ async fn motion_sweep_starts_and_returns_run_id() {
     common::seed_feedback(&state);
     {
         let mut inv = state.inventory.write().expect("inventory");
-        let a = common::actuator_mut(&mut *inv, "shoulder_actuator_a").unwrap();
+        let a = common::actuator_mut(&mut inv, "shoulder_actuator_a").unwrap();
         a.common.travel_limits = Some(TravelLimits {
             min_rad: -0.5,
             max_rad: 0.5,
@@ -2520,7 +2556,7 @@ async fn motion_sweep_clamps_excessive_speed() {
     common::seed_feedback(&state);
     {
         let mut inv = state.inventory.write().expect("inventory");
-        let a = common::actuator_mut(&mut *inv, "shoulder_actuator_a").unwrap();
+        let a = common::actuator_mut(&mut inv, "shoulder_actuator_a").unwrap();
         a.common.travel_limits = Some(TravelLimits {
             min_rad: -0.5,
             max_rad: 0.5,

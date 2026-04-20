@@ -396,7 +396,8 @@ impl Inventory {
 
         for d in &self.devices {
             let role = d.role();
-            validate_role_format(role).with_context(|| format!("device {role} has invalid role format"))?;
+            validate_role_format(role)
+                .with_context(|| format!("device {role} has invalid role format"))?;
             if !roles.insert(role) {
                 return Err(anyhow!("duplicate role: {role}"));
             }
@@ -503,12 +504,7 @@ pub fn ordered_actuators_per_limb(inv: &Inventory) -> BTreeMap<String, Vec<&Actu
         by_limb.entry(limb.clone()).or_default().push(a);
     }
     for actuators in by_limb.values_mut() {
-        actuators.sort_by_key(|a| {
-            a.common
-                .joint_kind
-                .map(|jk| jk.home_order())
-                .unwrap_or(255)
-        });
+        actuators.sort_by_key(|a| a.common.joint_kind.map(|jk| jk.home_order()).unwrap_or(255));
     }
     by_limb
 }
@@ -741,7 +737,9 @@ motors:
     sourced_from: bench
 "#;
         let inv = migrate_v1_yaml_to_v2_inventory(v1).expect("migrate");
-        let a = inv.actuator_by_role("shoulder_actuator_a").expect("actuator");
+        let a = inv
+            .actuator_by_role("shoulder_actuator_a")
+            .expect("actuator");
         assert!(a.common.notes_yaml.is_some());
         assert!(a
             .common

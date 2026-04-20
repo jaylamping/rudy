@@ -31,10 +31,8 @@ use driver::CanBus;
 use crate::boot_state;
 use crate::can::backoff::MotorBackoff;
 use crate::can::bus_worker::{self, BusHandle, WriteValue};
-use crate::discovery::{
-    BusParamReader, DeviceProbeRegistry, DiscoveredDevice, HardwareScanReport,
-};
 use crate::config::Config;
+use crate::discovery::{BusParamReader, DeviceProbeRegistry, DiscoveredDevice, HardwareScanReport};
 use crate::inventory::{Inventory, Motor};
 use crate::spec::ParamDescriptor;
 use crate::state::{AppState, SharedState};
@@ -170,7 +168,12 @@ impl LinuxCanCore {
                     .as_f64()
                     .ok_or_else(|| anyhow!("expected numeric JSON value for {}", desc.ty))?
                     as f32;
-                handle.write_param(self.host_id, motor.common.can_id, desc.index, WriteValue::F32(v))?;
+                handle.write_param(
+                    self.host_id,
+                    motor.common.can_id,
+                    desc.index,
+                    WriteValue::F32(v),
+                )?;
                 serde_json::json!(v)
             }
             "uint8" | "u8" => {
@@ -178,7 +181,12 @@ impl LinuxCanCore {
                     .as_u64()
                     .ok_or_else(|| anyhow!("expected unsigned integer JSON value"))?;
                 let v = u8::try_from(v).context("u8 parameter out of range")?;
-                handle.write_param(self.host_id, motor.common.can_id, desc.index, WriteValue::U8(v))?;
+                handle.write_param(
+                    self.host_id,
+                    motor.common.can_id,
+                    desc.index,
+                    WriteValue::U8(v),
+                )?;
                 serde_json::json!(v)
             }
             "uint16" | "u16" => {
@@ -199,7 +207,12 @@ impl LinuxCanCore {
                     .as_u64()
                     .ok_or_else(|| anyhow!("expected unsigned integer JSON value"))?;
                 let v = u32::try_from(v).context("u32 parameter out of range")?;
-                handle.write_param(self.host_id, motor.common.can_id, desc.index, WriteValue::U32(v))?;
+                handle.write_param(
+                    self.host_id,
+                    motor.common.can_id,
+                    desc.index,
+                    WriteValue::U32(v),
+                )?;
                 serde_json::json!(v)
             }
             other => bail!("writes for parameter type {other} are not supported"),
@@ -275,7 +288,8 @@ impl LinuxCanCore {
                 )
             })?;
         let handle = self.handle_for(&motor.common.can_bus)?;
-        let bytes = handle.read_param(self.host_id, motor.common.can_id, desc.index, PARAM_TIMEOUT)?;
+        let bytes =
+            handle.read_param(self.host_id, motor.common.can_id, desc.index, PARAM_TIMEOUT)?;
         bytes
             .map(f32::from_le_bytes)
             .ok_or_else(|| anyhow!("read_add_offset returned no value (firmware read-fail)"))
@@ -316,7 +330,12 @@ impl LinuxCanCore {
     /// the firmware guard via the REST layer.
     pub fn set_velocity_setpoint(&self, motor: &Motor, vel_rad_s: f32) -> Result<()> {
         let handle = self.handle_for(&motor.common.can_bus)?;
-        handle.set_velocity(self.host_id, motor.common.can_id, &motor.common.role, vel_rad_s)?;
+        handle.set_velocity(
+            self.host_id,
+            motor.common.can_id,
+            &motor.common.role,
+            vel_rad_s,
+        )?;
         Ok(())
     }
 
@@ -552,12 +571,13 @@ impl LinuxCanCore {
         // sweeps.
         {
             let mut params = state.params.write().expect("params poisoned");
-            let snapshot = params
-                .entry(motor.common.role.clone())
-                .or_insert_with(|| ParamSnapshot {
-                    role: motor.common.role.clone(),
-                    values: BTreeMap::new(),
-                });
+            let snapshot =
+                params
+                    .entry(motor.common.role.clone())
+                    .or_insert_with(|| ParamSnapshot {
+                        role: motor.common.role.clone(),
+                        values: BTreeMap::new(),
+                    });
             let spec = state.spec_for(motor.robstride_model());
             for (name, desc) in spec.observables.iter() {
                 let value = match name.as_str() {
@@ -739,7 +759,8 @@ impl LinuxCanCore {
             .get(name)
             .ok_or_else(|| anyhow!("observable {name} not found in actuator spec"))?;
         let handle = self.handle_for(&motor.common.can_bus)?;
-        let bytes = handle.read_param(self.host_id, motor.common.can_id, desc.index, PARAM_TIMEOUT)?;
+        let bytes =
+            handle.read_param(self.host_id, motor.common.can_id, desc.index, PARAM_TIMEOUT)?;
         Ok(bytes.map(f32::from_le_bytes))
     }
 
@@ -755,7 +776,8 @@ impl LinuxCanCore {
             .get(name)
             .ok_or_else(|| anyhow!("observable {name} not found in actuator spec"))?;
         let handle = self.handle_for(&motor.common.can_bus)?;
-        let bytes = handle.read_param(self.host_id, motor.common.can_id, desc.index, PARAM_TIMEOUT)?;
+        let bytes =
+            handle.read_param(self.host_id, motor.common.can_id, desc.index, PARAM_TIMEOUT)?;
         Ok(bytes.map(u32::from_le_bytes))
     }
 
@@ -828,9 +850,9 @@ impl BusParamReader for LinuxCanCore {
         index: u16,
         timeout: Duration,
     ) -> io::Result<Option<[u8; 4]>> {
-        let handle = self.handle_for(iface).map_err(|e| {
-            io::Error::new(io::ErrorKind::Other, format!("{e:#}"))
-        })?;
+        let handle = self
+            .handle_for(iface)
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{e:#}")))?;
         handle.read_param(self.host_id, motor_id, index, timeout)
     }
 }

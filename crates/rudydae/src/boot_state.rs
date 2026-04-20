@@ -66,10 +66,7 @@ pub enum BootState {
     /// new position becomes the recorded zero) or restores
     /// (POST /restore_offset, the daemon writes the stored value back
     /// to firmware and re-saves to flash).
-    OffsetChanged {
-        stored_rad: f32,
-        current_rad: f32,
-    },
+    OffsetChanged { stored_rad: f32, current_rad: f32 },
     /// Boot orchestrator is currently driving the motor toward
     /// `predefined_home_rad` via the slow-ramp homer
     /// (`crate::can::slow_ramp::run`). Refuses operator-initiated motion
@@ -86,10 +83,7 @@ pub enum BootState {
     /// either retry via `POST /api/motors/:role/home` or re-position
     /// the joint manually. Carries the abort reason from
     /// `slow_ramp::run` and the last position the homer saw.
-    HomeFailed {
-        reason: String,
-        last_pos_rad: f32,
-    },
+    HomeFailed { reason: String, last_pos_rad: f32 },
 }
 
 impl BootState {
@@ -201,12 +195,7 @@ pub fn force_set_offset_changed(
 /// Mark `role` as currently being driven by the boot orchestrator's
 /// auto-home flow. Carries the from/target so the UI can render a
 /// progress bar without polling.
-pub fn force_set_auto_homing(
-    state: &SharedState,
-    role: &str,
-    from_rad: f32,
-    target_rad: f32,
-) {
+pub fn force_set_auto_homing(state: &SharedState, role: &str, from_rad: f32, target_rad: f32) {
     force_set(
         state,
         role,

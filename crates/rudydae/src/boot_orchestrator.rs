@@ -23,9 +23,8 @@
 //! Decision tree on every fire:
 //!
 //! - `cfg.safety.auto_home_on_boot == false` → log info, return.
-//! - motor `commissioned_zero_offset == None` → log info, return
-//!   (uncommissioned motors keep their pre-orchestrator behavior:
-//!    the operator must manually click Verify & Home every boot).
+//! - motor `commissioned_zero_offset == None` → log info, return (uncommissioned motors keep
+//!   prior behavior; the operator must manually click Verify & Home each boot).
 //! - `read_add_offset` fails (CAN error or firmware read-fail) → retry
 //!   once after 200 ms; if still failing, log warn and return without
 //!   force_setting any state. The next telemetry tick will retrigger
@@ -98,8 +97,8 @@ pub fn spawn_if_orchestrator_qualifies(
         }
         ClassifyOutcome::Unchanged => false,
     };
-    let seeded_in_band = aux_seeded_first_row
-        && matches!(boot_state::current(&state, &role), BootState::InBand);
+    let seeded_in_band =
+        aux_seeded_first_row && matches!(boot_state::current(&state, &role), BootState::InBand);
     if !in_band_transition && !seeded_in_band {
         return;
     }
@@ -297,7 +296,14 @@ pub async fn maybe_run(state: SharedState, role: String) {
     match outcome {
         Ok((final_pos_rad, ticks)) => {
             boot_state::mark_homed(&state, &role);
-            audit_auto_homed(&state, &role, mech_pos_rad, target_rad, ticks, final_pos_rad);
+            audit_auto_homed(
+                &state,
+                &role,
+                mech_pos_rad,
+                target_rad,
+                ticks,
+                final_pos_rad,
+            );
             let _ = state.safety_event_tx.send(SafetyEvent::AutoHomed {
                 t_ms: Utc::now().timestamp_millis(),
                 role: role.clone(),

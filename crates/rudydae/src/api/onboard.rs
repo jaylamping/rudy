@@ -5,11 +5,7 @@
 //! the band. Hot-swaps `state.inventory` and drops the `(can_bus, can_id)` from
 //! `seen_can_ids` when present.
 
-use axum::{
-    extract::State,
-    http::StatusCode,
-    Json,
-};
+use axum::{extract::State, http::StatusCode, Json};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
@@ -183,7 +179,10 @@ pub async fn onboard_robstride(
             if inv.by_role(&role_for_task).is_some() {
                 anyhow::bail!("role_in_use");
             }
-            if inv.by_can_id(&body_clone.can_bus, body_clone.can_id).is_some() {
+            if inv
+                .by_can_id(&body_clone.can_bus, body_clone.can_id)
+                .is_some()
+            {
                 anyhow::bail!("can_id_in_use");
             }
             let actuator = Actuator {
@@ -218,9 +217,7 @@ pub async fn onboard_robstride(
     .expect("onboard write task panicked")
     .map_err(|e| {
         let msg = format!("{e:#}");
-        let code = if msg.contains("role_in_use") {
-            StatusCode::CONFLICT
-        } else if msg.contains("can_id_in_use") {
+        let code = if msg.contains("role_in_use") || msg.contains("can_id_in_use") {
             StatusCode::CONFLICT
         } else {
             StatusCode::INTERNAL_SERVER_ERROR

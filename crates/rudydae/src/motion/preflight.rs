@@ -207,7 +207,8 @@ impl PreflightChecks<'_> {
         }
 
         let limb_id = crate::limb_health::effective_limb_id(&motor);
-        let failed = crate::limb_health::sibling_quarantine_failures(self.state, &limb_id, self.role);
+        let failed =
+            crate::limb_health::sibling_quarantine_failures(self.state, &limb_id, self.role);
         if !failed.is_empty() {
             return Err(PreflightFailure::LimbQuarantined {
                 limb: limb_id,

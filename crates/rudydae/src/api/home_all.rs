@@ -81,10 +81,7 @@ async fn drive_predefined_home(
     match bs {
         BootState::InBand => {}
         BootState::Homed => {
-            return Err((
-                "already_homed".into(),
-                last_measured(&state, &role, 0.0),
-            ));
+            return Err(("already_homed".into(), last_measured(&state, &role, 0.0)));
         }
         BootState::Unknown => return Err(("not_ready".into(), f32::NAN)),
         BootState::OutOfBand {
@@ -106,10 +103,7 @@ async fn drive_predefined_home(
 
     let target_rad = motor.common.predefined_home_rad.unwrap_or(0.0);
     if !target_rad.is_finite() {
-        return Err((
-            "bad_target".into(),
-            last_measured(&state, &role, 0.0),
-        ));
+        return Err(("bad_target".into(), last_measured(&state, &role, 0.0)));
     }
 
     let current_pos = state
@@ -131,9 +125,7 @@ async fn drive_predefined_home(
             attempted_rad,
         } => {
             return Err((
-                format!(
-                    "target {attempted_rad:.3} rad outside [{min_rad:.3}, {max_rad:.3}]"
-                ),
+                format!("target {attempted_rad:.3} rad outside [{min_rad:.3}, {max_rad:.3}]"),
                 current_pos,
             ));
         }
@@ -195,7 +187,7 @@ pub async fn home_all(
         ));
     }
 
-    for (limb_name, _) in &by_limb {
+    for limb_name in by_limb.keys() {
         if let limb_health::LimbStatus::Quarantined { failed_motors } =
             limb_health::limb_status(&state, limb_name)
         {
@@ -249,11 +241,7 @@ pub async fn home_all(
     let mut torso: Vec<(String, String)> = Vec::new();
     for (limb, motors) in &by_limb {
         for m in motors {
-            if m.common
-                .joint_kind
-                .map(|jk| jk.is_torso())
-                .unwrap_or(false)
-            {
+            if m.common.joint_kind.map(|jk| jk.is_torso()).unwrap_or(false) {
                 torso.push((limb.clone(), m.common.role.clone()));
             }
         }
@@ -307,22 +295,17 @@ pub async fn home_all(
             let all = motors;
             let drive_queue: Vec<Motor> = all
                 .iter()
-                .filter(|m| {
-                    !m.common
-                        .joint_kind
-                        .map(|jk| jk.is_torso())
-                        .unwrap_or(false)
-                })
+                .filter(|m| !m.common.joint_kind.map(|jk| jk.is_torso()).unwrap_or(false))
                 .cloned()
                 .collect();
 
             let mut homed: Vec<String> = Vec::new();
             for m in &all {
-                if m.common
-                    .joint_kind
-                    .map(|jk| jk.is_torso())
-                    .unwrap_or(false)
-                    && matches!(boot_state::current(&state, &m.common.role), BootState::Homed)
+                if m.common.joint_kind.map(|jk| jk.is_torso()).unwrap_or(false)
+                    && matches!(
+                        boot_state::current(&state, &m.common.role),
+                        BootState::Homed
+                    )
                 {
                     homed.push(m.common.role.clone());
                 }

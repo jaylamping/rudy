@@ -814,11 +814,7 @@ fn handle_cmd(
     }
 }
 
-fn role_for_can_id(
-    state: &Arc<crate::state::AppState>,
-    iface: &str,
-    can_id: u8,
-) -> Option<String> {
+fn role_for_can_id(state: &Arc<crate::state::AppState>, iface: &str, can_id: u8) -> Option<String> {
     state
         .inventory
         .read()

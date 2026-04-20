@@ -49,12 +49,7 @@ pub async fn get_travel_limits(
             Some(format!("no motor with role={role}")),
         )
     })?;
-    motor
-        .common
-        .travel_limits
-        .clone()
-        .map(Json)
-        .ok_or_else(|| {
+    motor.common.travel_limits.clone().map(Json).ok_or_else(|| {
         err(
             StatusCode::NOT_FOUND,
             "no_travel_limits",

@@ -251,7 +251,8 @@ pub async fn commission(
     // The boot-time tolerance lives in `safety.commission_readback_tolerance_rad`,
     // landing in Phase C.4.)
     if !readback_rad.is_finite() {
-        let detail = format!("step 6 (readback): firmware reported non-finite value {readback_rad}");
+        let detail =
+            format!("step 6 (readback): firmware reported non-finite value {readback_rad}");
         audit(
             &state,
             session.clone(),
@@ -261,11 +262,7 @@ pub async fn commission(
             Some(readback_rad),
             Some(&detail),
         );
-        return Err(fail(
-            StatusCode::BAD_GATEWAY,
-            detail,
-            Some(readback_rad),
-        ));
+        return Err(fail(StatusCode::BAD_GATEWAY, detail, Some(readback_rad)));
     }
 
     // Step 7 — atomic inventory rewrite. If this fails (ENOSPC,

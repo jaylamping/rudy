@@ -185,9 +185,7 @@ async fn main() -> Result<()> {
 
     can::spawn(app_state.clone())?;
 
-    if app_state.cfg.safety.scan_on_boot
-        && !app_state.cfg.can.mock
-        && app_state.real_can.is_some()
+    if app_state.cfg.safety.scan_on_boot && !app_state.cfg.can.mock && app_state.real_can.is_some()
     {
         let st = app_state.clone();
         tokio::spawn(async move {

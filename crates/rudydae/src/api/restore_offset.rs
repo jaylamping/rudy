@@ -47,6 +47,7 @@ fn fail(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn audit(
     state: &SharedState,
     session: Option<String>,
@@ -144,7 +145,8 @@ pub async fn restore_offset(
     }
 
     let Some(stored_commission) = motor.common.commissioned_zero_offset else {
-        let detail = "motor has no commissioned_zero_offset; use POST /commission first".to_string();
+        let detail =
+            "motor has no commissioned_zero_offset; use POST /commission first".to_string();
         audit(
             &state,
             session.clone(),
@@ -155,7 +157,11 @@ pub async fn restore_offset(
             None,
             Some(&detail),
         );
-        return Err(fail(StatusCode::CONFLICT, format!("step 3 (not_commissioned): {detail}"), None));
+        return Err(fail(
+            StatusCode::CONFLICT,
+            format!("step 3 (not_commissioned): {detail}"),
+            None,
+        ));
     };
 
     if !stored_commission.is_finite() {
@@ -179,7 +185,10 @@ pub async fn restore_offset(
 
     let bs = boot_state::current(&state, &role);
     let BootState::OffsetChanged { stored_rad, .. } = bs else {
-        let detail = format!("boot_state is {:?}, not OffsetChanged; nothing to restore", bs);
+        let detail = format!(
+            "boot_state is {:?}, not OffsetChanged; nothing to restore",
+            bs
+        );
         audit(
             &state,
             session.clone(),
@@ -255,7 +264,8 @@ pub async fn restore_offset(
     };
 
     if !readback_rad.is_finite() {
-        let detail = format!("step 6 (readback): firmware reported non-finite value {readback_rad}");
+        let detail =
+            format!("step 6 (readback): firmware reported non-finite value {readback_rad}");
         audit(
             &state,
             session.clone(),
@@ -266,11 +276,7 @@ pub async fn restore_offset(
             Some(readback_rad),
             Some(&detail),
         );
-        return Err(fail(
-            StatusCode::BAD_GATEWAY,
-            detail,
-            Some(readback_rad),
-        ));
+        return Err(fail(StatusCode::BAD_GATEWAY, detail, Some(readback_rad)));
     }
 
     if (readback_rad - stored_commission).abs() > tol {
@@ -287,11 +293,7 @@ pub async fn restore_offset(
             Some(readback_rad),
             Some(&detail),
         );
-        return Err(fail(
-            StatusCode::BAD_GATEWAY,
-            detail,
-            Some(readback_rad),
-        ));
+        return Err(fail(StatusCode::BAD_GATEWAY, detail, Some(readback_rad)));
     }
 
     boot_state::reset_to_unknown(&state, &role);

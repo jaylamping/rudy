@@ -16,7 +16,7 @@ const ROLE: &str = "shoulder_actuator_a";
 
 fn set_commissioned_zero(state: &rudydae::state::SharedState, role: &str, rad: f32) {
     let mut inv = state.inventory.write().expect("inventory poisoned");
-    let a = common::actuator_mut(&mut *inv, role).expect("fixture motor");
+    let a = common::actuator_mut(&mut inv, role).expect("fixture motor");
     a.common.commissioned_zero_offset = Some(rad);
 }
 
@@ -216,7 +216,8 @@ async fn orchestrator_homer_timeout_marks_home_failed() {
     let audit_path = state.cfg.paths.audit_log.clone();
     let raw = std::fs::read_to_string(audit_path).expect("audit log");
     assert!(
-        raw.lines().any(|l| l.contains("boot_orchestrator_home_failed")),
+        raw.lines()
+            .any(|l| l.contains("boot_orchestrator_home_failed")),
         "audit log should record boot_orchestrator_home_failed"
     );
 }
@@ -241,10 +242,7 @@ async fn spawn_if_triggers_maybe_run_on_out_of_band_to_in_band() {
 
     tokio::time::timeout(Duration::from_secs(3), async {
         loop {
-            if matches!(
-                rudydae::boot_state::current(&state, ROLE),
-                BootState::Homed
-            ) {
+            if matches!(rudydae::boot_state::current(&state, ROLE), BootState::Homed) {
                 break;
             }
             tokio::time::sleep(Duration::from_millis(20)).await;

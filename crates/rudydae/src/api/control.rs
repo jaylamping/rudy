@@ -198,7 +198,10 @@ pub async fn enable(
                 "auto_homing_in_progress",
                 format!("{role} is being driven by the boot orchestrator's auto-home"),
             ),
-            BootState::HomeFailed { reason, last_pos_rad } => (
+            BootState::HomeFailed {
+                reason,
+                last_pos_rad,
+            } => (
                 "home_failed",
                 format!(
                     "{role} auto-home aborted: {reason} at {last_pos_rad:.3} rad; \

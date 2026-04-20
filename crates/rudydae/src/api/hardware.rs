@@ -75,7 +75,10 @@ pub struct ScanResponse {
     pub message: Option<String>,
 }
 
-pub async fn scan(State(state): State<SharedState>, Json(body): Json<ScanBody>) -> Json<ScanResponse> {
+pub async fn scan(
+    State(state): State<SharedState>,
+    Json(body): Json<ScanBody>,
+) -> Json<ScanResponse> {
     let id_min = body.id_min.unwrap_or(1);
     let id_max = body.id_max.unwrap_or(0x7F);
     let timeout_ms = body.timeout_ms.unwrap_or(50).clamp(10, 500);

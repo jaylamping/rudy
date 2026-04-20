@@ -186,9 +186,8 @@ mod tests {
             _index: u16,
             _timeout: Duration,
         ) -> io::Result<Option<[u8; 4]>> {
-            self.ok_reply.ok_or_else(|| {
-                io::Error::new(io::ErrorKind::TimedOut, "mock timeout")
-            })
+            self.ok_reply
+                .ok_or_else(|| io::Error::new(io::ErrorKind::TimedOut, "mock timeout"))
         }
     }
 
@@ -198,7 +197,9 @@ mod tests {
             ok_reply: Some(None),
         };
         let p = RobstrideProbe::default();
-        let dev = p.probe(&reader, "can0", 0x55, Duration::from_millis(1)).unwrap();
+        let dev = p
+            .probe(&reader, "can0", 0x55, Duration::from_millis(1))
+            .unwrap();
         assert_eq!(dev.bus, "can0");
         assert_eq!(dev.can_id, 0x55);
         assert_eq!(dev.family_hint, "robstride");

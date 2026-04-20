@@ -38,10 +38,7 @@ pub fn router(state: SharedState) -> Router<SharedState> {
         .route("/config", get(config_route::get_config))
         .route("/system", get(system::get_system))
         .route("/devices", get(devices::list_devices))
-        .route(
-            "/hardware/unassigned",
-            get(hardware::list_unassigned),
-        )
+        .route("/hardware/unassigned", get(hardware::list_unassigned))
         .route("/hardware/scan", post(hardware::scan))
         .route(
             "/hardware/onboard/robstride",
