@@ -28,7 +28,7 @@ todos:
     status: pending
   - id: travel-rail-from-spec
     content: "`crates/rudydae/src/can/travel.rs:18-24` hardcodes `HARDWARE_*_RAD = ±4π` as the outer rail, with a comment 'matches the RS03 spec.protocol.position_min_rad/position_max_rad'. Move this to `RobstrideSpec` (read from `op_control_scaling.position.range` per model) and resolve per-actuator via the new `state.spec_for(model)`. Different models may have different MIT position ranges; today's hardcoding is a latent bug that this todo eliminates. Add `travel_rail_from_spec_per_model` test."
-    status: pending
+    status: completed
   - id: passive-seen-ids-tracker
     content: "On `AppState`, add `pub seen_can_ids: Arc<RwLock<HashMap<(String, u8), SeenInfo>>>` where `SeenInfo { first_seen_ms: i64, last_seen_ms: i64, frame_count: u64 }`. In `bus_worker::handle_frame`, BEFORE the existing `apply_type2` / type-17 dispatch, extract source motor ID from the arbitration ID (existing helper) and update `seen_can_ids[(bus, src_motor)]`. Cost: one HashMap update per received frame; benchmark first to ensure no regression vs. the current per-frame budget. The map is unbounded by ID space (max 127 entries per bus); no eviction needed. Used by `GET /api/hardware/unassigned` to surface IDs that have been seen on the bus but aren't in inventory."
     status: pending
@@ -85,9 +85,9 @@ isProject: false
 
 ## Progress (update as work lands)
 
-**Last updated:** 2026-04-19 (`per-device-spec-resolution` landed).
+**Last updated:** 2026-04-19 (`travel-rail-from-spec` landed).
 
-**Current phase:** **Phase C — per-model spec resolution**. Next todo: `travel-rail-from-spec` → `rsactuator-trait-adoption`.
+**Current phase:** **Phase C — per-model spec resolution**. Next todo: `rsactuator-trait-adoption`.
 
 ### Phase C handoff (for new chat / new session)
 
@@ -95,8 +95,7 @@ isProject: false
 
 2. **`per-device-spec-resolution`** — **done**: `spec::load_robstride_specs`, `AppState.specs` + `spec_for`, boot inventory-vs-spec check; `/api/config` exposes `actuator_models`; Linux CAN + telemetry + params resolve per actuator model; tests use `robstride_rs03.yaml` fixtures.
 
-3. **`travel-rail-from-spec`** — `crates/rudydae/src/can/travel.rs`  
-   Replace hardcoded `HARDWARE_*_RAD` with per-model rails from `op_control_scaling` (or equivalent) via `state.spec_for`.
+3. **`travel-rail-from-spec`** — **done**: `ActuatorSpec::mit_position_rail_rad`, `validate_band(..., hw_min, hw_max)`, `PUT travel_limits` resolves rail per actuator model; tests in `spec.rs` + `travel_rail_from_spec_per_model` in `can/travel.rs`.
 
 4. **`rsactuator-trait-adoption`** — `bus_worker`, `can/linux.rs`, `ros/src/driver/.../robstride`  
    Route `driver::rs03::*` use through `RsActuator` trait; dispatch per `RobstrideModel` from inventory.

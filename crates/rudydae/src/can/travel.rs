@@ -4,9 +4,9 @@
 //! outside the motor's `travel_limits` band. Reused by the jog endpoint
 //! (today) and any future move-to / position-target endpoints (tomorrow).
 //!
-//! The hardware envelope (±4π per RS03 spec) is the absolute outer rail for
-//! validation in `validate_band` — both the operator UI and the daemon
-//! refuse to write a band wider than that.
+//! The hardware envelope for travel-limit writes is the MIT position rail from
+//! each actuator's loaded spec ([`crate::spec::ActuatorSpec::mit_position_rail_rad`]
+//! — `op_control_scaling.position.range` in `robstride_*.yaml`).
 
 use anyhow::Result;
 
@@ -15,28 +15,27 @@ use crate::inventory::TravelLimits;
 use crate::state::SharedState;
 use crate::types::SafetyEvent;
 
-/// Outer rail used to bound every `travel_limits` write. Matches the RS03
-/// MIT-mode position-control encoding (`op_control_scaling.position.range`
-/// in `config/actuators/robstride_rs03.yaml`). A band wider than this would
-/// be useless because the firmware can't even receive a setpoint outside
-/// it.
-pub const HARDWARE_POSITION_MIN_RAD: f32 = -4.0 * std::f32::consts::PI;
-pub const HARDWARE_POSITION_MAX_RAD: f32 = 4.0 * std::f32::consts::PI;
-
-/// Validate a candidate `[min_rad, max_rad]` band against the hardware outer
-/// rail and basic monotonicity. Returns the static reason string the API
-/// layer should surface verbatim to the SPA (or `Ok(())`).
-pub fn validate_band(min_rad: f32, max_rad: f32) -> Result<(), &'static str> {
+/// Validate a candidate `[min_rad, max_rad]` band against the MIT position outer
+/// rail for this actuator model and basic monotonicity. Returns the static reason
+/// string the API layer should surface verbatim to the SPA (or `Ok(())`).
+///
+/// `hardware_position_*` come from [`crate::spec::ActuatorSpec::mit_position_rail_rad`].
+pub fn validate_band(
+    min_rad: f32,
+    max_rad: f32,
+    hardware_position_min_rad: f32,
+    hardware_position_max_rad: f32,
+) -> Result<(), &'static str> {
     if !min_rad.is_finite() || !max_rad.is_finite() {
         return Err("non-finite travel bound");
     }
     if min_rad >= max_rad {
         return Err("travel min must be strictly less than travel max");
     }
-    if min_rad < HARDWARE_POSITION_MIN_RAD {
+    if min_rad < hardware_position_min_rad {
         return Err("travel min below hardware envelope");
     }
-    if max_rad > HARDWARE_POSITION_MAX_RAD {
+    if max_rad > hardware_position_max_rad {
         return Err("travel max above hardware envelope");
     }
     Ok(())
@@ -196,27 +195,47 @@ pub fn enforce_position_with_path(
 mod tests {
     use super::*;
 
+    fn rail_pm_four_pi() -> (f32, f32) {
+        let w = 4.0 * std::f32::consts::PI;
+        (-w, w)
+    }
+
     #[test]
     fn validate_band_rejects_inverted_band() {
-        assert!(validate_band(1.0, -1.0).is_err());
-        assert!(validate_band(0.0, 0.0).is_err());
+        let (lo, hi) = rail_pm_four_pi();
+        assert!(validate_band(1.0, -1.0, lo, hi).is_err());
+        assert!(validate_band(0.0, 0.0, lo, hi).is_err());
     }
 
     #[test]
     fn validate_band_rejects_non_finite() {
-        assert!(validate_band(f32::NAN, 1.0).is_err());
-        assert!(validate_band(0.0, f32::INFINITY).is_err());
+        let (lo, hi) = rail_pm_four_pi();
+        assert!(validate_band(f32::NAN, 1.0, lo, hi).is_err());
+        assert!(validate_band(0.0, f32::INFINITY, lo, hi).is_err());
     }
 
     #[test]
     fn validate_band_enforces_outer_rail() {
-        assert!(validate_band(HARDWARE_POSITION_MIN_RAD - 0.01, 0.0).is_err());
-        assert!(validate_band(0.0, HARDWARE_POSITION_MAX_RAD + 0.01).is_err());
+        let (lo, hi) = rail_pm_four_pi();
+        assert!(validate_band(lo - 0.01, 0.0, lo, hi).is_err());
+        assert!(validate_band(0.0, hi + 0.01, lo, hi).is_err());
     }
 
     #[test]
     fn validate_band_accepts_normal_band() {
-        assert!(validate_band(-1.0, 1.0).is_ok());
+        let (lo, hi) = rail_pm_four_pi();
+        assert!(validate_band(-1.0, 1.0, lo, hi).is_ok());
+    }
+
+    /// Wider vs narrow MIT rails behave like distinct actuator models.
+    #[test]
+    fn travel_rail_from_spec_per_model() {
+        let narrow = (-1.0_f32, 1.0_f32);
+        assert!(validate_band(-0.5, 0.5, narrow.0, narrow.1).is_ok());
+        assert!(validate_band(-2.0, 0.0, narrow.0, narrow.1).is_err());
+
+        let wide = (-10.0_f32, 10.0_f32);
+        assert!(validate_band(-2.0, 0.0, wide.0, wide.1).is_ok());
     }
 }
 

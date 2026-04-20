@@ -319,6 +319,20 @@ impl ActuatorSpec {
         }
         out
     }
+
+    /// MIT op-control position outer rail from `op_control_scaling.position.range` (radians).
+    ///
+    /// Degenerate or non-finite YAML (common in minimal test fixtures) falls back to ±4π,
+    /// matching the historical single–RS03 envelope.
+    pub fn mit_position_rail_rad(&self) -> (f32, f32) {
+        const FALLBACK_HALF_WIDTH: f32 = 4.0 * std::f32::consts::PI;
+        let [lo, hi] = self.op_control_scaling.position.range;
+        if lo.is_finite() && hi.is_finite() && lo < hi {
+            (lo, hi)
+        } else {
+            (-FALLBACK_HALF_WIDTH, FALLBACK_HALF_WIDTH)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -394,5 +408,20 @@ thermal: {{}}
     fn robstride_spec_wrapper_loads() {
         let s = RobstrideSpec::load(repo_rs03_path()).expect("wrapper load");
         assert_eq!(s.actuator_model, "RS03");
+    }
+
+    #[test]
+    fn travel_rail_from_spec_rs03_matches_op_control_range() {
+        let spec = ActuatorSpec::load(repo_rs03_path()).expect("load");
+        let (lo, hi) = spec.mit_position_rail_rad();
+        assert!((lo - spec.op_control_scaling.position.range[0]).abs() < 1e-5);
+        assert!((hi - spec.op_control_scaling.position.range[1]).abs() < 1e-5);
+    }
+
+    #[test]
+    fn travel_rail_from_spec_per_model_narrow_range() {
+        let mut spec = ActuatorSpec::load(repo_rs03_path()).expect("load");
+        spec.op_control_scaling.position.range = [-1.25, 2.5];
+        assert_eq!(spec.mit_position_rail_rad(), (-1.25, 2.5));
     }
 }

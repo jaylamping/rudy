@@ -84,28 +84,26 @@ pub async fn put_travel_limits(
         ));
     }
 
-    if let Err(reason) = validate_band(body.min_rad, body.max_rad) {
+    let model = {
+        let inv = state.inventory.read().expect("inventory poisoned");
+        let motor = inv.actuator_by_role(&role).ok_or_else(|| {
+            err(
+                StatusCode::NOT_FOUND,
+                "unknown_motor",
+                Some(format!("no motor with role={role}")),
+            )
+        })?;
+        motor.robstride_model()
+    };
+    let (hw_lo, hw_hi) = state.spec_for(model).mit_position_rail_rad();
+
+    if let Err(reason) = validate_band(body.min_rad, body.max_rad, hw_lo, hw_hi) {
         audit_denied(&state, session.as_deref(), &role, reason, &body);
         return Err(err(
             StatusCode::BAD_REQUEST,
             "out_of_range",
             Some(reason.to_string()),
         ));
-    }
-
-    // Verify the motor exists before we touch the file. The inventory file
-    // is the single source of truth on disk; if the motor disappears from
-    // it between this check and `write_atomic`, the closure returns
-    // `unknown_motor` too.
-    {
-        let inv = state.inventory.read().expect("inventory poisoned");
-        if inv.actuator_by_role(&role).is_none() {
-            return Err(err(
-                StatusCode::NOT_FOUND,
-                "unknown_motor",
-                Some(format!("no motor with role={role}")),
-            ));
-        }
     }
 
     let limits = TravelLimits {
