@@ -242,7 +242,7 @@ async fn run_real(
         };
         let common = Common {
             host_id: 0xFD,
-            motor_id: motor.can_id,
+            motor_id: motor.common.can_id,
         };
         let stop = AtomicBool::new(false);
 
@@ -259,16 +259,16 @@ async fn run_real(
             .clone()
             .expect("real_can present");
         match test {
-            TestName::Read => core.with_bus_for_test(&motor.can_bus, |bus| {
+            TestName::Read => core.with_bus_for_test(&motor.common.can_bus, |bus| {
                 bench::run_read(bus, &common, &mut reporter)
             }),
-            TestName::SetZero => core.with_bus_for_test(&motor.can_bus, |bus| {
+            TestName::SetZero => core.with_bus_for_test(&motor.common.can_bus, |bus| {
                 bench::run_set_zero(bus, &common, body.save, &mut reporter)
             }),
-            TestName::Smoke => core.with_bus_for_test(&motor.can_bus, |bus| {
+            TestName::Smoke => core.with_bus_for_test(&motor.common.can_bus, |bus| {
                 bench::run_smoke(bus, &common, true, &stop, &mut reporter)
             }),
-            TestName::Jog => core.with_bus_for_test(&motor.can_bus, |bus| {
+            TestName::Jog => core.with_bus_for_test(&motor.common.can_bus, |bus| {
                 bench::run_jog(
                     bus,
                     &common,
@@ -282,7 +282,7 @@ async fn run_real(
                     &mut reporter,
                 )
             }),
-            TestName::JogOverlimit => core.with_bus_for_test(&motor.can_bus, |bus| {
+            TestName::JogOverlimit => core.with_bus_for_test(&motor.common.can_bus, |bus| {
                 bench::run_jog(
                     bus,
                     &common,

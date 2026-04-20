@@ -789,6 +789,7 @@ impl LinuxCanCore {
     ) -> Result<serde_json::Value> {
         if name == "firmware_version" {
             return Ok(motor
+                .common
                 .firmware_version
                 .clone()
                 .map(serde_json::Value::String)
