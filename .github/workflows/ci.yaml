@@ -160,13 +160,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # `npm run build` -> `bake-urdf.mjs` copies *.glb out of
-          # ros/src/description/meshes/ into link/public/robot/meshes/. Those
-          # are Git LFS objects (see .gitattributes); without `lfs: true`
-          # we'd ship 140-byte LFS pointer files and the GLTFLoader in the
-          # operator console would explode with a JSON parse error on
-          # "version https://git-lfs.github.com/spec/v1".
-          lfs: true
+          # Do not fetch Git LFS here: org LFS bandwidth can block checkout entirely.
+          # `bake-urdf.mjs` copies real glTF from `link/scripts/ci-lfs-fallback/meshes/`
+          # when `ros/.../meshes/*.glb` are still pointer files.
+          lfs: false
       - uses: actions/setup-node@v4
         with:
           node-version: "22"

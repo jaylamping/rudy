@@ -41,6 +41,9 @@ const OUT_DIR = join(LINK, "public", "robot");
 const OUT_URDF = join(OUT_DIR, "robot.urdf");
 const OUT_MESH_DIR = join(OUT_DIR, "meshes");
 const FALLBACK_URDF = join(HERE, "baked-robot.urdf");
+// Byte-identical to `ros/src/description/meshes/*.glb`, stored outside LFS so
+// `npm run build` works when meshes are still LFS pointer files (CI budget).
+const CI_LFS_FALLBACK_MESH_DIR = join(HERE, "ci-lfs-fallback", "meshes");
 const OUT_MANIFEST = join(OUT_DIR, "manifest.json");
 
 const MANIFEST_VERSION = 1;
@@ -95,18 +98,27 @@ async function copyMeshes() {
   const pointers = [];
   for (const name of entries) {
     const src = join(MESH_DIR, name);
+    const dst = join(OUT_MESH_DIR, name);
     if (await isLfsPointer(src)) {
+      const fallback = join(CI_LFS_FALLBACK_MESH_DIR, name);
+      if (existsSync(fallback) && !(await isLfsPointer(fallback))) {
+        console.warn(
+          `bake-urdf: ${src} is an LFS pointer; using plain-git fallback ${fallback}`,
+        );
+        await copyFile(fallback, dst);
+        continue;
+      }
       pointers.push(name);
       continue;
     }
-    await copyFile(src, join(OUT_MESH_DIR, name));
+    await copyFile(src, dst);
   }
   if (pointers.length > 0) {
     console.error(
       `bake-urdf: ${pointers.length} mesh(es) are unresolved Git LFS pointers:\n` +
         pointers.map((n) => `  - ${join(MESH_DIR, n)}`).join("\n") +
-        "\n  Install Git LFS and run `git lfs pull` in the repo root, then re-run this script.\n" +
-        "  In CI, set `lfs: true` on actions/checkout. Refusing to bake placeholder bytes.",
+        "\n  Install Git LFS and run `git lfs pull` in the repo root, or add a matching file under\n" +
+        `  ${CI_LFS_FALLBACK_MESH_DIR}/ (see .gitattributes). Refusing to bake placeholder bytes.`,
     );
     process.exit(1);
   }
