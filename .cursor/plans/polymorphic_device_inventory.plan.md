@@ -22,7 +22,7 @@ todos:
     status: pending
   - id: extend-spec-struct
     content: "Extend `ActuatorSpec` (`crates/rudydae/src/spec.rs:13-24`) to actually parse the YAML sections it currently ignores: `protocol` (id_layout, comm_types map, bitrate), `hardware` (gear_ratio, encoder_resolution_bits, torque_constant_nm_per_arms, etc.), `op_control_scaling` (position/velocity/kp/kd/torque_ff ranges — used for MIT mode), `thermal` (derating curves). Add validation: `actuator_model` field must match the filename (e.g. `robstride_rs03.yaml` must contain `actuator_model: RS03`) so the spec loader's filename→model mapping can't go wrong. Add a `RobstrideSpec` newtype that wraps `ActuatorSpec` plus the additional protocol/hardware sections, since (long-term) non-RobStride actuator families will need their own spec shape and we want the type system to catch family-mismatch at compile time."
-    status: pending
+    status: completed
   - id: rsactuator-trait-adoption
     content: "rudydae's CAN paths (`bus_worker.rs`, `linux.rs`) currently `use driver::rs03::{session, feedback, frame, params}` directly — RS03 is hardcoded by import. Refactor to dispatch through the existing-but-unused `driver::robstride::RsActuator` trait (already defined in `ros/src/driver/src/robstride/mod.rs`). Each `Actuator` value in the inventory resolves to a concrete impl: `Robstride { model: Rs03 }` → `driver::rs03::Rs03`, `Robstride { model: Rs04 }` → `driver::rs04::Rs04` (when that module exists). The bus worker's hardcoded `params::RUN_MODE = 2` and `params::SPD_REF` calls become `actuator.run_mode_velocity()` and `actuator.spd_ref_index()` trait methods. This is a non-trivial refactor of bus_worker.rs and linux.rs but is the structural change that makes the polymorphism real. AUDIT scope before starting: every `driver::rs03::*` use statement in `crates/rudydae/src/` must either move behind the trait or be deleted. Document this audit in the PR description."
     status: pending
@@ -85,14 +85,13 @@ isProject: false
 
 ## Progress (update as work lands)
 
-**Last updated:** 2026-04-19 (Phase C handoff).
+**Last updated:** 2026-04-19 (`extend-spec-struct` landed).
 
-**Current phase (start here in a new session):** **Phase C — per-model spec resolution** (`implementation-order` below). Complete these todos **in order:** `extend-spec-struct` → `per-device-spec-resolution` → `travel-rail-from-spec` → `rsactuator-trait-adoption`.
+**Current phase:** **Phase C — per-model spec resolution**. Next todo: `per-device-spec-resolution` → `travel-rail-from-spec` → `rsactuator-trait-adoption`.
 
 ### Phase C handoff (for new chat / new session)
 
-1. **`extend-spec-struct`** — `crates/rudydae/src/spec.rs`  
-   Parse YAML sections that exist in `config/actuators/robstride_rs03.yaml` but are currently ignored: `protocol`, `hardware`, `op_control_scaling`, `thermal`. Validate `actuator_model` matches filename. Introduce a `RobstrideSpec` (or equivalent) wrapper if it keeps non–RobStride families separable later.
+1. **`extend-spec-struct`** — **done** (`crates/rudydae/src/spec.rs`): `protocol`, `hardware`, `op_control_scaling`, `thermal`, optional `manual_ref` / `notes`; filename check for `robstride_*.yaml`; `RobstrideSpec` wrapper + unit tests.
 
 2. **`per-device-spec-resolution`** — `crates/rudydae/src/state.rs` (+ `AppState::new`)  
    Replace single `spec: Arc<ActuatorSpec>` with `specs: HashMap<RobstrideModel, Arc<ActuatorSpec>>` (or `Arc<RobstrideSpec>` once step 1 exists). Load all `config/actuators/robstride_*.yaml` at startup; add `spec_for(model: RobstrideModel)`. Update call sites: `telemetry.rs`, `api/params.rs`, `api/config_route.rs`, `can/linux.rs` (e.g. `seed_boot_low_limits`), `tests/common/mod.rs`. Expose supported models from `/api/config` if the SPA needs them.
