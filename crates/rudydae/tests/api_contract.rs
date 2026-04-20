@@ -139,6 +139,74 @@ async fn get_hardware_unassigned_lists_passive_seen_not_in_inventory() {
 }
 
 #[tokio::test]
+async fn post_hardware_onboard_robstride_appends_actuator() {
+    let (state, _dir) = common::make_state();
+    let app = rudydae::build_app(state.clone());
+
+    let body = json!({
+        "can_bus": "can1",
+        "can_id": 30,
+        "model": "rs03",
+        "limb": "test_bench",
+        "joint_kind": "shoulder_pitch",
+        "travel_min_rad": -0.5_f32,
+        "travel_max_rad": 0.5_f32,
+        "predefined_home_rad": 0.0_f32,
+    });
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/hardware/onboard/robstride")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let v: serde_json::Value = body_json(resp).await;
+    assert_eq!(v["ok"], json!(true));
+    assert_eq!(v["role"], json!("test_bench.shoulder_pitch"));
+
+    let inv = state.inventory.read().expect("inventory poisoned");
+    let m = inv
+        .actuator_by_role("test_bench.shoulder_pitch")
+        .expect("new actuator");
+    assert_eq!(m.common.can_bus, "can1");
+    assert_eq!(m.common.can_id, 30);
+    assert_eq!(m.common.predefined_home_rad, Some(0.0));
+}
+
+#[tokio::test]
+async fn post_hardware_onboard_rejects_duplicate_can_id() {
+    let (state, _dir) = common::make_state();
+    let app = rudydae::build_app(state);
+
+    let body = json!({
+        "can_bus": "can1",
+        "can_id": 8,
+        "model": "rs03",
+        "limb": "other",
+        "joint_kind": "elbow_pitch",
+        "travel_min_rad": -0.5_f32,
+        "travel_max_rad": 0.5_f32,
+    });
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/hardware/onboard/robstride")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CONFLICT);
+}
+
+#[tokio::test]
 async fn post_hardware_scan_noops_on_mock_can_with_message() {
     let (state, _dir) = common::make_state();
     let app = rudydae::build_app(state);

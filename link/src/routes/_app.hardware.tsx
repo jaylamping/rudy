@@ -4,9 +4,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, RefreshCw } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { HardwareSection } from "@/components/hardware/hardware-section";
+import { OnboardingWizard } from "@/components/hardware/onboarding-wizard";
 import { bootStateShortLabel } from "@/lib/bootStateUi";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -23,6 +24,13 @@ export const Route = createFileRoute("/_app/hardware")({
 function HardwarePage() {
   const qc = useQueryClient();
   const poll = useLiveInterval({ live: 30_000, fallback: 2_000 });
+  const [onboardTarget, setOnboardTarget] = useState<UnassignedDevice | null>(null);
+  const [onboardOpen, setOnboardOpen] = useState(false);
+
+  const openOnboard = (d: UnassignedDevice) => {
+    setOnboardTarget(d);
+    setOnboardOpen(true);
+  };
 
   const devicesQ = useQuery({
     queryKey: ["devices"],
@@ -74,6 +82,14 @@ function HardwarePage() {
 
   return (
     <div className="space-y-8">
+      <OnboardingWizard
+        open={onboardOpen}
+        onOpenChange={(o) => {
+          setOnboardOpen(o);
+          if (!o) setOnboardTarget(null);
+        }}
+        device={onboardTarget}
+      />
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Hardware</h1>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -88,6 +104,7 @@ function HardwarePage() {
           scanPending={scanMut.isPending}
           onScan={() => scanMut.mutate()}
           scanMessage={scanMut.data?.message}
+          onOnboard={openOnboard}
         />
       ) : null}
 
@@ -120,6 +137,7 @@ function HardwarePage() {
           scanPending={scanMut.isPending}
           onScan={() => scanMut.mutate()}
           scanMessage={scanMut.data?.message}
+          onOnboard={openOnboard}
         />
       ) : null}
     </div>
@@ -131,11 +149,13 @@ function UnassignedSection({
   scanPending,
   onScan,
   scanMessage,
+  onOnboard,
 }: {
   rows: UnassignedDevice[];
   scanPending: boolean;
   onScan: () => void;
   scanMessage?: string;
+  onOnboard: (d: UnassignedDevice) => void;
 }) {
   return (
     <HardwareSection
@@ -157,9 +177,9 @@ function UnassignedSection({
       </div>
       {rows.length === 0 ? (
         <p className="rounded-md border border-dashed border-border bg-muted/30 px-4 py-6 text-sm text-muted-foreground">
-          No new devices detected. Click Discover to actively scan, or plug in a new device and wait
-          for it to transmit. Passive bus tracking is not enabled yet — unassigned devices will
-          appear here once the daemon records seen CAN IDs.
+          No unassigned CAN IDs yet. Click Discover to run an active scan on the robot, or wait for
+          the daemon to observe traffic (type-2 / type-17 frames). Then use Onboard to add a device to{" "}
+          <code className="text-xs">inventory.yaml</code>.
         </p>
       ) : (
         <div className="overflow-x-auto rounded-md border border-border">
@@ -183,7 +203,12 @@ function UnassignedSection({
                   <td className="px-3 py-2 text-muted-foreground">{r.family_hint ?? "—"}</td>
                   <td className="px-3 py-2 text-muted-foreground">{r.last_seen_ms}</td>
                   <td className="px-3 py-2">
-                    <Button type="button" variant="outline" size="sm" disabled>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onOnboard(r)}
+                    >
                       Onboard
                     </Button>
                   </td>

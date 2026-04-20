@@ -23,6 +23,7 @@ mod jog;
 mod logs;
 mod motion;
 mod motors;
+mod onboard;
 mod params;
 mod predefined_home;
 mod reminders_route;
@@ -42,6 +43,10 @@ pub fn router(state: SharedState) -> Router<SharedState> {
             get(hardware::list_unassigned),
         )
         .route("/hardware/scan", post(hardware::scan))
+        .route(
+            "/hardware/onboard/robstride",
+            post(onboard::onboard_robstride),
+        )
         .route("/motors", get(motors::list_motors))
         .route("/motors/:role", get(motors::get_motor))
         .route("/motors/:role/feedback", get(motors::get_feedback))

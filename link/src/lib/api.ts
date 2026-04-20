@@ -91,6 +91,20 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  onboardRobstrideActuator: (body: {
+    can_bus: string;
+    can_id: number;
+    model: "rs01" | "rs02" | "rs03" | "rs04";
+    limb: string;
+    joint_kind: string;
+    travel_min_rad: number;
+    travel_max_rad: number;
+    predefined_home_rad?: number;
+  }) =>
+    apiFetch<{ ok: boolean; role: string }>("/api/hardware/onboard/robstride", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   listMotors: () =>
     apiFetch<import("@/lib/types/MotorSummary").MotorSummary[]>("/api/motors"),
   getMotor: (role: string) =>
