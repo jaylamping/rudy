@@ -92,7 +92,7 @@ async fn get_devices_returns_v2_inventory_devices() {
 }
 
 #[tokio::test]
-async fn get_hardware_unassigned_returns_empty_array_stub() {
+async fn get_hardware_unassigned_returns_empty_without_passive_seen() {
     let (state, _dir) = common::make_state();
     let app = rudydae::build_app(state);
 
@@ -108,6 +108,34 @@ async fn get_hardware_unassigned_returns_empty_array_stub() {
     assert_eq!(resp.status(), StatusCode::OK);
     let v: serde_json::Value = body_json(resp).await;
     assert_eq!(v, json!([]));
+}
+
+#[tokio::test]
+async fn get_hardware_unassigned_lists_passive_seen_not_in_inventory() {
+    let (state, _dir) = common::make_state();
+    state.record_passive_seen("can1", 0x10);
+    // Inventoried ID — must not appear as unassigned.
+    state.record_passive_seen("can1", 0x08);
+
+    let app = rudydae::build_app(state);
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/hardware/unassigned")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let v: serde_json::Value = body_json(resp).await;
+    assert!(v.is_array());
+    let arr = v.as_array().unwrap();
+    assert_eq!(arr.len(), 1);
+    assert_eq!(arr[0]["bus"], json!("can1"));
+    assert_eq!(arr[0]["can_id"], json!(16));
+    assert_eq!(arr[0]["source"], json!("passive"));
 }
 
 #[tokio::test]

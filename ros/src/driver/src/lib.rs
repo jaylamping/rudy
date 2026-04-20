@@ -25,8 +25,9 @@ pub use robstride::{RsActuator, RsModel};
 pub use rs03::params;
 pub use rs03::session;
 pub use rs03::{
-    arb_id, comm_type_from_id, decode_motor_feedback, strip_eff_flag, with_eff_flag, CommType,
-    DecodedCommand, MitCommand, MotorFeedback, ProtocolError, RobstrideCodec, Rs03, CAN_EFF_FLAG,
+    arb_id, comm_type_from_id, decode_motor_feedback, passive_observer_node_id, strip_eff_flag,
+    with_eff_flag, CommType, DecodedCommand, MitCommand, MotorFeedback, ProtocolError,
+    RobstrideCodec, Rs03, CAN_EFF_FLAG,
 };
 pub use socketcan_bus::CanBus;
 pub use state_machine::{ActuatorEvent, ActuatorState, ActuatorStateMachine};

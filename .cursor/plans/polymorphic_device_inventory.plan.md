@@ -30,8 +30,8 @@ todos:
     content: "`crates/rudydae/src/can/travel.rs:18-24` hardcodes `HARDWARE_*_RAD = ±4π` as the outer rail, with a comment 'matches the RS03 spec.protocol.position_min_rad/position_max_rad'. Move this to `RobstrideSpec` (read from `op_control_scaling.position.range` per model) and resolve per-actuator via the new `state.spec_for(model)`. Different models may have different MIT position ranges; today's hardcoding is a latent bug that this todo eliminates. Add `travel_rail_from_spec_per_model` test."
     status: completed
   - id: passive-seen-ids-tracker
-    content: "On `AppState`, add `pub seen_can_ids: Arc<RwLock<HashMap<(String, u8), SeenInfo>>>` where `SeenInfo { first_seen_ms: i64, last_seen_ms: i64, frame_count: u64 }`. In `bus_worker::handle_frame`, BEFORE the existing `apply_type2` / type-17 dispatch, extract source motor ID from the arbitration ID (existing helper) and update `seen_can_ids[(bus, src_motor)]`. Cost: one HashMap update per received frame; benchmark first to ensure no regression vs. the current per-frame budget. The map is unbounded by ID space (max 127 entries per bus); no eviction needed. Used by `GET /api/hardware/unassigned` to surface IDs that have been seen on the bus but aren't in inventory."
-    status: pending
+    content: "On `AppState`, add `seen_can_ids: RwLock<HashMap<(String, u8), SeenInfo>>` where `SeenInfo { first_seen_ms, last_seen_ms, source }` (`passive` | `active_scan` | `both`). In `bus_worker::handle_frame`, before type-2 / type-17 dispatch, call `driver::rs03::frame::passive_observer_node_id` and `record_passive_seen(iface, node)`. Linux bus worker only; tests exercise API via `record_passive_seen` directly. **Shipped 2026-04-19.**"
+    status: completed
   - id: device-probe-trait
     content: "New `crates/rudydae/src/discovery.rs` module. Define `pub trait DeviceProbe: Send + Sync { fn family_name(&self) -> &'static str; async fn probe(&self, bus: &str, can_id: u8, core: &LinuxCanCore) -> Option<DiscoveredDevice>; }` where `DiscoveredDevice { bus: String, can_id: u8, family_hint: String, identification_payload: Option<serde_json::Value> }`. Register probes in a `DeviceProbeRegistry` (Vec<Box<dyn DeviceProbe>>). Initial registrations: `RobstrideProbe` (sends `read_param(firmware_version)` with 50ms timeout, returns Some on any response, attempts to extract firmware_version from response payload as bonus). Future sensor probes register here too. The registry is keyed by family so each scan iteration tries each registered probe sequentially; whichever returns Some first wins. Operator confirmed: probe doesn't have to *understand* the response — presence is enough."
     status: pending
@@ -39,7 +39,7 @@ todos:
     content: "New `POST /api/hardware/scan` endpoint (`crates/rudydae/src/api/hardware_scan.rs`). Body: `{ bus: Option<String> (default: scan all configured buses), id_range: Option<(u8, u8)> (default: 0x01..=0x7F), timeout_ms: Option<u64> (default: 50) }`. Iterates each bus × each ID; for each (bus, id) iterates `DeviceProbeRegistry` until one probe returns Some. Returns `Vec<DiscoveredDevice>` plus a per-(bus,id) summary of which probes were tried and what they returned. Concurrency: probes run sequentially per (bus, id) but parallel across (bus, id) up to a configurable max — but only one frame on the wire at a time per bus to avoid response collisions. Uses the existing bus worker's request/response infrastructure; doesn't need a new CAN socket. Idempotent. Auto-runs once on daemon startup gated by `safety.scan_on_boot: bool` (default true) — uses `tokio::spawn` so it doesn't block the listener startup. **Stub shipped 2026-04-19:** `POST /api/hardware/scan` in `api/hardware.rs` returns `ok: true`, empty `discovered`, explanatory `message`."
     status: pending
   - id: unassigned-list-endpoint
-    content: "New `GET /api/hardware/unassigned` endpoint. Computes the union of `(seen_can_ids ∪ last_active_scan_results)` minus `inventory.devices.iter().map(|d| (d.can_bus, d.can_id))`. Returns `Vec<UnassignedDevice>` where `UnassignedDevice { bus: String, can_id: u8, source: \"passive\" | \"active_scan\" | \"both\", first_seen_ms: i64, last_seen_ms: i64, family_hint: Option<String> (from the most recent active probe), identification_payload: Option<serde_json::Value> }`. The endpoint is read-only and cheap — no CAN traffic. Cached via the standard `[hardware]` query key in the SPA. Updated whenever `seen_can_ids` changes (passive) or scan completes (active) — push via the existing safety event SSE channel. **Stub shipped 2026-04-19:** route + JSON type exist; always returns `[]` until `passive-seen-ids-tracker` + scan cache."
+    content: "`GET /api/hardware/unassigned`: returns `seen_can_ids` entries not in inventory (passive source). **Union with active scan results** still pending (`active-scan-endpoint`). Contract tests: empty by default; seeded passive IDs list correctly. **Passive path shipped 2026-04-19.**"
     status: pending
   - id: hardware-page-route
     content: "New `link/src/routes/_app.hardware.tsx` route. Layout: header with global health summary (reuses the global health bar from the boot-orchestrator plan's `ui-troublemaker-identification` todo), then two main sections: (1) **Assigned** — list of all `Device`s in inventory grouped by kind (Actuators, Sensors, Batteries) and within Actuators by limb. Each row shows role, can_bus, can_id, family, model, BootState badge (actuators only), and quick-link to the existing detail page. (2) **Unassigned** — list of discovered-but-not-inventoried devices from `GET /api/hardware/unassigned`. Each row shows bus, can_id, source (passive/active/both), family hint, last seen timestamp, and a 'Onboard' button that launches the wizard. A persistent 'Discover' button at the top of the Unassigned section triggers `POST /api/hardware/scan` and shows progress. Default sort: Unassigned section first when non-empty (operator's eye is drawn there), Assigned second. Empty-state copy on Unassigned: 'No new devices detected. Click Discover to actively scan, or plug in a new device and wait for it to transmit.'"
@@ -85,9 +85,9 @@ isProject: false
 
 ## Progress (update as work lands)
 
-**Last updated:** 2026-04-19 (Phase C complete: `rsactuator-trait-adoption` initial adoption — velocity jog path via `RsActuator`; type-2 decode / `session::*` still `rs03` until additional SKUs).
+**Last updated:** 2026-04-19 (Phase D started: `passive-seen-ids-tracker` + unassigned list from passive `seen_can_ids`; `device-probe-trait` / real scan next).
 
-**Current phase:** **Phase D onward** (discovery / passive listener, etc.). **Follow-up:** inventory-driven `RobstrideModel` → concrete actuator in `bus_worker` when RS04 session exists; optional trait surface for `decode_motor_feedback` + frame helpers.
+**Current phase:** **Phase D** (passive listener shipped; active scan + probe registry next). **Follow-up:** inventory-driven `RobstrideModel` → concrete actuator in `bus_worker` when RS04 session exists; optional trait surface for `decode_motor_feedback` + frame helpers.
 
 ### Phase C handoff (for new chat / new session)
 
@@ -101,7 +101,7 @@ isProject: false
 
 **Deferred (not Phase C):** Phase B items `motor-summary-rename`, `spa-consumer-migration`, and full `ts-bindings-regen` (beyond existing inventory TS) remain optional follow-ups — they can run in parallel with Phase C only if you want cleaner API names; **not required** to start Phase C.
 
-**Already shipped (do not redo):** Phase A–B (v2 inventory, migration, accessors). **Phase E partial:** `/hardware` page, `GET /api/devices`, stub `GET /api/hardware/unassigned` + `POST /api/hardware/scan` (real discovery = Phase D: `passive-seen-ids-tracker` onward).
+**Already shipped (do not redo):** Phase A–B (v2 inventory, migration, accessors). **Phase E partial:** `/hardware` page, `GET /api/devices`, `GET /api/hardware/unassigned` (passive diff vs inventory), stub `POST /api/hardware/scan`.
 
 **After Phase C:** Phase D (discovery), then finish Phase E (onboarding wizard, reassign CAN ID), then Phase F tests and Phase G docs.
 

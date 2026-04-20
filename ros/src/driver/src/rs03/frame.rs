@@ -32,6 +32,29 @@ pub fn comm_type_from_id(id: u32) -> u8 {
     ((strip_eff_flag(id) >> 24) & 0x1F) as u8
 }
 
+/// Motor CAN node id (1..=127) for passive bus observation, when the arbitration field
+/// layout is unambiguous (ADR-0002 type-2 and type-17 reply layouts).
+///
+/// Other comm types (e.g. MIT op-control) are ignored so torque bytes in bits 16..23 are
+/// not mistaken for a node address.
+#[inline]
+pub fn passive_observer_node_id(can_id: u32) -> Option<u8> {
+    let raw = strip_eff_flag(can_id);
+    let comm = comm_type_from_id(can_id);
+    let node = if comm == CommType::MotorFeedback as u8 {
+        ((raw >> 16) & 0xFF) as u8
+    } else if comm == CommType::ReadParam as u8 {
+        ((raw >> 8) & 0xFF) as u8
+    } else {
+        return None;
+    };
+    if node == 0 || node > 0x7F {
+        None
+    } else {
+        Some(node)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -47,5 +70,24 @@ mod tests {
     fn comm_type_roundtrip() {
         let id = arb_id(CommType::WriteParam, 0xAB, 0xCD);
         assert_eq!(comm_type_from_id(id), CommType::WriteParam as u8);
+    }
+
+    #[test]
+    fn passive_observer_type2_src() {
+        let id = 0x0208_FD08u32;
+        assert_eq!(passive_observer_node_id(with_eff_flag(id)), Some(0x08));
+    }
+
+    #[test]
+    fn passive_observer_type17_reply_motor() {
+        // ReadParam reply layout: status @ 16..23, motor @ 8..15, host @ 0..7
+        let raw = (0x11u32 << 24) | (0x01u32 << 16) | (0x55u32 << 8) | 0xFDu32;
+        assert_eq!(passive_observer_node_id(with_eff_flag(raw)), Some(0x55));
+    }
+
+    #[test]
+    fn passive_observer_skips_mit_op_control() {
+        let raw = (CommType::OperationCtrl as u32) << 24;
+        assert_eq!(passive_observer_node_id(with_eff_flag(raw)), None);
     }
 }

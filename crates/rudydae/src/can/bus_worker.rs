@@ -42,7 +42,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result};
 use chrono::Utc;
 use driver::rs03::feedback::{decode_motor_feedback, MotorFeedback as DriverFeedback};
-use driver::rs03::frame::{comm_type_from_id, strip_eff_flag};
+use driver::rs03::frame::{comm_type_from_id, passive_observer_node_id, strip_eff_flag};
 use driver::rs03::session;
 use driver::{CanBus, Rs03, RsActuator};
 use tokio::runtime::Handle;
@@ -476,6 +476,12 @@ fn handle_frame(
     data: &[u8; 8],
     dlc: usize,
 ) {
+    if let Some(node) = passive_observer_node_id(can_id) {
+        if let Some(st) = state.upgrade() {
+            st.record_passive_seen(iface, node);
+        }
+    }
+
     let comm = comm_type_from_id(can_id);
     if comm == driver::CommType::MotorFeedback as u8 {
         if dlc < 8 {
@@ -484,7 +490,7 @@ fn handle_frame(
         let raw = strip_eff_flag(can_id);
         let src_motor = ((raw >> 16) & 0xFF) as u8;
         match decode_motor_feedback(can_id, &data[..dlc]) {
-            Ok(fb) => apply_type2(state, src_motor, fb),
+            Ok(fb) => apply_type2(state, iface, src_motor, fb),
             Err(e) => debug!(iface = %iface, error = ?e, "type-2 decode failed"),
         }
         return;
@@ -522,12 +528,18 @@ fn handle_frame(
 /// Push a freshly-decoded type-2 row into `state.latest`,
 /// `state.feedback_tx`, and trigger boot-state classification + boot
 /// orchestrator the same way `LinuxCanCore::poll_once` does on aux merge.
-fn apply_type2(state: &Weak<crate::state::AppState>, src_motor: u8, fb: DriverFeedback) {
+fn apply_type2(
+    state: &Weak<crate::state::AppState>,
+    iface: &str,
+    src_motor: u8,
+    fb: DriverFeedback,
+) {
     let Some(state) = state.upgrade() else { return };
 
     let role = {
         let inv = state.inventory.read().expect("inventory poisoned");
-        inv.by_can_id(src_motor).map(|m| m.role.clone())
+        inv.by_can_id(iface, src_motor)
+            .map(|d| d.role().to_string())
     };
     let Some(role) = role else { return };
 
@@ -629,7 +641,7 @@ fn handle_cmd(
             log_send_result(iface, "enable", motor_id, &result);
             if result.is_ok() {
                 if let Some(state) = state.upgrade() {
-                    if let Some(role) = role_for_can_id(&state, motor_id) {
+                    if let Some(role) = role_for_can_id(&state, iface, motor_id) {
                         state.mark_enabled(&role);
                     }
                 }
@@ -648,7 +660,7 @@ fn handle_cmd(
             log_send_result(iface, "stop", motor_id, &result);
             if result.is_ok() {
                 if let Some(state) = state.upgrade() {
-                    if let Some(role) = role_for_can_id(&state, motor_id) {
+                    if let Some(role) = role_for_can_id(&state, iface, motor_id) {
                         state.mark_stopped(&role);
                     }
                 }
@@ -802,13 +814,17 @@ fn handle_cmd(
     }
 }
 
-fn role_for_can_id(state: &Arc<crate::state::AppState>, can_id: u8) -> Option<String> {
+fn role_for_can_id(
+    state: &Arc<crate::state::AppState>,
+    iface: &str,
+    can_id: u8,
+) -> Option<String> {
     state
         .inventory
         .read()
         .expect("inventory poisoned")
-        .by_can_id(can_id)
-        .map(|m| m.role.clone())
+        .by_can_id(iface, can_id)
+        .map(|d| d.role().to_string())
 }
 
 /// Common send-result logger. ENOBUFS / "no buffer space" failures get a

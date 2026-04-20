@@ -1,8 +1,8 @@
 //! Hardware discovery: unassigned CAN IDs and active scan.
 //!
-//! `GET /api/hardware/unassigned` is wired; population depends on passive bus
-//! tracking (`seen_can_ids`) and optional scan results — see the polymorphic
-//! inventory plan Phase D.
+//! `GET /api/hardware/unassigned` lists `(bus, can_id)` in `state.seen_can_ids`
+//! that are not in inventory (passive traffic). Active scan merges are still
+//! future work — see the polymorphic inventory plan Phase D.
 
 use axum::{extract::State, Json};
 use serde::{Deserialize, Serialize};
@@ -24,9 +24,30 @@ pub struct UnassignedDevice {
     pub identification_payload: Option<serde_json::Value>,
 }
 
-/// Stub until `passive-seen-ids-tracker` + scan cache land.
-pub async fn list_unassigned(State(_state): State<SharedState>) -> Json<Vec<UnassignedDevice>> {
-    Json(vec![])
+pub async fn list_unassigned(State(state): State<SharedState>) -> Json<Vec<UnassignedDevice>> {
+    let seen = state
+        .seen_can_ids
+        .read()
+        .expect("seen_can_ids poisoned")
+        .clone();
+    let inv = state.inventory.read().expect("inventory poisoned");
+
+    let mut out: Vec<UnassignedDevice> = seen
+        .into_iter()
+        .filter(|((bus, can_id), _)| inv.by_can_id(bus, *can_id).is_none())
+        .map(|((bus, can_id), info)| UnassignedDevice {
+            bus,
+            can_id,
+            source: info.source,
+            first_seen_ms: info.first_seen_ms,
+            last_seen_ms: info.last_seen_ms,
+            family_hint: None,
+            identification_payload: None,
+        })
+        .collect();
+
+    out.sort_by(|a, b| a.bus.cmp(&b.bus).then(a.can_id.cmp(&b.can_id)));
+    Json(out)
 }
 
 #[derive(Debug, Default, Deserialize)]

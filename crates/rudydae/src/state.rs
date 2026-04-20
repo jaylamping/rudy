@@ -1,5 +1,6 @@
 //! Shared application state injected into every axum handler.
 
+use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
 
@@ -42,6 +43,16 @@ pub struct ControlLockHolder {
     pub acquired_at_ms: i64,
 }
 
+/// Timestamps for a `(can_bus, can_id)` observed on the wire (passive listen
+/// and, later, active scan). Used to populate `GET /api/hardware/unassigned`.
+#[derive(Debug, Clone)]
+pub struct SeenInfo {
+    pub first_seen_ms: i64,
+    pub last_seen_ms: i64,
+    /// `passive` | `active_scan` | `both`
+    pub source: String,
+}
+
 pub struct AppState {
     pub cfg: Config,
     /// Per–RobStride-model hardware spec (`robstride_rs0X.yaml`).
@@ -50,6 +61,9 @@ pub struct AppState {
     /// (`travel_limits`, `verified`) can swap in the freshly-rewritten
     /// disk copy without restarting the daemon.
     pub inventory: RwLock<Inventory>,
+    /// CAN node IDs observed on each bus (type-2 / type-17 passive decode).
+    /// Keys not present in [`Self::inventory`] surface as unassigned hardware.
+    pub seen_can_ids: RwLock<HashMap<(String, u8), SeenInfo>>,
     pub audit: AuditLog,
     pub real_can: Option<Arc<RealCanHandle>>,
 
@@ -213,6 +227,7 @@ impl AppState {
             cfg,
             specs,
             inventory: RwLock::new(inventory),
+            seen_can_ids: RwLock::new(HashMap::new()),
             audit,
             real_can,
             latest: RwLock::new(BTreeMap::new()),
@@ -286,6 +301,30 @@ impl AppState {
             .read()
             .expect("enabled poisoned")
             .contains(role)
+    }
+
+    /// Record a node ID seen on `iface` from passive bus traffic (type-2 or
+    /// type-17 reply layout). Idempotent per key; refreshes `last_seen_ms`.
+    pub fn record_passive_seen(&self, iface: &str, can_id: u8) {
+        let now_ms = chrono::Utc::now().timestamp_millis();
+        let mut map = self.seen_can_ids.write().expect("seen_can_ids poisoned");
+        let key = (iface.to_string(), can_id);
+        match map.entry(key) {
+            Entry::Occupied(mut e) => {
+                let info = e.get_mut();
+                info.last_seen_ms = now_ms;
+                if info.source == "active_scan" {
+                    info.source = "both".into();
+                }
+            }
+            Entry::Vacant(e) => {
+                e.insert(SeenInfo {
+                    first_seen_ms: now_ms,
+                    last_seen_ms: now_ms,
+                    source: "passive".into(),
+                });
+            }
+        }
     }
 
     /// Cooperative single-operator gate. Called by every mutating handler
