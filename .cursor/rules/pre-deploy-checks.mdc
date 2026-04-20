@@ -19,6 +19,16 @@ If `cargo check` reports warnings or errors, fix them before committing — the 
 
 `cargo fmt` is enforced by the `scripts/git-hooks/pre-commit` hook (installed via `git config core.hooksPath scripts/git-hooks`); no need to run it by hand. CI also runs `cargo fmt --check`.
 
+### Linux-only Rust (`can/linux.rs`, etc.)
+
+On macOS or Windows, `cargo check` / `clippy` use that OS as the **target**, so modules behind `#[cfg(target_os = "linux")]` are **not** type-checked locally. Before committing changes that may affect Linux-only paths, run from the repo root (requires Docker):
+
+```sh
+./scripts/check-rudydae-linux-docker.sh
+```
+
+This mirrors the Linux CI job (`fmt`, `clippy -D warnings`, `test` for `rudydae`).
+
 ## SPA changes (anything under `link/`)
 
 Run from the `link/` directory:

@@ -39,6 +39,7 @@ pub use comm_types::CommType;
 pub use errors::ProtocolError;
 pub use feedback::{decode_motor_feedback, MotorFeedback};
 pub use frame::{
-    arb_id, comm_type_from_id, passive_observer_node_id, strip_eff_flag, with_eff_flag, CAN_EFF_FLAG,
+    arb_id, comm_type_from_id, passive_observer_node_id, strip_eff_flag, with_eff_flag,
+    CAN_EFF_FLAG,
 };
 pub use mit::{DecodedCommand, MitCommand, RobstrideCodec};

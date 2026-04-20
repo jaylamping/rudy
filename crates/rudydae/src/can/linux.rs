@@ -853,7 +853,7 @@ impl BusParamReader for LinuxCanCore {
     ) -> io::Result<Option<[u8; 4]>> {
         let handle = self
             .handle_for(iface)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{e:#}")))?;
+            .map_err(|e| io::Error::other(format!("{e:#}")))?;
         handle.read_param(self.host_id, motor_id, index, timeout)
     }
 }

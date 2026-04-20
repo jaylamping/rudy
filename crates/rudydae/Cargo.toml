@@ -68,7 +68,7 @@ wtransport = "0.6"
 rustls = { version = "0.23", default-features = false, features = ["ring", "logging", "std", "tls12"] }
 
 # Shared type codegen: see crates/.cargo/config.toml (TS_RS_EXPORT_DIR) + link/package.json gen:types
-ts-rs = { version = "10", features = ["serde-json-impl", "chrono-impl"] }
+ts-rs = { version = "12", features = ["serde-json-impl", "chrono-impl"] }
 
 # CBOR for WebTransport datagrams
 ciborium = "0.2"

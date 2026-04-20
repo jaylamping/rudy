@@ -4,4 +4,4 @@ import type { ParamValue } from "./ParamValue";
 /**
  * GET /api/motors/:role/params — full catalog snapshot.
  */
-export type ParamSnapshot = { role: string, values: { [key in string]?: ParamValue }, };
+export type ParamSnapshot = { role: string, values: { [key in string]: ParamValue }, };

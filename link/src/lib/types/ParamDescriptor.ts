@@ -8,4 +8,4 @@ index: number, type: string, units: string | null,
 /**
  * Present on firmware_limits entries only.
  */
-hardware_range: [number, number] | null, description: string | null, values: { [key in string]?: number } | null, };
+hardware_range: [number, number] | null, description: string | null, values: { [key in string]: number } | null, };
