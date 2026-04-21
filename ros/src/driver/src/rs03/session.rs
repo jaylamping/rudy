@@ -59,12 +59,7 @@ fn active_report_payload(enable: bool) -> [u8; 8] {
     payload
 }
 
-pub fn cmd_active_report(
-    bus: &CanBus,
-    host_id: u8,
-    motor_id: u8,
-    enable: bool,
-) -> io::Result<()> {
+pub fn cmd_active_report(bus: &CanBus, host_id: u8, motor_id: u8, enable: bool) -> io::Result<()> {
     let payload = active_report_payload(enable);
     send_frame(bus, CommType::ActiveReport, host_id, motor_id, &payload)
 }
