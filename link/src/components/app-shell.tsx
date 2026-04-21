@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { EstopButton } from "@/components/estop-button";
 import { GlobalActuatorHealthBar } from "@/components/global-actuator-health-bar";
 import { LimbQuarantineToaster } from "@/components/limb-quarantine-toaster";
+import { RestartButton } from "@/components/restart-button";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -129,6 +130,7 @@ export function AppShell() {
           <div className="mr-auto min-w-0">
             <GlobalActuatorHealthBar />
           </div>
+          <RestartButton />
           <EstopButton />
         </header>
         <div className="mx-auto w-full max-w-6xl p-4 sm:p-6">

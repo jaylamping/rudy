@@ -372,6 +372,20 @@ export const api = {
   // safety_event WT frame.
   estop: () =>
     apiFetch<{ ok: boolean; stopped: number }>(`/api/estop`, { method: "POST" }),
+  // Operator-triggered daemon restart. Drops torque on every present
+  // motor (same posture as estop), then schedules `process::exit(0)`
+  // after `restart_in_ms`. Under systemd (`supervised: true`) the
+  // service comes back automatically per `Restart=always`; in `npm run
+  // dev` (`supervised: false`) the operator must restart `cortex` by
+  // hand. The SPA polls `/api/health` after the call to know when the
+  // daemon is back.
+  restart: () =>
+    apiFetch<{
+      ok: boolean;
+      stopped: number;
+      restart_in_ms: number;
+      supervised: boolean;
+    }>(`/api/restart`, { method: "POST" }),
   // Observability — backed by the SQLite log store + the tracing
   // capture layer in `crates/cortex/src/log_layer.rs`. Live tailing
   // arrives over the WebTransport `LogEvent` stream (see

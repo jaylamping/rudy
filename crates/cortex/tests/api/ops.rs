@@ -184,6 +184,55 @@ async fn estop_returns_ok_envelope() {
     assert_eq!(r.stopped, total_present);
 }
 
+/// `POST /api/restart` returns a 202 envelope (the daemon would exit
+/// asynchronously in production), confirms it stopped every present motor
+/// in the test inventory, and surfaces the `supervised` hint. The exit
+/// itself is suppressed by [`cortex::api::ops::restart::suppress_exit_for_tests`]
+/// — otherwise the spawned `process::exit(0)` would tear the test runner
+/// down 500ms into the run.
+#[tokio::test]
+async fn restart_returns_accepted_envelope() {
+    cortex::api::ops::restart::suppress_exit_for_tests();
+
+    let (state, _dir) = common::make_state();
+    let total_present = state
+        .inventory
+        .read()
+        .expect("inventory")
+        .actuators()
+        .filter(|m| m.common.present)
+        .count();
+    let app = cortex::build_app(state);
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/restart")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+
+    #[derive(serde::Deserialize)]
+    struct Resp {
+        ok: bool,
+        stopped: usize,
+        restart_in_ms: u64,
+        #[allow(dead_code)]
+        supervised: bool,
+    }
+    let r: Resp = body_json(resp).await;
+    assert!(r.ok);
+    assert_eq!(r.stopped, total_present);
+    assert!(
+        r.restart_in_ms > 0,
+        "should advertise a non-zero exit delay"
+    );
+}
+
 /// First mutator from a fresh session implicitly claims the control lock,
 /// and a *second* concurrent session is then refused with 423 Locked.
 ///
