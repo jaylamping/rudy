@@ -274,7 +274,7 @@ pub async fn run(
 /// continuous current draw, no servo whine — but the joint still resists
 /// droop and snaps back when nudged.
 ///
-/// Verifies telemetry after 200 ms; on verification failure, `cmd_stop`
+/// Verifies telemetry after 500 ms; on verification failure, `cmd_stop`
 /// and `mark_stopped`.
 async fn finish_home_success(
     state: &SharedState,
@@ -310,27 +310,53 @@ async fn finish_home_success(
     state.mark_stopped(role);
     state.mark_position_hold(role);
 
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
 
-    let from_latest = state
+    let now_ms = Utc::now().timestamp_millis();
+    let max_age_ms = cfg.tracking_freshness_max_age_ms as i64;
+    let latest = state
         .latest
         .read()
         .expect("latest poisoned")
         .get(role)
-        .map(|fb| fb.mech_pos_rad);
-    let err_latest = from_latest
-        .map(|m| shortest_signed_delta(m, target_p.raw()).abs())
-        .unwrap_or(f32::INFINITY);
-    // The dwell gate used `last_measured` from the same control loop; mock CAN does not
-    // always rewrite `state.latest` to match the synthesized ramp. Accept either source.
-    let err_final = shortest_signed_delta(last_measured, target_p.raw()).abs();
-    let err = err_latest.min(err_final);
+        .cloned();
+    let (mech_pos, age_ms) = match latest {
+        Some(fb) => (fb.mech_pos_rad, now_ms - fb.t_ms),
+        None => {
+            warn!(
+                role = %role,
+                target_principal = target_p.raw(),
+                "home_ramp: hold verification stale telemetry (missing)"
+            );
+            if let Some(core) = state.real_can.clone() {
+                let motor_owned = motor.clone();
+                let _ = tokio::task::spawn_blocking(move || core.stop(&motor_owned)).await;
+            }
+            state.mark_stopped(role);
+            return Err(("hold_verification_stale_telemetry".into(), last_measured));
+        }
+    };
+    if age_ms > max_age_ms {
+        warn!(
+            role = %role,
+            age_ms,
+            max_age_ms,
+            target_principal = target_p.raw(),
+            "home_ramp: hold verification stale telemetry (age)"
+        );
+        if let Some(core) = state.real_can.clone() {
+            let motor_owned = motor.clone();
+            let _ = tokio::task::spawn_blocking(move || core.stop(&motor_owned)).await;
+        }
+        state.mark_stopped(role);
+        return Err(("hold_verification_stale_telemetry".into(), mech_pos));
+    }
+    let err = shortest_signed_delta(mech_pos, target_p.raw()).abs();
     let limit = cfg.target_tolerance_rad * 2.0;
-    let reported_pos = from_latest.unwrap_or(last_measured);
     if err >= limit {
         warn!(
             role = %role,
-            mech_pos_latest_or_final = reported_pos,
+            mech_pos,
             target_principal = target_p.raw(),
             err,
             limit,
@@ -341,7 +367,7 @@ async fn finish_home_success(
             let _ = tokio::task::spawn_blocking(move || core.stop(&motor_owned)).await;
         }
         state.mark_stopped(role);
-        return Err(("hold_verification_failed".into(), reported_pos));
+        return Err(("hold_verification_failed".into(), mech_pos));
     }
     Ok(())
 }
