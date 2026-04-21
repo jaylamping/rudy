@@ -145,35 +145,37 @@ async fn delete_device_removes_actuator_and_clears_runtime_state() {
     assert_eq!(v["ok"], json!(true));
     assert_eq!(v["role"], json!("shoulder_actuator_b"));
 
-    let inv = state.inventory.read().expect("inventory poisoned");
-    assert!(inv.actuator_by_role("shoulder_actuator_b").is_none());
-    drop(inv);
+    // Scoped block: std locks must not be held across `await` (clippy::await_holding_lock).
+    {
+        let inv = state.inventory.read().expect("inventory poisoned");
+        assert!(inv.actuator_by_role("shoulder_actuator_b").is_none());
 
-    assert!(!state
-        .latest
-        .read()
-        .expect("latest poisoned")
-        .contains_key("shoulder_actuator_b"));
-    assert!(!state
-        .params
-        .read()
-        .expect("params poisoned")
-        .contains_key("shoulder_actuator_b"));
-    assert!(!state
-        .boot_state
-        .read()
-        .expect("boot_state poisoned")
-        .contains_key("shoulder_actuator_b"));
-    assert!(!state
-        .seen_can_ids
-        .read()
-        .expect("seen_can_ids poisoned")
-        .contains_key(&(String::from("can1"), 0x09)));
-    assert!(!state
-        .boot_orchestrator_attempted
-        .lock()
-        .expect("boot_orchestrator_attempted poisoned")
-        .contains("shoulder_actuator_b"));
+        assert!(!state
+            .latest
+            .read()
+            .expect("latest poisoned")
+            .contains_key("shoulder_actuator_b"));
+        assert!(!state
+            .params
+            .read()
+            .expect("params poisoned")
+            .contains_key("shoulder_actuator_b"));
+        assert!(!state
+            .boot_state
+            .read()
+            .expect("boot_state poisoned")
+            .contains_key("shoulder_actuator_b"));
+        assert!(!state
+            .seen_can_ids
+            .read()
+            .expect("seen_can_ids poisoned")
+            .contains_key(&(String::from("can1"), 0x09)));
+        assert!(!state
+            .boot_orchestrator_attempted
+            .lock()
+            .expect("boot_orchestrator_attempted poisoned")
+            .contains("shoulder_actuator_b"));
+    }
 
     let disk_inv = Inventory::load(&state.cfg.paths.inventory).expect("inventory from disk");
     assert!(disk_inv.actuator_by_role("shoulder_actuator_b").is_none());
