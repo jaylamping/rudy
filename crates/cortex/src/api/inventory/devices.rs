@@ -61,7 +61,7 @@ pub async fn remove_device(
                     }
                 },
             ),
-            Device::Sensor(_) | Device::Battery(_) => {
+            Device::Sensor(_) | Device::Battery(_) | Device::Peripheral(_) => {
                 return Err(err(
                     StatusCode::BAD_REQUEST,
                     "unsupported_kind",

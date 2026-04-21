@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { LIVE_LOGS_KEY } from "@/lib/hooks/wtReducers";
+import { useLiveInterval } from "@/lib/hooks/useLiveInterval";
+import { getBridgeWt } from "@/lib/hooks/wtBridgeHandle";
+import { LIVE_LOG_CAP, LIVE_LOGS_KEY } from "@/lib/hooks/wtReducers";
 import type { LogEntry } from "@/lib/types/LogEntry";
 import type { LogLevel } from "@/lib/types/LogLevel";
 import type { LogSource } from "@/lib/types/LogSource";
@@ -72,6 +74,34 @@ function setToCsv<T extends string>(
 // then carries an explicit CSV so the choice survives reloads.
 const DEFAULT_LEVELS = new Set<LogLevel>(["info", "warn", "error"]);
 
+/**
+ * Merge a freshly-fetched REST page into the existing live tail.
+ *
+ * Both inputs are newest-first. We dedupe by `id`, prepend any entries
+ * the REST page knows about that the cache hasn't seen yet, and cap the
+ * result at `LIVE_LOG_CAP` so the in-memory tail can't grow without
+ * bound. Entries the cache has but REST doesn't (older live history
+ * the operator scrolled through) are preserved at the tail.
+ */
+function mergeLiveEntries(
+  fetched: LogEntry[],
+  prev: LogEntry[],
+): LogEntry[] {
+  if (prev.length === 0) {
+    return fetched.length > LIVE_LOG_CAP ? fetched.slice(0, LIVE_LOG_CAP) : fetched;
+  }
+  const seen = new Set<string>();
+  for (const e of prev) seen.add(String(e.id));
+  const newer: LogEntry[] = [];
+  for (const e of fetched) {
+    if (seen.has(String(e.id))) continue;
+    newer.push(e);
+  }
+  if (newer.length === 0) return prev;
+  const merged = newer.concat(prev);
+  return merged.length > LIVE_LOG_CAP ? merged.slice(0, LIVE_LOG_CAP) : merged;
+}
+
 function LogsPage() {
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
@@ -88,19 +118,43 @@ function LogsPage() {
   );
   const follow = search.follow ?? true;
 
+  // Defensively widen the WT subscription on mount. Other tabs
+  // (`MotionTestsCard`, `useTestProgress`) narrow the bridge filter to
+  // a kind set that excludes `log_event`; their cleanup restores
+  // "kinds: []", but a hot reload, StrictMode double-mount, or a WT
+  // reconnect that re-applies `lastFilterRef` can leave the daemon
+  // suppressing log frames for the rest of the session. The Logs page
+  // is the one place we definitely want them, so re-open the firehose.
+  useEffect(() => {
+    const wt = getBridgeWt();
+    if (!wt) return;
+    void wt.setFilter({
+      kinds: [],
+      filters: { motor_roles: [], run_ids: [] },
+    });
+  }, []);
+
   // Live tail comes from the WT reducer, which writes the cache key
-  // `LIVE_LOGS_KEY`. We seed the cache from a REST page so the tail is
-  // populated even if the WT bridge is still connecting.
+  // `LIVE_LOGS_KEY`. We also keep a REST safety-net poll on the same
+  // key (slow when WT is healthy, fast when it isn't) so the page
+  // never goes silent if the WT firehose stalls — matches the cadence
+  // every other live surface uses via `useLiveInterval`.
+  //
+  // The queryFn merges the REST snapshot into the existing live tail
+  // (instead of replacing it) so a periodic refetch can't clobber the
+  // up-to-`LIVE_LOG_CAP` entries the WT reducer has accumulated.
+  const refetchInterval = useLiveInterval({ live: 30_000, fallback: 2_000 });
   const liveQ = useQuery<LogEntry[]>({
     queryKey: LIVE_LOGS_KEY,
     queryFn: async () => {
-      // Pull a starter page; the reducer will prepend live entries on
-      // top from now on. Limit 500 keeps the initial paint snappy and
-      // matches the cap used by older `dmesg`-style consoles.
+      // Limit 500 keeps the initial paint snappy and matches the cap
+      // used by older `dmesg`-style consoles.
       const res = await api.logs.list({ limit: 500 });
-      return res.entries;
+      const prev = qc.getQueryData<LogEntry[]>(LIVE_LOGS_KEY) ?? [];
+      return mergeLiveEntries(res.entries, prev);
     },
-    staleTime: Number.POSITIVE_INFINITY, // live data; never refetch on its own
+    refetchInterval,
+    refetchOnWindowFocus: true,
   });
 
   const allEntries = liveQ.data ?? [];

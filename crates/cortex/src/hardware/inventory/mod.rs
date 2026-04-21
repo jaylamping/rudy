@@ -26,8 +26,9 @@ mod travel_limits;
 
 pub use devices::{
     Actuator, ActuatorCommon, ActuatorFamily, Battery, BatteryCommon, BatteryFamily, CameraModel,
-    Device, ForceSensorModel, GyroSensorModel, LidarModel, MotionSensorModel, RobstrideModel,
-    Sensor, SensorCommon, SensorFamily,
+    Device, DisplayModel, FanModel, ForceSensorModel, GyroSensorModel, LedModel, LidarModel,
+    MicrophoneModel, MotionSensorModel, Peripheral, PeripheralCommon, PeripheralFamily,
+    RobstrideModel, Sensor, SensorCommon, SensorFamily, SpeakerModel,
 };
 pub use error::InventoryError;
 pub use migration::migrate_v1_yaml_to_v2_inventory;
@@ -174,6 +175,13 @@ impl Inventory {
     pub fn batteries(&self) -> impl Iterator<Item = &Battery> {
         self.devices.iter().filter_map(|d| match d {
             Device::Battery(b) => Some(b),
+            _ => None,
+        })
+    }
+
+    pub fn peripherals(&self) -> impl Iterator<Item = &Peripheral> {
+        self.devices.iter().filter_map(|d| match d {
+            Device::Peripheral(p) => Some(p),
             _ => None,
         })
     }

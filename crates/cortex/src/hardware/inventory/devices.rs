@@ -13,7 +13,7 @@ fn default_true() -> bool {
 
 // --- Polymorphic device ------------------------------------------------------
 
-/// Inventory row: actuator, sensor, or battery. JSON/YAML uses `kind` as the tag.
+/// Inventory row: actuator, sensor, battery, or peripheral. JSON/YAML uses `kind` as the tag.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[ts(export, export_to = "./")]
@@ -21,6 +21,7 @@ pub enum Device {
     Actuator(Actuator),
     Sensor(Sensor),
     Battery(Battery),
+    Peripheral(Peripheral),
 }
 
 /// RobStride actuator with shared [`ActuatorCommon`] plus a [`ActuatorFamily`] discriminator.
@@ -145,6 +146,12 @@ pub struct SensorCommon {
     pub commissioned_at: Option<String>,
     #[serde(default)]
     pub notes: Option<String>,
+    /// Which limb the sensor is mounted on (`head`, `torso`, `right_arm`, etc.).
+    /// Optional so sensors that haven't been placed yet, or sensors that don't
+    /// belong to a specific limb (e.g. a chest-mounted IMU could just be
+    /// `torso`), still parse cleanly.
+    #[serde(default)]
+    pub limb: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -222,6 +229,92 @@ pub enum BatteryFamily {
     Placeholder,
 }
 
+// --- Peripherals -------------------------------------------------------------
+//
+// Catch-all for I/O hardware that isn't an actuator, perception sensor, or
+// battery: speakers, microphones, status LEDs, displays, cooling fans, etc.
+// These typically don't sit on the CAN bus (USB, I2C, I2S, GPIO, …) but we
+// keep the same `(can_bus, can_id)` addressing for now so the inventory
+// schema stays uniform across kinds. Rename the fields when a non-CAN
+// transport actually lands.
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "./")]
+pub struct Peripheral {
+    #[serde(flatten)]
+    pub common: PeripheralCommon,
+    pub family: PeripheralFamily,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "./")]
+pub struct PeripheralCommon {
+    pub role: String,
+    pub can_bus: String,
+    #[serde(with = "super::role::serde_u8_flex")]
+    #[ts(as = "u8")]
+    pub can_id: u8,
+    #[serde(default = "default_true")]
+    pub present: bool,
+    #[serde(default)]
+    pub verified: bool,
+    #[serde(default)]
+    pub commissioned_at: Option<String>,
+    #[serde(default)]
+    pub notes: Option<String>,
+    /// Which limb the peripheral is mounted on (`head`, `torso`, `right_arm`, …).
+    /// Optional — peripherals like fans or status LEDs may not belong to any
+    /// specific limb.
+    #[serde(default)]
+    pub limb: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[ts(export, export_to = "./")]
+pub enum PeripheralFamily {
+    Microphone { model: MicrophoneModel },
+    Speaker { model: SpeakerModel },
+    Led { model: LedModel },
+    Display { model: DisplayModel },
+    Fan { model: FanModel },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export, export_to = "./")]
+pub enum MicrophoneModel {
+    Placeholder,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export, export_to = "./")]
+pub enum SpeakerModel {
+    Placeholder,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export, export_to = "./")]
+pub enum LedModel {
+    Placeholder,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export, export_to = "./")]
+pub enum DisplayModel {
+    Placeholder,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export, export_to = "./")]
+pub enum FanModel {
+    Placeholder,
+}
+
 impl Actuator {
     /// RobStride model for this actuator (inventory is RobStride-only today).
     pub fn robstride_model(&self) -> RobstrideModel {
@@ -246,6 +339,7 @@ impl Device {
             Device::Actuator(a) => &a.common.role,
             Device::Sensor(s) => &s.common.role,
             Device::Battery(b) => &b.common.role,
+            Device::Peripheral(p) => &p.common.role,
         }
     }
 
@@ -254,6 +348,7 @@ impl Device {
             Device::Actuator(a) => &a.common.can_bus,
             Device::Sensor(s) => &s.common.can_bus,
             Device::Battery(b) => &b.common.can_bus,
+            Device::Peripheral(p) => &p.common.can_bus,
         }
     }
 
@@ -262,6 +357,7 @@ impl Device {
             Device::Actuator(a) => a.common.can_id,
             Device::Sensor(s) => s.common.can_id,
             Device::Battery(b) => b.common.can_id,
+            Device::Peripheral(p) => p.common.can_id,
         }
     }
 }

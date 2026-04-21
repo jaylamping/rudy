@@ -1,10 +1,10 @@
 import type { ReactNode } from "react";
 
 /**
- * Section wrapper for the Hardware page so Actuator / Sensor / Battery blocks
- * stay consistent as more kinds gain real UI.
+ * Section wrapper for the Devices page so groupings (limb cards, unassigned
+ * scan, sensors, batteries) stay visually consistent.
  */
-export function HardwareSection({
+export function DevicesSection({
   title,
   description,
   children,
