@@ -81,7 +81,7 @@ jobs:
       - name: Set up sccache
         uses: mozilla-actions/sccache-action@v0.0.9
 
-      - name: Build rudydae for aarch64
+      - name: Build cortex for aarch64
         working-directory: crates
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
@@ -90,7 +90,7 @@ jobs:
           RUSTC_WRAPPER: sccache
           SCCACHE_GHA_ENABLED: "true"
         run: |
-          cargo build --release -p rudydae --target aarch64-unknown-linux-gnu
+          cargo build --release -p cortex --target aarch64-unknown-linux-gnu
           sccache --show-stats || true
 
       - name: Stage release tarball
@@ -103,17 +103,17 @@ jobs:
             "${STAGE}/deploy/pi5" \
             "${STAGE}/docs/runbooks"
 
-          # SPA is embedded into the rudydae binary at build time via rust-embed
-          # (see crates/rudydae/build.rs); we do not ship link/dist/ separately.
-          cp crates/target/aarch64-unknown-linux-gnu/release/rudydae "${STAGE}/bin/rudydae"
-          chmod 0755 "${STAGE}/bin/rudydae"
+          # SPA is embedded into the cortex binary at build time via rust-embed
+          # (see crates/cortex/build.rs); we do not ship link/dist/ separately.
+          cp crates/target/aarch64-unknown-linux-gnu/release/cortex "${STAGE}/bin/cortex"
+          chmod 0755 "${STAGE}/bin/cortex"
 
           cp -r config/. "${STAGE}/config/"
-          cp deploy/pi5/rudyd.service "${STAGE}/deploy/pi5/rudyd.service"
+          cp deploy/pi5/cortex.service "${STAGE}/deploy/pi5/cortex.service"
           cp deploy/pi5/rudy-watchdog.sh "${STAGE}/deploy/pi5/rudy-watchdog.sh"
           cp deploy/pi5/rudy-watchdog.service "${STAGE}/deploy/pi5/rudy-watchdog.service"
           cp deploy/pi5/rudy-watchdog.timer "${STAGE}/deploy/pi5/rudy-watchdog.timer"
-          cp deploy/pi5/render-rudyd-toml.sh "${STAGE}/deploy/pi5/render-rudyd-toml.sh"
+          cp deploy/pi5/render-cortex-toml.sh "${STAGE}/deploy/pi5/render-cortex-toml.sh"
           cp deploy/pi5/apply-release.sh "${STAGE}/deploy/pi5/apply-release.sh"
           cp docs/runbooks/operator-console.md "${STAGE}/docs/runbooks/operator-console.md"
 
@@ -123,7 +123,7 @@ jobs:
           # which trips `[[ -x ... ]]` in rudy-update.sh on the Pi.
           chmod 0755 \
             "${STAGE}/deploy/pi5/rudy-watchdog.sh" \
-            "${STAGE}/deploy/pi5/render-rudyd-toml.sh" \
+            "${STAGE}/deploy/pi5/render-cortex-toml.sh" \
             "${STAGE}/deploy/pi5/apply-release.sh"
 
           echo "${GITHUB_SHA}" > "${STAGE}/COMMIT_SHA"

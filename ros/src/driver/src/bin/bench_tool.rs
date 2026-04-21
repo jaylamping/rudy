@@ -2,7 +2,7 @@
 //!
 //! Replaces `tools/robstride/bench_*.py` for Pi-side bring-up. Wraps the
 //! shared `driver::rs03::tests` library so the routines stay 1:1 with what
-//! `rudydae` runs from the operator console.
+//! `cortex` runs from the operator console.
 
 use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};

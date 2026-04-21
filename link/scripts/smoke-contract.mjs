@@ -1,16 +1,16 @@
 #!/usr/bin/env node
-// End-to-end smoke test of the link <-> rudydae REST contract.
+// End-to-end smoke test of the link <-> cortex REST contract.
 //
-// Hits every endpoint `link/src/lib/api.ts` calls against a running rudydae
+// Hits every endpoint `link/src/lib/api.ts` calls against a running cortex
 // (mock CAN is fine), validates the JSON shapes, and exits non-zero on the
 // first mismatch. Designed to be both a `npm run smoke` for humans and a CI
 // gate ("does the SPA's view of the API still match the binary?").
 //
 // Usage:
 //   node scripts/smoke-contract.mjs                # hits http://127.0.0.1:8443
-//   RUDYD_URL=http://127.0.0.1:9999 node scripts/smoke-contract.mjs
-//   node scripts/smoke-contract.mjs --spawn        # spawns `cargo run -p rudydae`
-//                                                  # against ../config/rudyd.toml
+//   CORTEX_URL=http://127.0.0.1:9999 node scripts/smoke-contract.mjs
+//   node scripts/smoke-contract.mjs --spawn        # spawns `cargo run -p cortex`
+//                                                  # against ../config/cortex.toml
 //
 // Notes:
 //   - WebTransport is intentionally NOT exercised here. The contract this
@@ -28,7 +28,7 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..", "..");
 
-const BASE = process.env.RUDYD_URL ?? "http://127.0.0.1:8443";
+const BASE = process.env.CORTEX_URL ?? "http://127.0.0.1:8443";
 const SPAWN = process.argv.includes("--spawn");
 
 let failures = 0;
@@ -78,15 +78,15 @@ async function waitForServer() {
     }
     await sleep(500);
   }
-  throw new Error(`rudydae at ${BASE} did not respond within ${timeoutMs / 1000}s`);
+  throw new Error(`cortex at ${BASE} did not respond within ${timeoutMs / 1000}s`);
 }
 
 async function maybeSpawnDaemon() {
   if (!SPAWN) return null;
-  // Note: this assumes mock CAN. The default config/rudyd.toml has mock=true.
-  // rudydae resolves relative paths in rudyd.toml (actuator_spec, inventory,
+  // Note: this assumes mock CAN. The default config/cortex.toml has mock=true.
+  // cortex resolves relative paths in cortex.toml (actuator_spec, inventory,
   // audit_log) against its CWD, so we run from the repo root.
-  process.stdout.write(`# spawning: cargo run --manifest-path crates/Cargo.toml -p rudydae (cwd=${repoRoot})\n`);
+  process.stdout.write(`# spawning: cargo run --manifest-path crates/Cargo.toml -p cortex (cwd=${repoRoot})\n`);
   const child = spawn(
     "cargo",
     [
@@ -95,19 +95,19 @@ async function maybeSpawnDaemon() {
       "--manifest-path",
       "crates/Cargo.toml",
       "-p",
-      "rudydae",
+      "cortex",
       "--",
-      "config/rudyd.toml",
+      "config/cortex.toml",
     ],
     {
       cwd: repoRoot,
       stdio: ["ignore", "inherit", "inherit"],
-      env: { ...process.env, RUST_LOG: "rudydae=warn" },
+      env: { ...process.env, RUST_LOG: "cortex=warn" },
     },
   );
   child.on("exit", (code) => {
     if (code !== 0 && code !== null) {
-      process.stderr.write(`# rudydae exited with ${code}\n`);
+      process.stderr.write(`# cortex exited with ${code}\n`);
     }
   });
   return child;
@@ -342,7 +342,7 @@ async function main() {
     // 10. PUT /api/logs/level — invalid directive must come back 400
     // with our error envelope. We don't exercise the success path here
     // because that would mutate the running daemon's filter and risk
-    // slowing later checks; the unit tests in `crates/rudydae` cover it.
+    // slowing later checks; the unit tests in `crates/cortex` cover it.
     {
       const r = await http("PUT", "/api/logs/level", { raw: "this is not a filter directive!!!" });
       const ok =

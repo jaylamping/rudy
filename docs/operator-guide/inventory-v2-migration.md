@@ -10,7 +10,7 @@ The daemon requires `schema_version: 2` and a top-level `devices:` list. Version
 2. **Run the migration tool** (from the workspace `crates/` directory, or adjust paths):
 
    ```bash
-   cargo run -p rudydae --bin migrate_inventory -- ../config/actuators/inventory.yaml
+   cargo run -p cortex --bin migrate_inventory -- ../config/actuators/inventory.yaml
    ```
 
    This reads the v1 file and writes `config/actuators/inventory.yaml.v2`. It refuses to overwrite an existing `.v2` file.
@@ -24,7 +24,7 @@ The daemon requires `schema_version: 2` and a top-level `devices:` list. Version
    mv config/actuators/inventory.yaml.v2 config/actuators/inventory.yaml
    ```
 
-5. **Restart** `rudydae` and confirm the SPA still lists your actuators.
+5. **Restart** `cortex` and confirm the SPA still lists your actuators.
 
 ## What changes
 
@@ -33,4 +33,4 @@ The daemon requires `schema_version: 2` and a top-level `devices:` list. Version
 
 ## Rollback
 
-Restore the v1 backup as `inventory.yaml` and run a rudydae build that still accepts v1 (pre–schema v2 migration).
+Restore the v1 backup as `inventory.yaml` and run a cortex build that still accepts v1 (pre–schema v2 migration).

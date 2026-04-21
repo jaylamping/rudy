@@ -1,4 +1,4 @@
-/** Wire shape for `GET /api/hardware/unassigned` (matches `rudydae::api::hardware::UnassignedDevice`). */
+/** Wire shape for `GET /api/hardware/unassigned` (matches `cortex::api::hardware::UnassignedDevice`). */
 export type UnassignedDevice = {
   bus: string;
   can_id: number;

@@ -2,7 +2,7 @@
 
 ## Preconditions
 
-- **OS**: Ubuntu LTS for Raspberry Pi (aarch64). 24.04 LTS is the documented baseline; newer releases work for **`rudydae` + SocketCAN** (no ROS packages on the Pi for now).
+- **OS**: Ubuntu LTS for Raspberry Pi (aarch64). 24.04 LTS is the documented baseline; newer releases work for **`cortex` + SocketCAN** (no ROS packages on the Pi for now).
 - **Time sync**: `chrony` installed by `deploy/pi5/setup_pi5.sh` (important for logs and any future distributed stack).
 
 **ROS 2 on the Pi:** deferred. The desktop [`ros/`](../../ros/) workspace and CI still use Jazzy; onboard ROS/`ros2_control` will return when the Pi `driver_node` path is implemented. Do not add `packages.ros.org` apt sources on the Pi unless you are intentionally matching a supported Ubuntu series for Jazzy (currently **noble**).
@@ -31,7 +31,9 @@ Or run the setup script once, then bring up manually:
 sudo ./deploy/pi5/can_setup.sh 1000000
 ```
 
-## Install / deploy `rudydae`
+## Install / deploy `cortex`
+
+**Rename note:** Older installs used `rudyd.service`, `/etc/rudy/rudyd.toml`, and `/var/lib/rudyd/tailscale/`. The daemon is now **`cortex`** (`cortex.service`, `/etc/rudy/cortex.toml`, `/var/lib/rudy/cortex/tailscale/`). `deploy/pi5/apply-release.sh` and `deploy/pi5/install.sh` run a one-shot migration from the old paths on upgrade.
 
 The Pi pulls prebuilt aarch64 releases from GitHub Actions on a 60-second
 timer. You do not build on the Pi any more.
@@ -45,9 +47,9 @@ sudo bash ~/rudy/deploy/pi5/bootstrap.sh
 
 That installs `rudy-update.timer`, which polls the latest GitHub Release.
 On every push to `main`, [`.github/workflows/release.yaml`](../../.github/workflows/release.yaml)
-cross-builds `rudydae` for `aarch64-unknown-linux-gnu`, bundles the SPA,
+cross-builds `cortex` for `aarch64-unknown-linux-gnu`, bundles the SPA,
 and publishes the tarball + `latest.json` manifest. Within ~60s of a green
-build, the Pi downloads it (sha256-verified) and restarts `rudyd`.
+build, the Pi downloads it (sha256-verified) and restarts `cortex`.
 
 **Day-to-day:**
 
@@ -57,7 +59,7 @@ sudo systemctl start rudy-update
 
 # Watch deploys land
 journalctl -u rudy-update -f
-journalctl -u rudyd -f
+journalctl -u cortex -f
 
 # What commit is running?
 cat /opt/rudy/current.sha

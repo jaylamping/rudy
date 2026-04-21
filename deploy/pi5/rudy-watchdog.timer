@@ -1,5 +1,5 @@
 [Unit]
-Description=Probe rudyd health every 15 seconds
+Description=Probe cortex health every 15 seconds
 Documentation=file:///etc/rudy/docs/runbooks/operator-console.md
 
 [Timer]

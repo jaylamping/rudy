@@ -1,10 +1,10 @@
 // Contract tests for `link/src/lib/api.ts`.
 //
 // We don't boot a real backend here — that's what `scripts/smoke-contract.mjs`
-// (and the Rust integration tests under `crates/rudydae/tests/`) do. Instead,
+// (and the Rust integration tests under `crates/cortex/tests/`) do. Instead,
 // these tests pin the URL, HTTP method, and request body shape that each
 // `api.*` call produces, so a frontend-only refactor can't silently drift
-// from the routes the Rust server registers in `crates/rudydae/src/api/mod.rs`.
+// from the routes the Rust server registers in `crates/cortex/src/api/mod.rs`.
 //
 // If a route name changes on the backend, the matching Rust integration test
 // will fail. If the frontend stops calling that route by the right name, this

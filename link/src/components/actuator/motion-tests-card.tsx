@@ -1,6 +1,6 @@
 // Motion-tests card.
 //
-// Closed-loop motion patterns are owned by the daemon (`crates/rudydae/src/motion/`).
+// Closed-loop motion patterns are owned by the daemon (`crates/cortex/src/motion/`).
 // This card is a pure intent + observe surface:
 //
 //   1. POST /api/motors/:role/motion/{sweep,wave} once to start.
@@ -11,7 +11,7 @@
 //
 // There is no per-frame loop in here. The browser does not drive the
 // motor; the bus_worker on the Pi does. See the convention doc in
-// `crates/rudydae/src/motion/mod.rs` for the rationale.
+// `crates/cortex/src/motion/mod.rs` for the rationale.
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Activity, Square, Waves } from "lucide-react";
@@ -43,7 +43,7 @@ const DEG_TO_RAD = Math.PI / 180;
 // faster safely because they self-reverse inside the travel band.
 const MAX_VEL_RAD_S = 2.0;
 
-// Mirrors `default_turnaround_rad` in `crates/rudydae/src/motion/intent.rs`.
+// Mirrors `default_turnaround_rad` in `crates/cortex/src/motion/intent.rs`.
 // Used only to render the operator-facing "reverses Xdeg before each
 // edge at this speed" hint in the sweep subtitle — the daemon is the
 // source of truth for the actual inset that gets baked into the intent.
@@ -409,7 +409,7 @@ export function MotionTestsCard({ motor }: { motor: MotorSummary }) {
 
         {!available && (
           <p className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-400">
-            Motion endpoint is not yet deployed on this rudydae build;
+            Motion endpoint is not yet deployed on this cortex build;
             patterns are unavailable.
           </p>
         )}

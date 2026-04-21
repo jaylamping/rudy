@@ -9,7 +9,7 @@
 
 ## Why is this package in C++?
 
-The rest of Rudy's robotics code (`driver`, `rudydae`, the RobStride CAN stack) is Rust. This
+The rest of Rudy's robotics code (`driver`, `cortex`, the RobStride CAN stack) is Rust. This
 package is the one place we cannot follow that rule today, because:
 
 - `controller_manager` discovers and instantiates hardware interfaces through `pluginlib`, which

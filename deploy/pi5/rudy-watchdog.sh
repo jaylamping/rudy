@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Probe rudyd health from loopback and restart on sustained failures.
+# Probe cortex health from loopback and restart on sustained failures.
 set -euo pipefail
 
 STATE_DIR="/var/lib/rudy"
@@ -42,10 +42,10 @@ fi
 
 fails=$((fails + 1))
 echo "${fails}" > "${STATE_FILE}"
-logger -t rudy-watchdog "rudyd unhealthy (${fails}/${THRESHOLD})"
+logger -t rudy-watchdog "cortex unhealthy (${fails}/${THRESHOLD})"
 
 if (( fails >= THRESHOLD )); then
-  logger -t rudy-watchdog "restarting rudyd.service after sustained failure"
-  systemctl restart rudyd.service
+  logger -t rudy-watchdog "restarting cortex.service after sustained failure"
+  systemctl restart cortex.service
   echo 0 > "${STATE_FILE}"
 fi

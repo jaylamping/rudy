@@ -10,7 +10,7 @@ export type Motor = { role: string, can_bus: string, can_id: number, firmware_ve
  * Set to `false` for placeholder entries (motor planned but not yet on the
  * bus) or for temporarily-removed motors. Affects:
  *
- *   * Real-CAN telemetry: rudydae skips polling absent motors so an
+ *   * Real-CAN telemetry: cortex skips polling absent motors so an
  *     unanswered iface doesn't fill the SocketCAN txqueue and start
  *     returning ENOBUFS (errno 105) on every send.
  *   * Control plane: enable / stop / save / set_zero on an absent motor

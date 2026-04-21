@@ -4,7 +4,7 @@
 //!
 //!   * `bench_tool` (CLI) gets its routines from here through a `Reporter`
 //!     impl that prints to stdout.
-//!   * `rudydae` invokes the same routines through a `Reporter` impl that
+//!   * `cortex` invokes the same routines through a `Reporter` impl that
 //!     fans out `TestProgress` frames over WebTransport.
 //!
 //! Why a `Reporter` trait instead of returning `Vec<Line>`: the bench
@@ -100,7 +100,7 @@ pub struct Common {
 
 /// What `run_jog` should actually do. Bundled into a struct so the
 /// function signature stays under clippy's `too_many_arguments` cap and
-/// so callers (CLI, rudydae HTTP handler) can build it field-by-field
+/// so callers (CLI, cortex HTTP handler) can build it field-by-field
 /// without lining up six positional booleans/floats correctly.
 pub struct JogParams {
     /// Trapezoidal-ramp setpoint (rad/s). Clamped to `±MAX_TARGET_VEL_RAD_S`.

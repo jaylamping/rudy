@@ -8,8 +8,8 @@
 #   2. Ensures CAN HAT overlays are in /boot/firmware/config.txt.
 #   3. Installs robot-can.service so can0/can1 come up at boot.
 #   4. Installs the rudy-update updater + 1-minute systemd timer.
-#   5. Installs the rudyd health watchdog timer.
-#   6. Configures `tailscale serve` to front rudyd at https://<host>/.
+#   5. Installs the cortex health watchdog timer.
+#   6. Configures `tailscale serve` to front cortex at https://<host>/.
 #   7. Triggers an immediate update so the daemon comes up now.
 #
 # After this, the Pi will auto-update on every push to main:
@@ -45,7 +45,7 @@ apt-get install -y --no-install-recommends \
 
 if ! command -v tailscale >/dev/null; then
   echo "NOTE: tailscale not found. Install it first (curl -fsSL https://tailscale.com/install.sh | sh)"
-  echo "      then re-run this bootstrap so rudyd binds to its tailnet IP and uses HTTPS."
+  echo "      then re-run this bootstrap so cortex binds to its tailnet IP and uses HTTPS."
 fi
 
 if [[ ! -f /etc/systemd/system/robot-can.service ]]; then
@@ -74,13 +74,13 @@ if ! ip link show can0 >/dev/null 2>&1; then
   exit 1
 fi
 
-# Pin each CAN interface's hard IRQ to the same CPU rudydae will pin
+# Pin each CAN interface's hard IRQ to the same CPU cortex will pin
 # its per-bus worker thread to. The kernel runs the SocketCAN softirq
 # on whichever CPU received the hard IRQ, so co-locating IRQ + worker
 # eliminates an inter-core hop on every received frame and keeps the
 # RX path resident in the worker core's L1/L2.
 #
-# Mapping rule mirrors `crates/rudydae/src/can/bus_worker.rs::auto_assign_cpu`:
+# Mapping rule mirrors `crates/cortex/src/can/bus_worker.rs::auto_assign_cpu`:
 # the first iface (sorted) goes on core 1, the second on core 2, etc.,
 # leaving core 0 for the kernel + tokio runtime + axum / WebTransport.
 #
@@ -136,7 +136,7 @@ systemctl enable --now rudy-update.timer
 systemctl enable --now rudy-watchdog.timer
 
 # Wire `tailscale serve` to terminate TLS at the tailnet IP and proxy to the
-# rudyd plaintext loopback listener. `tailscale serve` config is persistent
+# cortex plaintext loopback listener. `tailscale serve` config is persistent
 # across reboots; it re-applies itself after `tailscaled` restarts. We also
 # re-assert this from `apply-release.sh` on every release in case it drifted.
 if command -v tailscale >/dev/null && tailscale status >/dev/null 2>&1; then
@@ -160,8 +160,8 @@ echo
 echo "== Bootstrap complete =="
 echo
 echo "Next steps:"
-echo "  - Verify daemon:    systemctl status rudyd --no-pager"
-echo "  - Tail logs:        journalctl -u rudyd -f"
+echo "  - Verify daemon:    systemctl status cortex --no-pager"
+echo "  - Tail logs:        journalctl -u cortex -f"
 echo "  - Tail updater:     journalctl -u rudy-update -f"
 echo "  - Tail watchdog:    journalctl -t rudy-watchdog -f"
 echo "  - Inspect serve:    tailscale serve status"

@@ -18,7 +18,7 @@
 //
 // Both paths share the same daemon-side controller (`motion::controller`)
 // so the operator UX is identical: server runs the loop, browser only
-// signals intent. See `crates/rudydae/src/motion/mod.rs` for the
+// signals intent. See `crates/cortex/src/motion/mod.rs` for the
 // architecture rule and the heartbeat constants.
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -318,7 +318,7 @@ export function DeadManJog({ motor }: { motor: MotorSummary }) {
         </div>
         {!available && (
           <p className="text-xs text-amber-400">
-            Motion endpoint is not yet deployed on this rudydae build.
+            Motion endpoint is not yet deployed on this cortex build.
             Deploy a newer daemon or re-enable the operator-console build.
           </p>
         )}

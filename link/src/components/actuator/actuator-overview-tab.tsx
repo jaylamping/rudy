@@ -77,7 +77,7 @@ export function ActuatorOverviewTab({ motor }: { motor: MotorSummary }) {
 
 // One-click "go to mechanical zero" for an already-Homed actuator. Reuses
 // the slow-ramp homer endpoint with target_rad=0; the API allows re-homing
-// from BootState::Homed (see crates/rudydae/src/api/home.rs). For non-Homed
+// from BootState::Homed (see crates/cortex/src/api/home.rs). For non-Homed
 // states the button is disabled and we point the operator at the Travel
 // tab where the full Verify & Home ritual lives.
 function GoHomeBar({ motor }: { motor: MotorSummary }) {

@@ -18,9 +18,9 @@ Monorepo for the Rudy upper-body humanoid (RobStride RS03 actuators, CAN bus, Is
   - `simulation` — Isaac Lab scaffold + sim YAML configs
   - `tests` — `launch_testing` + parity tests
 - [`crates/`](crates/) — Non-ROS Rust (Cargo workspace):
-  - `rudydae` — operator-console daemon (axum HTTPS + WebTransport over Tailscale)
+  - `cortex` — operator-console daemon (axum HTTPS + WebTransport over Tailscale)
 - [`link/`](link/) — Vite + React + TypeScript operator console UI (shadcn/ui, TanStack Query, WebTransport)
-- [`config/`](config/) — Workspace-wide configuration (actuator specs, `rudyd.toml`, inventory)
+- [`config/`](config/) — Workspace-wide configuration (actuator specs, `cortex.toml`, inventory)
 - [`deploy/pi5/`](deploy/pi5/) — Raspberry Pi 5 bring-up + systemd units + deploy scripts
 - [`docs/`](docs/README.md) — Architecture, ADRs, runbooks, robotics reference, research exports, MCP stack
 - [`tools/`](tools/) — RobStride bench scripts, Motor Studio exports, diagnostic helpers
@@ -31,7 +31,7 @@ Monorepo for the Rudy upper-body humanoid (RobStride RS03 actuators, CAN bus, Is
 ## Prerequisites
 
 - **Desktop**: ROS 2 **Jazzy** (`desktop` or `desktop-full`), `colcon`, Rust (`cargo`, `rustfmt`, `clippy`), Node 20+, plus `xacro` for tests.
-- **Pi 5**: Ubuntu LTS aarch64, [`deploy/pi5/setup_pi5.sh`](deploy/pi5/setup_pi5.sh) for SocketCAN + `chrony` (no ROS on the device yet). Operator console: `rudydae` + Tailscale 1.60+.
+- **Pi 5**: Ubuntu LTS aarch64, [`deploy/pi5/setup_pi5.sh`](deploy/pi5/setup_pi5.sh) for SocketCAN + `chrony` (no ROS on the device yet). Operator console: `cortex` + Tailscale 1.60+.
 
 ## Build
 
@@ -43,8 +43,8 @@ rosdep install --from-paths src --ignore-src -r -y
 colcon build --symlink-install
 source install/setup.bash
 
-# rudydae daemon
-cd ../crates && cargo build --release -p rudydae
+# cortex daemon
+cd ../crates && cargo build --release -p cortex
 
 # link frontend
 cd ../link && npm install && npm run build
@@ -60,7 +60,7 @@ python3 -m pytest -q tests
 # Rust unit tests (driver crate, inside ROS workspace)
 (cd ros/src/driver && cargo test)
 
-# Rust unit tests (rudydae + future crates)
+# Rust unit tests (cortex + future crates)
 (cd crates && cargo test)
 
 # ROS package tests (after colcon build inside ros/)
@@ -73,7 +73,7 @@ python3 -m pytest -q tests
 ### Regenerating shared TS types
 
 The SPA's TypeScript types under `link/src/lib/types/` are generated from
-the Rust structs in `crates/rudydae/src/types.rs` (and a few others) via
+the Rust structs in `crates/cortex/src/types.rs` (and a few others) via
 [`ts-rs`](https://github.com/Aleph-Alpha/ts-rs). Re-run after editing any
 `#[derive(TS)]` struct:
 
@@ -106,7 +106,7 @@ PATH="$PWD/.venv/bin:$PATH" python3 scripts/validate_urdf.py
 
 ## Operator console
 
-The `rudydae` daemon plus `link` SPA together form the operator console — live
+The `cortex` daemon plus `link` SPA together form the operator console — live
 telemetry, firmware parameter editor, jog/enable controls, URDF 3D view, log
 tail. Reachable over Tailscale only. See:
 
@@ -144,7 +144,7 @@ app shell fans `cmd_stop` to every present motor in one click.
 
 ## CI
 
-GitHub Actions workflow: [`.github/workflows/ci.yaml`](.github/workflows/ci.yaml) — separate jobs for `ros` (Rust + aarch64 `cargo check`, `colcon` build/test, pytest), `rudydae` (crates workspace fmt/clippy/test), `link` (lint + typecheck + build), and `docs-links`.
+GitHub Actions workflow: [`.github/workflows/ci.yaml`](.github/workflows/ci.yaml) — separate jobs for `ros` (Rust + aarch64 `cargo check`, `colcon` build/test, pytest), `cortex` (crates workspace fmt/clippy/test), `link` (lint + typecheck + build), and `docs-links`.
 
 ## License
 

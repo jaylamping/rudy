@@ -1,5 +1,5 @@
 // Thin fetch wrapper. Server-state caching lives in TanStack Query (see
-// `./query.ts`). Requests are same-origin (Vite dev proxy or rudydae serving
+// `./query.ts`). Requests are same-origin (Vite dev proxy or cortex serving
 // the built SPA). No auth: the console is tailnet/localhost-only.
 //
 // Mutating requests carry an `X-Rudy-Session` header. The daemon uses it
@@ -135,7 +135,7 @@ export const api = {
   saveToFlash: (role: string) =>
     apiFetch<{ ok: boolean }>(`/api/motors/${encodeURIComponent(role)}/save`, { method: "POST" }),
   // RAM-only diagnostic re-zero. The `confirm_advanced: true` flag is
-  // required by the daemon (see `crates/rudydae/src/api/control.rs`) so
+  // required by the daemon (see `crates/cortex/src/api/control.rs`) so
   // a misclick or a copy-pasted curl can't silently shift a commissioned
   // motor's frame. The SPA always passes the flag — the safety is
   // enforced at the dialog layer (the operator typed-confirm a destructive
@@ -213,7 +213,7 @@ export const api = {
   // Kept for scripted use and as a manual fallback; the SPA itself drives
   // closed-loop motion through the `/motion/*` endpoints (sweep / wave)
   // or, for hold-to-jog, the WebTransport bidi stream — see
-  // `crates/rudydae/src/motion/` for the rationale.
+  // `crates/cortex/src/motion/` for the rationale.
   jog: (role: string, body: { vel_rad_s: number; ttl_ms: number }) =>
     apiFetch<{ ok: boolean }>(
       `/api/motors/${encodeURIComponent(role)}/jog`,
@@ -222,7 +222,7 @@ export const api = {
   // Server-side closed-loop motion. The SPA POSTs intent once per run
   // and observes the `motion_status` WT stream until `state === "stopped"`.
   // No per-frame heartbeat from the browser — see the convention doc in
-  // `crates/rudydae/src/motion/mod.rs`.
+  // `crates/cortex/src/motion/mod.rs`.
   motion: {
     /** GET → 200 snapshot, or 204 if the role has no active motion. */
     current: async (role: string) => {
@@ -361,7 +361,7 @@ export const api = {
   estop: () =>
     apiFetch<{ ok: boolean; stopped: number }>(`/api/estop`, { method: "POST" }),
   // Observability — backed by the SQLite log store + the tracing
-  // capture layer in `crates/rudydae/src/log_layer.rs`. Live tailing
+  // capture layer in `crates/cortex/src/log_layer.rs`. Live tailing
   // arrives over the WebTransport `LogEvent` stream (see
   // `wtReducers.ts`); these REST methods cover history pagination,
   // explicit clear, and the runtime EnvFilter snapshot/swap.
