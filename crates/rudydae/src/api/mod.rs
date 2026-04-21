@@ -4,7 +4,7 @@
 //! (when applicable) range-check against the actuator spec.
 
 use axum::{
-    routing::{get, post, put},
+    routing::{delete, get, post, put},
     Router,
 };
 
@@ -40,6 +40,7 @@ pub fn router(state: SharedState) -> Router<SharedState> {
         .route("/health", get(health::get_health))
         .route("/system", get(system::get_system))
         .route("/devices", get(devices::list_devices))
+        .route("/devices/:role", delete(devices::remove_device))
         .route("/hardware/unassigned", get(hardware::list_unassigned))
         .route("/hardware/scan", post(hardware::scan))
         .route(

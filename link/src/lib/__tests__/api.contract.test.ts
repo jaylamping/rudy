@@ -71,6 +71,40 @@ describe("REST contract — URL + method per call", () => {
   // Each row is [human-readable name, () => api.someCall(), expected URL, expected method].
   const cases: Array<[string, () => Promise<unknown>, string, string]> = [
     ["GET /api/config", () => api.config(), "/api/config", "GET"],
+    ["GET /api/devices", () => api.listDevices(), "/api/devices", "GET"],
+    [
+      "DELETE /api/devices/:role",
+      () => api.removeDevice("shoulder_actuator_b"),
+      "/api/devices/shoulder_actuator_b",
+      "DELETE",
+    ],
+    [
+      "GET /api/hardware/unassigned",
+      () => api.listUnassignedHardware(),
+      "/api/hardware/unassigned",
+      "GET",
+    ],
+    [
+      "POST /api/hardware/scan",
+      () => api.scanHardware({}),
+      "/api/hardware/scan",
+      "POST",
+    ],
+    [
+      "POST /api/hardware/onboard/robstride",
+      () =>
+        api.onboardRobstrideActuator({
+          can_bus: "can1",
+          can_id: 0x09,
+          model: "rs03",
+          limb: "left_arm",
+          joint_kind: "elbow_pitch",
+          travel_min_rad: -0.5,
+          travel_max_rad: 0.5,
+        }),
+      "/api/hardware/onboard/robstride",
+      "POST",
+    ],
     ["GET /api/motors", () => api.listMotors(), "/api/motors", "GET"],
     [
       "GET /api/motors/:role",

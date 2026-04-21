@@ -48,6 +48,8 @@ pub struct MotorSummary {
     pub firmware_version: Option<String>,
     pub verified: bool,
     pub present: bool,
+    /// Daemon's best-effort view of whether torque is currently enabled.
+    pub enabled: bool,
     pub travel_limits: Option<crate::inventory::TravelLimits>,
     /// Target angle (radians) for boot-time auto-home. `None` uses 0.0 rad;
     /// when set, must stay within `travel_limits`.
@@ -267,6 +269,13 @@ pub enum SafetyEvent {
         t_ms: i64,
         old_role: String,
         new_role: String,
+    },
+    /// A motor was removed from inventory at runtime. Subscribers should
+    /// purge any per-role state keyed by this role and refresh the hardware
+    /// list (it may now appear under "Unassigned" if still present on CAN).
+    MotorRemoved {
+        t_ms: i64,
+        role: String,
     },
     /// `POST /api/motors/:role/commission` completed successfully:
     /// firmware accepted type-6 SetZero + type-22 SaveParams, and the

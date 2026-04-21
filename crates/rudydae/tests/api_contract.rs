@@ -18,10 +18,10 @@ use http_body_util::BodyExt;
 use serde_json::json;
 use tower::ServiceExt;
 
-use rudydae::inventory::{Device, TravelLimits};
+use rudydae::inventory::{Device, Inventory, TravelLimits};
 use rudydae::types::{
-    ApiError, MotorFeedback, MotorSummary, ParamSnapshot, Reminder, ServerConfig, ServerFeatures,
-    SystemSnapshot, WebTransportAdvert,
+    ApiError, MotorFeedback, MotorSummary, ParamSnapshot, Reminder, SafetyEvent, ServerConfig,
+    ServerFeatures, SystemSnapshot, WebTransportAdvert,
 };
 
 mod common;
@@ -108,6 +108,115 @@ async fn get_hardware_unassigned_returns_empty_without_passive_seen() {
     assert_eq!(resp.status(), StatusCode::OK);
     let v: serde_json::Value = body_json(resp).await;
     assert_eq!(v, json!([]));
+}
+
+#[tokio::test]
+async fn delete_device_removes_actuator_and_clears_runtime_state() {
+    let (state, _dir) = common::make_state();
+    common::seed_feedback(&state);
+    common::seed_params(&state);
+    common::set_boot_state(
+        &state,
+        "shoulder_actuator_b",
+        rudydae::boot_state::BootState::Homed,
+    );
+    state.record_passive_seen("can1", 0x09);
+    state
+        .boot_orchestrator_attempted
+        .lock()
+        .expect("boot_orchestrator_attempted poisoned")
+        .insert("shoulder_actuator_b".into());
+
+    let mut safety_rx = state.safety_event_tx.subscribe();
+    let app = rudydae::build_app(state.clone());
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::DELETE)
+                .uri("/api/devices/shoulder_actuator_b")
+                .header("x-rudy-session", "session-A")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let v: serde_json::Value = body_json(resp).await;
+    assert_eq!(v["ok"], json!(true));
+    assert_eq!(v["role"], json!("shoulder_actuator_b"));
+
+    let inv = state.inventory.read().expect("inventory poisoned");
+    assert!(inv.actuator_by_role("shoulder_actuator_b").is_none());
+    drop(inv);
+
+    assert!(!state
+        .latest
+        .read()
+        .expect("latest poisoned")
+        .contains_key("shoulder_actuator_b"));
+    assert!(!state
+        .params
+        .read()
+        .expect("params poisoned")
+        .contains_key("shoulder_actuator_b"));
+    assert!(!state
+        .boot_state
+        .read()
+        .expect("boot_state poisoned")
+        .contains_key("shoulder_actuator_b"));
+    assert!(!state
+        .seen_can_ids
+        .read()
+        .expect("seen_can_ids poisoned")
+        .contains_key(&(String::from("can1"), 0x09)));
+    assert!(!state
+        .boot_orchestrator_attempted
+        .lock()
+        .expect("boot_orchestrator_attempted poisoned")
+        .contains("shoulder_actuator_b"));
+
+    let disk_inv = Inventory::load(&state.cfg.paths.inventory).expect("inventory from disk");
+    assert!(disk_inv.actuator_by_role("shoulder_actuator_b").is_none());
+    assert!(disk_inv.actuator_by_role("shoulder_actuator_a").is_some());
+
+    let mut got_removed = false;
+    for _ in 0..4 {
+        let ev = tokio::time::timeout(std::time::Duration::from_millis(200), safety_rx.recv())
+            .await
+            .expect("safety_event timeout")
+            .expect("safety_event receive");
+        if let SafetyEvent::MotorRemoved { role, .. } = ev {
+            assert_eq!(role, "shoulder_actuator_b");
+            got_removed = true;
+            break;
+        }
+    }
+    assert!(got_removed, "expected SafetyEvent::MotorRemoved");
+}
+
+#[tokio::test]
+async fn delete_device_refuses_enabled_motor() {
+    let (state, _dir) = common::make_state();
+    state.mark_enabled("shoulder_actuator_b");
+    let app = rudydae::build_app(state.clone());
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::DELETE)
+                .uri("/api/devices/shoulder_actuator_b")
+                .header("x-rudy-session", "session-A")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CONFLICT);
+    let err: ApiError = body_json(resp).await;
+    assert_eq!(err.error, "motor_active");
+
+    let inv = state.inventory.read().expect("inventory poisoned");
+    assert!(inv.actuator_by_role("shoulder_actuator_b").is_some());
 }
 
 #[tokio::test]
@@ -2709,6 +2818,11 @@ fn endpoint_inventory_documented() {
     let _spa_endpoints = [
         "GET    /api/config",
         "GET    /api/system",
+        "GET    /api/devices",
+        "DELETE /api/devices/:role",
+        "GET    /api/hardware/unassigned",
+        "POST   /api/hardware/scan",
+        "POST   /api/hardware/onboard/robstride",
         "GET    /api/motors",
         "GET    /api/motors/:role",
         "GET    /api/motors/:role/feedback",

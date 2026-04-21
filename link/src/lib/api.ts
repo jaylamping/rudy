@@ -77,6 +77,12 @@ export const api = {
   /** Full polymorphic inventory (`devices:` from `inventory.yaml`). */
   listDevices: () =>
     apiFetch<import("@/lib/types/Device").Device[]>("/api/devices"),
+  /** Remove one actuator from inventory by role. */
+  removeDevice: (role: string) =>
+    apiFetch<{ ok: boolean; role: string }>(
+      `/api/devices/${encodeURIComponent(role)}`,
+      { method: "DELETE" },
+    ),
   /** CAN IDs seen on the bus but not in inventory (passive + optional active scan). */
   listUnassignedHardware: () =>
     apiFetch<import("@/lib/types/UnassignedDevice").UnassignedDevice[]>("/api/hardware/unassigned"),

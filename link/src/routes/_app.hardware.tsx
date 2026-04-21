@@ -3,16 +3,17 @@
 
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, RefreshCw } from "lucide-react";
+import { Loader2, RefreshCw, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
-import { api } from "@/lib/api";
+import { ConfirmDialog } from "@/components/params";
+import { ApiError, api } from "@/lib/api";
 import { HardwareSection } from "@/components/hardware/hardware-section";
 import { OnboardingWizard } from "@/components/hardware/onboarding-wizard";
 import { bootStateShortLabel } from "@/lib/bootStateUi";
 import { Badge } from "@/components/ui/badge";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { useLiveInterval } from "@/lib/hooks/useLiveInterval";
-import { cn } from "@/lib/utils";
+import { Tooltip } from "@/components/ui/tooltip";
 import type { Device } from "@/lib/types/Device";
 import type { MotorSummary } from "@/lib/types/MotorSummary";
 import type { UnassignedDevice } from "@/lib/types/UnassignedDevice";
@@ -26,6 +27,11 @@ function HardwarePage() {
   const poll = useLiveInterval({ live: 30_000, fallback: 2_000 });
   const [onboardTarget, setOnboardTarget] = useState<UnassignedDevice | null>(null);
   const [onboardOpen, setOnboardOpen] = useState(false);
+  const [removeTarget, setRemoveTarget] = useState<{
+    role: string;
+    can_bus: string;
+    can_id: number;
+  } | null>(null);
 
   const openOnboard = (d: UnassignedDevice) => {
     setOnboardTarget(d);
@@ -54,6 +60,15 @@ function HardwarePage() {
     mutationFn: () => api.scanHardware({}),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["hardware", "unassigned"] });
+    },
+  });
+  const removeMut = useMutation({
+    mutationFn: (target: { role: string }) => api.removeDevice(target.role),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["devices"] });
+      void qc.invalidateQueries({ queryKey: ["motors"] });
+      void qc.invalidateQueries({ queryKey: ["hardware", "unassigned"] });
+      setRemoveTarget(null);
     },
   });
 
@@ -124,6 +139,17 @@ function HardwarePage() {
             <AssignedActuatorsTable
               devices={grouped.actuators}
               motorByRole={motorByRole}
+              onRequestRemove={(a) => {
+                removeMut.reset();
+                setRemoveTarget({
+                  role: a.role,
+                  can_bus: a.can_bus,
+                  can_id: a.can_id,
+                });
+              }}
+              removePendingRole={
+                removeMut.isPending ? removeTarget?.role ?? null : null
+              }
             />
             <AssignedPlaceholderTable title="Sensors" rows={grouped.sensors} kind="sensor" />
             <AssignedPlaceholderTable title="Batteries" rows={grouped.batteries} kind="battery" />
@@ -138,6 +164,39 @@ function HardwarePage() {
           onScan={() => scanMut.mutate()}
           scanMessage={scanMut.data?.message}
           onOnboard={openOnboard}
+        />
+      ) : null}
+      {removeTarget ? (
+        <ConfirmDialog
+          title="Remove actuator from inventory?"
+          description={
+            <div className="space-y-2">
+              <p>
+                Remove <code className="font-mono">{removeTarget.role}</code>{" "}
+                ({removeTarget.can_bus} / 0x
+                {removeTarget.can_id.toString(16).padStart(2, "0")}) from{" "}
+                <code className="font-mono">inventory.yaml</code>?
+              </p>
+              <p>
+                This motor will disappear from Assigned and must be onboarded
+                again before control.
+              </p>
+              {removeMut.isError ? (
+                <p className="text-xs text-destructive">
+                  {describeApiError(removeMut.error)}
+                </p>
+              ) : null}
+            </div>
+          }
+          confirmLabel={removeMut.isPending ? "Removing..." : "Remove actuator"}
+          confirmVariant="destructive"
+          onCancel={() => {
+            if (!removeMut.isPending) setRemoveTarget(null);
+          }}
+          onConfirm={() => {
+            if (removeMut.isPending) return;
+            removeMut.mutate(removeTarget);
+          }}
         />
       ) : null}
     </div>
@@ -225,9 +284,13 @@ function UnassignedSection({
 function AssignedActuatorsTable({
   devices,
   motorByRole,
+  onRequestRemove,
+  removePendingRole,
 }: {
   devices: Device[];
   motorByRole: Map<string, MotorSummary>;
+  onRequestRemove: (a: Device & { kind: "actuator" }) => void;
+  removePendingRole: string | null;
 }) {
   const actuators = devices.filter((d): d is Device & { kind: "actuator" } => d.kind === "actuator");
 
@@ -262,7 +325,12 @@ function AssignedActuatorsTable({
           <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             {limb}
           </h4>
-          <ActuatorTableRows actuators={byLimb.get(limb)!} motorByRole={motorByRole} />
+          <ActuatorTableRows
+            actuators={byLimb.get(limb)!}
+            motorByRole={motorByRole}
+            onRequestRemove={onRequestRemove}
+            removePendingRole={removePendingRole}
+          />
         </div>
       ))}
       {ungrouped.length > 0 ? (
@@ -270,7 +338,12 @@ function AssignedActuatorsTable({
           <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Ungrouped
           </h4>
-          <ActuatorTableRows actuators={ungrouped} motorByRole={motorByRole} />
+          <ActuatorTableRows
+            actuators={ungrouped}
+            motorByRole={motorByRole}
+            onRequestRemove={onRequestRemove}
+            removePendingRole={removePendingRole}
+          />
         </div>
       ) : null}
     </div>
@@ -280,9 +353,13 @@ function AssignedActuatorsTable({
 function ActuatorTableRows({
   actuators,
   motorByRole,
+  onRequestRemove,
+  removePendingRole,
 }: {
   actuators: (Device & { kind: "actuator" })[];
   motorByRole: Map<string, MotorSummary>;
+  onRequestRemove: (a: Device & { kind: "actuator" }) => void;
+  removePendingRole: string | null;
 }) {
   return (
     <div className="overflow-x-auto rounded-md border border-border">
@@ -294,20 +371,41 @@ function ActuatorTableRows({
             <th className="px-3 py-2 font-medium">ID</th>
             <th className="px-3 py-2 font-medium">Family</th>
             <th className="px-3 py-2 font-medium">Boot</th>
-            <th className="px-3 py-2 font-medium"> </th>
+            <th className="px-3 py-2 text-right font-medium">Actions</th>
           </tr>
         </thead>
         <tbody>
           {actuators.map((a) => {
             const motor = motorByRole.get(a.role);
             const boot = motor ? bootStateShortLabel(motor.boot_state) : "—";
+            const isEnabled = motor?.enabled ?? false;
             const fam =
               a.family.kind === "robstride"
                 ? `RobStride ${a.family.model}`
                 : a.family.kind;
+            const removeBtn = (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                aria-label={`Remove ${a.role}`}
+                onClick={() => onRequestRemove(a)}
+                disabled={removePendingRole === a.role || isEnabled}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            );
             return (
               <tr key={a.role} className="border-b border-border/50">
-                <td className="px-3 py-2 font-medium">{a.role}</td>
+                <td className="px-3 py-2">
+                  <Link
+                    to="/actuators/$role"
+                    params={{ role: a.role }}
+                    className="font-medium hover:underline"
+                  >
+                    {a.role}
+                  </Link>
+                </td>
                 <td className="px-3 py-2 font-mono text-xs">{a.can_bus}</td>
                 <td className="px-3 py-2 font-mono text-xs">0x{a.can_id.toString(16).padStart(2, "0")}</td>
                 <td className="px-3 py-2 text-muted-foreground">{fam}</td>
@@ -321,13 +419,13 @@ function ActuatorTableRows({
                   )}
                 </td>
                 <td className="px-3 py-2 text-right">
-                  <Link
-                    to="/actuators/$role"
-                    params={{ role: a.role }}
-                    className={cn(buttonVariants({ variant: "link", size: "sm" }), "h-auto px-0")}
-                  >
-                    Open
-                  </Link>
+                  {isEnabled ? (
+                    <Tooltip content="Stop the motor first." side="top">
+                      <span>{removeBtn}</span>
+                    </Tooltip>
+                  ) : (
+                    removeBtn
+                  )}
                 </td>
               </tr>
             );
@@ -394,4 +492,15 @@ function placeholderNote(kind: "sensor" | "battery") {
   return kind === "sensor"
     ? "Sensor pipeline not wired yet — configuration UI coming soon."
     : "Battery management UI coming soon.";
+}
+
+function describeApiError(error: unknown): string {
+  if (error instanceof ApiError) {
+    const detail =
+      error.body && typeof error.body === "object" && "detail" in error.body
+        ? String((error.body as { detail?: unknown }).detail ?? "")
+        : "";
+    return detail || error.message;
+  }
+  return "Failed to remove actuator.";
 }
