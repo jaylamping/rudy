@@ -55,6 +55,15 @@ use crate::state::SharedState;
 pub const MAX_HOMER_VEL_RAD_S: f32 = 0.5;
 
 /// Returns `true` when the homer should abort with `tracking_error`.
+///
+/// The argument list is intentionally flat (gate flags, the current
+/// tick's freshness/error pair, the debounce state, and the role for
+/// logging) so the call site reads as a one-line decision against the
+/// per-tick locals rather than another struct that has to be packed
+/// every loop iteration. The unit tests below pin each gate
+/// independently, which is much cleaner with positional args than with
+/// a builder.
+#[allow(clippy::too_many_arguments)]
 fn tracking_error_should_abort(
     homer_has_real_can: bool,
     is_fresh: bool,
