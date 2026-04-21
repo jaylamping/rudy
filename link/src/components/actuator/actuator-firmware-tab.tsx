@@ -1,8 +1,7 @@
 // Firmware tab: the full parameter catalog for one motor.
 //
 // Reuses `ParamRow` (writable + observables) from `_app.params.tsx`'s
-// extracted version, plus a sticky "Save to flash" button at the bottom for
-// the once-per-batch persistence step.
+// extracted version, plus bulk "Sync drifted" to push inventory desired values.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
@@ -18,13 +17,14 @@ export function ActuatorFirmwareTab({ role }: { role: string }) {
     queryKey: ["params", role],
     queryFn: () => api.getParams(role),
   });
-  const [confirmSave, setConfirmSave] = useState(false);
+  const [confirmSync, setConfirmSync] = useState(false);
 
-  const saveAll = useMutation({
-    mutationFn: () => api.saveToFlash(role),
+  const syncDrifted = useMutation({
+    mutationFn: () => api.syncParams(role, {}),
     onSuccess: () => {
-      setConfirmSave(false);
+      setConfirmSync(false);
       qc.invalidateQueries({ queryKey: ["params", role] });
+      qc.invalidateQueries({ queryKey: ["motors"] });
     },
   });
 
@@ -39,6 +39,10 @@ export function ActuatorFirmwareTab({ role }: { role: string }) {
     (p) => p.hardware_range !== null && p.hardware_range !== undefined,
   );
   const observables = entries.filter((p) => !p.hardware_range);
+  const driftCount = useMemo(
+    () => editable.filter((p) => p.drift).length,
+    [editable],
+  );
 
   if (paramsQ.isPending) {
     return <div className="text-muted-foreground">Loading parameters...</div>;
@@ -126,39 +130,40 @@ export function ActuatorFirmwareTab({ role }: { role: string }) {
         </CardContent>
       </Card>
 
-      <div className="sticky bottom-2 z-10 flex items-center justify-end gap-2 rounded-md border border-border bg-card/80 p-2 backdrop-blur">
+      <div className="sticky bottom-2 z-10 flex flex-wrap items-center justify-end gap-2 rounded-md border border-border bg-card/80 p-2 backdrop-blur">
         <span className="text-xs text-muted-foreground">
-          RAM writes are volatile. Save once per batch to persist across power.
+          Saving writes to flash and updates desired values in inventory.
         </span>
         <Button
           variant="destructive"
           size="sm"
-          disabled={saveAll.isPending}
-          onClick={() => setConfirmSave(true)}
+          disabled={driftCount === 0 || syncDrifted.isPending}
+          onClick={() => setConfirmSync(true)}
         >
-          {saveAll.isPending ? "Saving..." : "Save all to flash"}
+          {syncDrifted.isPending
+            ? "Syncing..."
+            : `Sync all drifted (${driftCount})`}
         </Button>
-        {saveAll.isError && (
+        {syncDrifted.isError && (
           <span className="text-xs text-destructive">
-            {(saveAll.error as ApiError).message}
+            {(syncDrifted.error as ApiError).message}
           </span>
         )}
       </div>
 
-      {confirmSave && (
+      {confirmSync && (
         <ConfirmDialog
-          title="Save parameters to flash"
+          title="Sync drifted parameters"
           description={
             <>
-              Issue type-22 to <code className="font-mono">{role}</code>. Every
-              RAM-resident parameter on the motor will be written to its
-              non-volatile store. Survives power cycles.
+              Push every <strong>drifted</strong> value from inventory to{" "}
+              <code className="font-mono">{role}</code> (write + type-22 save).
             </>
           }
-          confirmLabel="Save"
+          confirmLabel="Sync all"
           confirmVariant="destructive"
-          onCancel={() => setConfirmSave(false)}
-          onConfirm={() => saveAll.mutate()}
+          onCancel={() => setConfirmSync(false)}
+          onConfirm={() => syncDrifted.mutate()}
         />
       )}
     </div>

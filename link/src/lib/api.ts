@@ -128,6 +128,18 @@ export const api = {
       `/api/motors/${encodeURIComponent(role)}/params/${encodeURIComponent(name)}`,
       { method: "PUT", body: JSON.stringify(body) },
     ),
+  /** Set `inventory.desired_params[name]` from current live value (no CAN write). */
+  adoptParam: (role: string, name: string) =>
+    apiFetch<{ ok: boolean; role: string; name: string; desired: unknown }>(
+      `/api/motors/${encodeURIComponent(role)}/params/${encodeURIComponent(name)}/adopt`,
+      { method: "POST", body: JSON.stringify({}) },
+    ),
+  /** Push desired values to the actuator (write + flash save). Omit `names` to sync all drifted. */
+  syncParams: (role: string, body?: import("@/lib/types/ParamSyncRequest").ParamSyncRequest) =>
+    apiFetch<{ ok: boolean; role: string; synced: string[] }>(
+      `/api/motors/${encodeURIComponent(role)}/params/sync`,
+      { method: "POST", body: JSON.stringify(body ?? {}) },
+    ),
   enable: (role: string) =>
     apiFetch<{ ok: boolean }>(`/api/motors/${encodeURIComponent(role)}/enable`, { method: "POST" }),
   stop: (role: string) =>

@@ -167,6 +167,7 @@ describe("WebTransportBridge", () => {
         boot_state: { kind: "unknown" },
         limb: null,
         joint_kind: null,
+        drifted_param_count: 0,
       },
       {
         role: "shoulder_b",
@@ -182,6 +183,7 @@ describe("WebTransportBridge", () => {
         boot_state: { kind: "unknown" },
         limb: null,
         joint_kind: null,
+        drifted_param_count: 0,
       },
     ];
     qc.setQueryData(["motors"], baseline);
@@ -232,6 +234,7 @@ describe("WebTransportBridge", () => {
         boot_state: { kind: "unknown" },
         limb: null,
         joint_kind: null,
+        drifted_param_count: 0,
       },
     ];
     qc.setQueryData(["motors"], baseline);

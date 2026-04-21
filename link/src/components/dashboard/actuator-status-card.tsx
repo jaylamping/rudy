@@ -47,6 +47,11 @@ export function ActuatorStatusCard({ className }: { className?: string }) {
     [motors],
   );
   const tally = countByTone(motors);
+  const driftedMotors = useMemo(
+    () => motors.filter((m) => m.drifted_param_count > 0),
+    [motors],
+  );
+  const firstDriftRole = driftedMotors[0]?.role;
 
   return (
     <DashboardCard
@@ -61,6 +66,24 @@ export function ActuatorStatusCard({ className }: { className?: string }) {
         </Link>
       }
     >
+      {driftedMotors.length > 0 && firstDriftRole && (
+        <div className="mb-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-100">
+          <span className="font-medium">
+            {driftedMotors.length} actuator
+            {driftedMotors.length === 1 ? "" : "s"} have drifted firmware limits
+          </span>
+          {" · "}
+          <Link
+            to="/actuators/$role"
+            params={{ role: firstDriftRole }}
+            search={{ tab: "firmware" }}
+            className="font-mono underline underline-offset-2"
+          >
+            Review → {firstDriftRole}
+          </Link>
+        </div>
+      )}
+
       <div className="mb-3 flex items-center gap-3 text-xs">
         <Pill tone="ok">{tally.ok} ok</Pill>
         {tally.warn > 0 && <Pill tone="warn">{tally.warn} warn</Pill>}
@@ -127,6 +150,14 @@ function MotorRow({ motor }: { motor: MotorSummary }) {
             0x{motor.can_id.toString(16).padStart(2, "0").toUpperCase()} ·{" "}
             {motor.can_bus}
           </span>
+          {motor.drifted_param_count > 0 && (
+            <span
+              className="shrink-0 rounded-sm bg-amber-500/15 px-1.5 py-0.5 text-[0.65rem] font-medium text-amber-700 dark:text-amber-300"
+              title="Desired vs live mismatch on firmware limits"
+            >
+              drift {motor.drifted_param_count}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-3 font-mono tabular-nums text-muted-foreground">
           {fb ? (

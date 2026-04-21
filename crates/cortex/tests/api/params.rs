@@ -79,7 +79,7 @@ async fn put_param_in_range_returns_write_envelope() {
     }
     let r: WriteResp = body_json(resp).await;
     assert!(r.ok);
-    assert!(!r.saved);
+    assert!(r.saved);
     assert_eq!(r.role, "shoulder_actuator_a");
     assert_eq!(r.name, "limit_torque");
     assert_eq!(r.value, json!(12.5));
@@ -131,7 +131,7 @@ async fn put_param_unknown_param_404s() {
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 
     let err: ApiError = body_json(resp).await;
-    assert_eq!(err.error, "unknown_param");
+    assert_eq!(err.error, "not_writable");
 }
 
 /// `GET /api/motors/:role/travel_limits` returns 404 + `no_travel_limits`

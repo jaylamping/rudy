@@ -4,8 +4,9 @@
 // per-actuator detail page can reuse the same row + confirm dialog.
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { JsonValue } from "@/lib/types/serde_json/JsonValue";
 import type { ParamValue } from "@/lib/types/ParamValue";
@@ -19,16 +20,37 @@ export interface ParamRowProps {
 export function ParamRow({ role, param }: ParamRowProps) {
   const qc = useQueryClient();
   const [draft, setDraft] = useState<string>(String(param.value ?? ""));
-  const [confirm, setConfirm] = useState<null | { save: boolean }>(null);
+  const [confirmSave, setConfirmSave] = useState(false);
+
+  useEffect(() => {
+    setDraft(String(param.value ?? ""));
+  }, [param.value]);
 
   const write = useMutation({
-    mutationFn: async ({ save }: { save: boolean }) => {
+    mutationFn: async () => {
       const value = parseValue(draft, param.type);
-      return api.writeParam(role, param.name, { value, save_after: save });
+      return api.writeParam(role, param.name, { value, save_after: true });
     },
     onSuccess: () => {
-      setConfirm(null);
+      setConfirmSave(false);
       qc.invalidateQueries({ queryKey: ["params", role] });
+      qc.invalidateQueries({ queryKey: ["motors"] });
+    },
+  });
+
+  const adopt = useMutation({
+    mutationFn: () => api.adoptParam(role, param.name),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["params", role] });
+      qc.invalidateQueries({ queryKey: ["motors"] });
+    },
+  });
+
+  const push = useMutation({
+    mutationFn: () => api.syncParams(role, { names: [param.name] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["params", role] });
+      qc.invalidateQueries({ queryKey: ["motors"] });
     },
   });
 
@@ -52,46 +74,65 @@ export function ParamRow({ role, param }: ParamRowProps) {
       </td>
       <td className="px-3 py-2 text-muted-foreground">{param.units ?? ""}</td>
       <td className="px-3 py-2">
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {param.drift && (
+            <Badge
+              variant="outline"
+              className="border-amber-500/60 text-amber-600 dark:text-amber-400"
+              title={`live ${JSON.stringify(param.drift.live)} vs desired ${JSON.stringify(param.drift.desired)}`}
+            >
+              Drift
+            </Badge>
+          )}
           <Button
-            variant="outline"
+            variant="default"
             size="sm"
-            onClick={() => setConfirm({ save: false })}
+            onClick={() => setConfirmSave(true)}
             disabled={write.isPending}
           >
-            Write RAM
+            Save
           </Button>
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={() => setConfirm({ save: true })}
-            disabled={write.isPending}
-          >
-            Save to flash
-          </Button>
+          {param.drift && (
+            <>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => push.mutate()}
+                disabled={push.isPending}
+              >
+                Push
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => adopt.mutate()}
+                disabled={adopt.isPending}
+              >
+                Adopt
+              </Button>
+            </>
+          )}
         </div>
-        {write.isError && (
+        {(write.isError || adopt.isError || push.isError) && (
           <div className="mt-1 text-xs text-destructive">
-            {(write.error as ApiError).message}
+            {((write.error ?? adopt.error ?? push.error) as ApiError).message}
           </div>
         )}
-        {confirm && (
+        {confirmSave && (
           <ConfirmDialog
-            title={confirm.save ? "Save to flash" : "Write to RAM"}
+            title="Save parameter"
             description={
               <>
-                You are about to {confirm.save ? "save " : "write "}
-                <code className="font-mono">{param.name}</code> ={" "}
-                <code className="font-mono">{draft}</code>{" "}
-                {param.units ?? ""} on{" "}
-                <code className="font-mono">{role}</code>.
-                {confirm.save && " This persists across power cycles."}
+                Write <code className="font-mono">{param.name}</code> ={" "}
+                <code className="font-mono">{draft}</code> {param.units ?? ""}{" "}
+                on <code className="font-mono">{role}</code>, save to actuator
+                flash, and record as desired in inventory.
               </>
             }
-            confirmLabel={confirm.save ? "Save" : "Write"}
+            confirmLabel="Save"
             confirmVariant="destructive"
-            onCancel={() => setConfirm(null)}
-            onConfirm={() => write.mutate({ save: confirm.save })}
+            onCancel={() => setConfirmSave(false)}
+            onConfirm={() => write.mutate()}
           />
         )}
       </td>
