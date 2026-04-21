@@ -17,7 +17,6 @@ use tracing::info;
 use tracing::warn;
 
 use crate::config::Config;
-use crate::discovery::HardwareScanReport;
 use crate::inventory::Inventory;
 #[cfg(not(target_os = "linux"))]
 use crate::inventory::Motor;
@@ -26,10 +25,15 @@ use crate::spec::ParamDescriptor;
 use crate::state::SharedState;
 
 pub mod backoff;
+pub mod discovery;
+pub mod math;
 pub mod mock;
-pub mod motion;
+/// Legacy path for angle math used across CAN and motion (`can::motion::wrap_to_pi`, …).
+pub use math as motion;
 pub mod slow_ramp;
 pub mod travel;
+
+use discovery::HardwareScanReport;
 
 #[cfg(target_os = "linux")]
 pub mod bus_worker;

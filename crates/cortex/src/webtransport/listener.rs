@@ -27,7 +27,8 @@ use anyhow::{Context, Result};
 use tracing::{info, warn};
 
 use crate::state::SharedState;
-use crate::wt_router;
+
+use super::session;
 
 pub async fn run(state: SharedState) -> Result<()> {
     if !state.cfg.webtransport.enabled {
@@ -91,5 +92,5 @@ async fn handle_session(
         connection.remote_address()
     );
 
-    wt_router::run_session(connection, state).await
+    session::run_session(connection, state).await
 }

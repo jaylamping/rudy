@@ -31,8 +31,10 @@ use driver::CanBus;
 use crate::boot_state;
 use crate::can::backoff::MotorBackoff;
 use crate::can::bus_worker::{self, BusHandle, WriteValue};
+use crate::can::discovery::{
+    BusParamReader, DeviceProbeRegistry, DiscoveredDevice, HardwareScanReport,
+};
 use crate::config::Config;
-use crate::discovery::{BusParamReader, DeviceProbeRegistry, DiscoveredDevice, HardwareScanReport};
 use crate::inventory::{Inventory, Motor};
 use crate::spec::ParamDescriptor;
 use crate::state::{AppState, SharedState};

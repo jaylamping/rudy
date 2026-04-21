@@ -1,4 +1,4 @@
-//! Canonical kinematic-chain ordering for `POST /api/home_all`.
+//! Limb grouping: kinematic ordering and per-limb quarantine.
 //!
 //! Each actuator in inventory may carry an optional `limb` field (free-form
 //! string like `left_arm`, `right_leg`, `torso`) and an optional
@@ -12,12 +12,17 @@
 //!   - 20-29 leg joints
 //!   - 30-39 head / neck
 
-use std::collections::BTreeMap;
+pub mod health;
+mod ordering;
+
+pub use health::{
+    boot_state_kind_snake, effective_limb_id, limb_quarantine_http, limb_status,
+    require_limb_healthy, require_limb_healthy_http, sibling_quarantine_failures, LimbStatus,
+};
+pub use ordering::{ordered_motors_per_limb, ordered_motors_per_limb_owned};
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
-
-use crate::inventory::{Inventory, Motor};
 
 /// Canonical position of a joint in the kinematic chain. Used to derive the
 /// proximal-to-distal home order without operator input.
@@ -110,47 +115,9 @@ impl JointKind {
     }
 }
 
-/// Group present actuators by `limb`, returning each limb's actuators sorted in
-/// proximal-to-distal home order. Actuators without `limb` are excluded.
-pub fn ordered_motors_per_limb(inv: &Inventory) -> BTreeMap<String, Vec<&Motor>> {
-    let mut by_limb: BTreeMap<String, Vec<&Motor>> = BTreeMap::new();
-    for m in inv.actuators() {
-        if !m.common.present {
-            continue;
-        }
-        let Some(limb) = m.common.limb.as_ref() else {
-            continue;
-        };
-        by_limb.entry(limb.clone()).or_default().push(m);
-    }
-    for motors in by_limb.values_mut() {
-        motors.sort_by_key(|m| m.common.joint_kind.map(|jk| jk.home_order()).unwrap_or(255));
-    }
-    by_limb
-}
-
-/// Like [`ordered_motors_per_limb`] but clones each [`Motor`] so callers can
-/// `tokio::spawn` without holding a borrow of [`Inventory`].
-pub fn ordered_motors_per_limb_owned(inv: &Inventory) -> BTreeMap<String, Vec<Motor>> {
-    let mut by_limb: BTreeMap<String, Vec<Motor>> = BTreeMap::new();
-    for m in inv.actuators() {
-        if !m.common.present {
-            continue;
-        }
-        let Some(limb) = m.common.limb.as_ref() else {
-            continue;
-        };
-        by_limb.entry(limb.clone()).or_default().push(m.clone());
-    }
-    for motors in by_limb.values_mut() {
-        motors.sort_by_key(|m| m.common.joint_kind.map(|jk| jk.home_order()).unwrap_or(255));
-    }
-    by_limb
-}
-
 #[cfg(test)]
-mod tests {
-    use super::*;
+mod ordering_tests {
+    use super::JointKind;
 
     #[test]
     fn arm_order_is_proximal_to_distal() {

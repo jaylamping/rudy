@@ -21,14 +21,7 @@
 use std::net::SocketAddr;
 
 use anyhow::{Context, Result};
-use axum::{
-    extract::State,
-    http::{header, StatusCode, Uri},
-    response::{IntoResponse, Response},
-    routing::get,
-    Router,
-};
-use rust_embed::RustEmbed;
+use axum::{routing::get, Router};
 use tower_http::trace::TraceLayer;
 use tracing::info;
 
@@ -36,13 +29,7 @@ use crate::api;
 use crate::state::SharedState;
 use tokio::sync::oneshot;
 
-#[derive(RustEmbed)]
-#[folder = "static/"]
-struct Assets;
-
-pub(crate) fn spa_present() -> bool {
-    Assets::get("index.html").is_some()
-}
+use super::spa;
 
 pub async fn run(state: SharedState, ready_tx: Option<oneshot::Sender<()>>) -> Result<()> {
     let bind: SocketAddr = state
@@ -56,8 +43,8 @@ pub async fn run(state: SharedState, ready_tx: Option<oneshot::Sender<()>>) -> R
 
     let app = Router::new()
         .nest("/api", api_routes)
-        .route("/", get(index_handler))
-        .fallback(static_handler)
+        .route("/", get(spa::index_handler))
+        .fallback(spa::static_handler)
         .with_state(state.clone())
         .layer(TraceLayer::new_for_http());
 
@@ -72,34 +59,4 @@ pub async fn run(state: SharedState, ready_tx: Option<oneshot::Sender<()>>) -> R
     Ok(())
 }
 
-async fn index_handler(State(_state): State<SharedState>) -> Response {
-    serve_asset("index.html")
-}
-
-async fn static_handler(uri: Uri) -> Response {
-    let path = uri.path().trim_start_matches('/');
-    if path.is_empty() {
-        return serve_asset("index.html");
-    }
-    if Assets::get(path).is_some() {
-        serve_asset(path)
-    } else {
-        // Single-page-app routing: unknown paths get index.html so the
-        // client-side router can take over.
-        serve_asset("index.html")
-    }
-}
-
-fn serve_asset(path: &str) -> Response {
-    match Assets::get(path) {
-        Some(content) => {
-            let mime = mime_guess::from_path(path).first_or_octet_stream();
-            (
-                [(header::CONTENT_TYPE, mime.as_ref())],
-                content.data.into_owned(),
-            )
-                .into_response()
-        }
-        None => (StatusCode::NOT_FOUND, "not found").into_response(),
-    }
-}
+pub(crate) use spa::spa_present;

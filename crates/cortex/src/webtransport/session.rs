@@ -37,13 +37,13 @@ use tracing::{debug, trace, warn};
 use wtransport::Connection;
 use wtransport::{RecvStream, SendStream};
 
+use super::client_frames::ClientFrame;
 use crate::motion::{MotionIntent, MotionStatus};
 use crate::state::SharedState;
 use crate::types::{
     LogEntry, MotorFeedback, SafetyEvent, SystemSnapshot, TestProgress, WtEnvelope, WtKind,
     WtPayload, WtSubscribe, WtSubscribeFilters, WtTransport,
 };
-use crate::wt_client::ClientFrame;
 
 /// Per-session router: owns subscriptions, sequence counters, the lazily-
 /// opened reliable stream handle, and a CBOR scratch buffer reused across

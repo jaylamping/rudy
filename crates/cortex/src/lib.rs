@@ -9,37 +9,38 @@
 //! public API — downstream code should still treat cortex as a binary.
 
 pub mod api;
-pub mod audit;
-pub mod boot_orchestrator;
-pub mod boot_state;
+pub mod app;
 pub mod can;
 pub mod config;
-pub mod discovery;
-pub mod inventory;
-pub mod limb;
-pub mod limb_health;
-pub mod log_layer;
-pub mod log_store;
+pub mod hardware;
+pub mod http;
 pub mod motion;
-pub mod reminders;
-pub mod server;
-pub mod spec;
-pub mod state;
-pub mod system;
-pub mod telemetry;
+pub mod observability;
 pub mod types;
 pub mod util;
-pub mod wt;
-pub mod wt_client;
-pub mod wt_router;
+pub mod webtransport;
 
-pub use state::{AppState, SharedState};
+pub use can::discovery;
+pub use hardware::boot::orchestrator as boot_orchestrator;
+pub use hardware::boot::state as boot_state;
+pub use hardware::inventory;
+pub use hardware::limb;
+pub use hardware::limb::health as limb_health;
+pub use hardware::spec;
+pub use observability::system;
+pub use observability::{audit, log_layer, log_store, reminders, telemetry};
+pub use webtransport::client_frames as wt_client;
+pub use webtransport::listener as wt;
+pub use webtransport::session as wt_router;
+
+pub use app::state;
+pub use app::{AppState, SharedState};
 
 /// Build the same axum `Router` the daemon serves, parameterised over a
 /// pre-built `SharedState`. Useful for `tower::ServiceExt::oneshot`-style
 /// integration tests that don't want to bind a TCP socket.
 ///
-/// Mirrors `server::run`'s composition (`/api` + SPA fallback) but without the
+/// Mirrors `http::run`'s composition (`/api` + SPA fallback) but without the
 /// TLS / `axum_server::bind*` plumbing.
 pub fn build_app(state: SharedState) -> axum::Router {
     axum::Router::new()

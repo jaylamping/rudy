@@ -20,7 +20,7 @@ pub struct HealthResponse {
 }
 
 pub async fn get_health(State(state): State<SharedState>) -> (StatusCode, Json<HealthResponse>) {
-    let spa_embedded = crate::server::spa_present();
+    let spa_embedded = crate::http::spa_present();
     let can_mock = state.cfg.can.mock;
     let can_ready = can_mock || state.real_can.is_some();
     let response = build_health_response(spa_embedded, can_mock, can_ready);
