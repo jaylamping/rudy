@@ -1,7 +1,6 @@
 use anyhow::Result;
 
 use crate::inventory::Actuator;
-use crate::spec::ParamDescriptor;
 use crate::state::SharedState;
 
 use super::LinuxCanCore;
