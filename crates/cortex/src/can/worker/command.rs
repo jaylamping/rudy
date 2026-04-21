@@ -58,10 +58,10 @@ pub enum Cmd {
         enable: bool,
         reply: Sender<io::Result<()>>,
     },
-    /// Velocity-mode setpoint. Smart re-arm: writes RUN_MODE +
-    /// `cmd_enable` only when the worker has not yet observed this
-    /// motor as enabled (transition path). Subsequent calls send only
-    /// `SPD_REF` so the steady-state bus traffic is one frame per jog.
+    /// Velocity-mode setpoint. Smart re-arm: `cmd_stop` → `RUN_MODE` →
+    /// `SPD_REF` → `cmd_enable` when re-arming (first frame or after a
+    /// PP/MIT hold). Subsequent calls send only `SPD_REF` so steady-state
+    /// bus traffic is one frame per tick.
     SetVelocity {
         motor_id: u8,
         host_id: u8,

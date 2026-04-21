@@ -12,10 +12,12 @@ use super::LinuxCanCore;
 impl LinuxCanCore {
     /// Velocity-mode setpoint. The worker thread implements smart
     /// re-arm: on the first frame after `state.enabled` does NOT
-    /// contain the role, the worker writes `RUN_MODE = 2` + sends
-    /// `cmd_enable` + writes `SPD_REF`. On every subsequent frame
-    /// (`state.enabled` already contains the role), it writes only
-    /// `SPD_REF`. Cuts steady-state jog traffic from 60 to 20 frames/s.
+    /// contain the role (or after a PP/MIT hold), the worker sends
+    /// `cmd_stop` → `RUN_MODE = 2` → `SPD_REF` → `cmd_enable` — matching
+    /// the bench bring-up order so `spd_ref` is latched before enable.
+    /// On every subsequent frame (`state.enabled` already contains the
+    /// role), it writes only `SPD_REF`. Cuts steady-state jog traffic
+    /// from 60 to 20 frames/s.
     ///
     /// Velocity is *clamped* to the firmware-level `limit_spd`
     /// envelope before forwarding so a misbehaving caller can't bypass

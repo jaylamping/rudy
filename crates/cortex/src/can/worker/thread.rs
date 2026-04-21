@@ -380,6 +380,8 @@ fn handle_cmd(
                 (|| {
                     let dev = Rs03::new(host_id, motor_id);
                     if need_rearm {
+                        // Re-arm: same order as `bench_enable_disable.py` (stop, mode, spd_ref, enable).
+                        session::cmd_stop(&guard, dev.host_id(), dev.motor_id(), false)?;
                         session::write_param_u8(
                             &guard,
                             dev.host_id(),
@@ -387,15 +389,24 @@ fn handle_cmd(
                             dev.param_index_run_mode(),
                             dev.run_mode_velocity(),
                         )?;
+                        session::write_param_f32(
+                            &guard,
+                            dev.host_id(),
+                            dev.motor_id(),
+                            dev.param_index_spd_ref(),
+                            vel_rad_s,
+                        )?;
                         session::cmd_enable(&guard, dev.host_id(), dev.motor_id())?;
+                    } else {
+                        session::write_param_f32(
+                            &guard,
+                            dev.host_id(),
+                            dev.motor_id(),
+                            dev.param_index_spd_ref(),
+                            vel_rad_s,
+                        )?;
                     }
-                    session::write_param_f32(
-                        &guard,
-                        dev.host_id(),
-                        dev.motor_id(),
-                        dev.param_index_spd_ref(),
-                        vel_rad_s,
-                    )
+                    Ok(())
                 })()
             };
             log_send_result(iface, "set_velocity", motor_id, &result);

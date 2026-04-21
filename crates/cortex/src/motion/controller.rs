@@ -9,8 +9,9 @@
 //! Why a long-running task instead of a per-tick spawn:
 //!
 //! * The controller needs to keep velocity flowing on a deterministic
-//!   cadence. The bus_worker's smart re-arm logic (RUN_MODE + cmd_enable
-//!   on the first frame, SPD_REF only thereafter) is the reason a
+//!   cadence. The bus_worker's smart re-arm logic (cmd_stop → RUN_MODE →
+//!   SPD_REF → cmd_enable on the first frame, SPD_REF only thereafter) is
+//!   the reason a
 //!   sustained server-side loop produces smooth motion in the first
 //!   place — every task respawn would re-trip the re-arm cycle and
 //!   reintroduce the jitter we're killing.
