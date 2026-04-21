@@ -2,7 +2,7 @@
 
 /**
  * Where a log entry came from. `Tracing` is anything that flowed through
- * the tracing subscriber (rudydae internals, axum traces, etc.); `Audit`
+ * the tracing subscriber (cortex internals, axum traces, etc.); `Audit`
  * is the operator-action stream that also lands in `audit.jsonl`.
  */
 export type LogSource = "tracing" | "audit";

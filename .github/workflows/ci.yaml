@@ -104,8 +104,8 @@ jobs:
         run: |
           python3 -m pytest -q tests
 
-  rudydae:
-    name: rudydae daemon (crates workspace)
+  cortex:
+    name: cortex daemon (crates workspace)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -120,7 +120,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends pkg-config libssl-dev
 
-      # Cache cargo registry + target/. Without this the rudydae job did a
+      # Cache cargo registry + target/. Without this the cortex job did a
       # full cold compile (~150 crates incl. wtransport/quinn/rustls/axum)
       # on every PR push, which dominated PR feedback latency. rust-cache
       # keys on Cargo.lock + rustc version + target triple, so it busts
@@ -139,10 +139,10 @@ jobs:
           mkdir -p link/dist
           printf '<!doctype html><title>link stub</title>' > link/dist/index.html
 
-      - name: rudydae fmt + clippy + test
+      - name: cortex fmt + clippy + test
         working-directory: ${{ github.workspace }}/crates
         env:
-          RUDYD_NO_EMBED: "0"
+          CORTEX_NO_EMBED: "0"
           RUSTC_WRAPPER: sccache
           SCCACHE_GHA_ENABLED: "true"
         run: |

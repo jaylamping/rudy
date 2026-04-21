@@ -128,7 +128,7 @@ observables:
   # (e.g. mechPos = 0x3016), but per ADR-0002 the 0x30xx namespace is NOT
   # reachable via type-17 single-frame reads. Use the 0x70xx shadow range
   # (manual §4.1.14), which is the only single-frame read path the Pi has.
-  # `tools/robstride/rs03_can.py:PARAM_MECH_POS` and `crates/rudydae` both
+  # `tools/robstride/rs03_can.py:PARAM_MECH_POS` and `crates/cortex` both
   # read these via type-17 so we keep the spec aligned with what actually
   # works on the wire.
   mech_pos:

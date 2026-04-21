@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build + install rudydae on the Pi from a local repo checkout.
+# Build + install cortex on the Pi from a local repo checkout.
 # Run on the Pi as a normal user with sudo:
 #   sudo bash deploy/pi5/install.sh
 set -euo pipefail
@@ -42,8 +42,8 @@ fi
 echo "Building SPA"
 sudo -u "${BUILD_USER}" bash -lc "cd '${REPO_ROOT}/link' && npm ci && npm run build"
 
-echo "Building rudydae"
-sudo -u "${BUILD_USER}" bash -lc "source '${RUST_ENV}' 2>/dev/null || true; cd '${REPO_ROOT}/crates' && cargo build --release -p rudydae"
+echo "Building cortex"
+sudo -u "${BUILD_USER}" bash -lc "source '${RUST_ENV}' 2>/dev/null || true; cd '${REPO_ROOT}/crates' && cargo build --release -p cortex"
 
 if ! id -u rudy >/dev/null 2>&1; then
   sudo useradd --system --home /var/lib/rudy --create-home --shell /usr/sbin/nologin rudy
@@ -52,14 +52,30 @@ sudo usermod -a -G netdev rudy || true
 
 sudo install -d -m 0755 /opt/rudy/bin /opt/rudy/config /etc/rudy /etc/rudy/docs/runbooks
 sudo install -d -o rudy -g rudy -m 0755 /var/lib/rudy
-sudo install -d -o rudy -g rudy -m 0750 /var/lib/rudyd/tailscale
 
-sudo install -m 0755 "${REPO_ROOT}/crates/target/release/rudydae" /opt/rudy/bin/rudydae
-sudo setcap cap_net_raw,cap_net_admin=eip /opt/rudy/bin/rudydae
+# One-shot migration from legacy rudyd (see docs/runbooks/pi5.md). Idempotent.
+if systemctl list-unit-files 2>/dev/null | grep -q '^rudyd\.service'; then
+  sudo systemctl stop rudyd.service 2>/dev/null || true
+  sudo systemctl disable rudyd.service 2>/dev/null || true
+  sudo rm -f /etc/systemd/system/rudyd.service
+fi
+if [[ -f /etc/rudy/rudyd.toml ]] && [[ ! -f /etc/rudy/cortex.toml ]]; then
+  sudo mv /etc/rudy/rudyd.toml /etc/rudy/cortex.toml
+fi
+if [[ -d /var/lib/rudyd/tailscale ]] && [[ ! -d /var/lib/rudy/cortex/tailscale ]]; then
+  sudo mkdir -p /var/lib/rudy/cortex
+  sudo mv /var/lib/rudyd/tailscale /var/lib/rudy/cortex/tailscale
+  sudo rmdir /var/lib/rudyd 2>/dev/null || true
+fi
+
+sudo install -d -o rudy -g rudy -m 0750 /var/lib/rudy/cortex/tailscale
+
+sudo install -m 0755 "${REPO_ROOT}/crates/target/release/cortex" /opt/rudy/bin/cortex
+sudo setcap cap_net_raw,cap_net_admin=eip /opt/rudy/bin/cortex
 
 rsync -a --delete "${REPO_ROOT}/config/" /opt/rudy/config/
 sudo install -m 0644 "${REPO_ROOT}/docs/runbooks/operator-console.md" /etc/rudy/docs/runbooks/operator-console.md
-sudo install -m 0644 "${REPO_ROOT}/deploy/pi5/rudyd.service" /etc/systemd/system/rudyd.service
+sudo install -m 0644 "${REPO_ROOT}/deploy/pi5/cortex.service" /etc/systemd/system/cortex.service
 
 declare -a CAN_BUSES=()
 for iface in can0 can1; do
@@ -87,15 +103,15 @@ CERT_PREFIX=""
 TLS_ENABLED="false"
 WT_ENABLED="false"
 if [[ -n "${MAGIC_SUFFIX}" ]]; then
-  CERT_PREFIX="/var/lib/rudyd/tailscale/${HOST_SHORT}.${MAGIC_SUFFIX}"
+  CERT_PREFIX="/var/lib/rudy/cortex/tailscale/${HOST_SHORT}.${MAGIC_SUFFIX}"
   if [[ -f "${CERT_PREFIX}.crt" && -f "${CERT_PREFIX}.key" ]]; then
     TLS_ENABLED="true"
     WT_ENABLED="true"
   fi
 fi
 
-if [[ -f /etc/rudy/rudyd.toml ]]; then
-  sudo cp /etc/rudy/rudyd.toml "/etc/rudy/rudyd.toml.bak.$(date +%Y%m%d%H%M%S)"
+if [[ -f /etc/rudy/cortex.toml ]]; then
+  sudo cp /etc/rudy/cortex.toml "/etc/rudy/cortex.toml.bak.$(date +%Y%m%d%H%M%S)"
 fi
 
 {
@@ -120,7 +136,7 @@ fi
   echo "actuator_spec = \"/opt/rudy/config/actuators/robstride_rs03.yaml\""
   echo "# inventory is the operator-mutable, runtime-writable copy."
   echo "# inventory_seed is the read-only baseline shipped with the release;"
-  echo "# rudydae copies it to inventory the first time it boots."
+  echo "# cortex copies it to inventory the first time it boots."
   echo "inventory = \"/var/lib/rudy/inventory.yaml\""
   echo "inventory_seed = \"/opt/rudy/config/actuators/inventory.yaml\""
   echo "audit_log = \"/var/lib/rudy/audit.jsonl\""
@@ -141,15 +157,15 @@ fi
   echo "# Benchtop bring-up stays open until the actuator is fully commissioned."
   echo "# Flip to true after the shoulder passes the verification checklist."
   echo "require_verified = false"
-} | sudo tee /etc/rudy/rudyd.toml >/dev/null
+} | sudo tee /etc/rudy/cortex.toml >/dev/null
 
-sudo chown rudy:rudy /etc/rudy/rudyd.toml
-sudo chmod 0640 /etc/rudy/rudyd.toml
+sudo chown rudy:rudy /etc/rudy/cortex.toml
+sudo chmod 0640 /etc/rudy/cortex.toml
 
 sudo systemctl daemon-reload
-sudo systemctl enable --now rudyd.service
+sudo systemctl enable --now cortex.service
 
 echo
-echo "Installed rudydae."
-echo "Check status: sudo systemctl status rudyd.service"
-echo "Tail logs:     sudo journalctl -u rudyd.service -f"
+echo "Installed cortex."
+echo "Check status: sudo systemctl status cortex.service"
+echo "Tail logs:     sudo journalctl -u cortex.service -f"

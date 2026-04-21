@@ -1,8 +1,8 @@
 [Unit]
 Description=Rudy daemon health watchdog probe
 Documentation=file:///etc/rudy/docs/runbooks/operator-console.md
-After=network-online.target rudyd.service
-Wants=network-online.target rudyd.service
+After=network-online.target cortex.service
+Wants=network-online.target cortex.service
 
 [Service]
 Type=oneshot

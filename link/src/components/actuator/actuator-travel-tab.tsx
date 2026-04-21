@@ -144,7 +144,7 @@ export function ActuatorTravelTab({ motor }: { motor: MotorSummary }) {
           )}
           {endpointMissing && (
             <p className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-400">
-              Travel-limits endpoint is not yet deployed on this rudydae
+              Travel-limits endpoint is not yet deployed on this cortex
               build. Deploy a newer daemon to enable saving.
             </p>
           )}
@@ -304,7 +304,7 @@ export function ActuatorTravelTab({ motor }: { motor: MotorSummary }) {
                 [{minDeg.toFixed(2)}°, {maxDeg.toFixed(2)}°]
               </code>
               . Any commanded position outside this band will be refused by
-              rudydae.
+              cortex.
             </>
           }
           confirmLabel="Save"
@@ -413,7 +413,7 @@ function clamp(n: number, lo: number, hi: number) {
   return n;
 }
 
-// rudydae's error envelope is `{ error: string, detail?: string }`. Pull the
+// cortex's error envelope is `{ error: string, detail?: string }`. Pull the
 // discriminator out so callers can branch on it without re-typing the cast.
 function errorCode(e: ApiError | undefined): string | undefined {
   const body = e?.body;
@@ -426,7 +426,7 @@ function errorCode(e: ApiError | undefined): string | undefined {
 
 // Verify & Home: the operator-initiated slow-ramp homing ritual. Disabled
 // unless boot_state is `in_band` AND a per-motor torque limit has been
-// written to flash (rudydae refuses without `limits_written.limit_torque_nm`).
+// written to flash (cortex refuses without `limits_written.limit_torque_nm`).
 function VerifyAndHomeCard({ motor }: { motor: MotorSummary }) {
   const qc = useQueryClient();
   const [target, setTarget] = useState<number>(0); // degrees

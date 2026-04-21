@@ -7,7 +7,7 @@ This document is the **living** system architecture for the Rudy monorepo. Updat
 Rudy uses a **two-machine** layout:
 
 - **Desktop (x86_64 + NVIDIA GPU)**: development, `colcon` builds, Isaac Lab training, RViz, heavy logging.
-- **Raspberry Pi 5 (aarch64 + CAN HAT)**: onboard runtime — **`rudydae`** owns SocketCAN and the operator console; ROS 2 / `ros2_control` on the Pi is **deferred** until `driver_node` integration.
+- **Raspberry Pi 5 (aarch64 + CAN HAT)**: onboard runtime — **`cortex`** owns SocketCAN and the operator console; ROS 2 / `ros2_control` on the Pi is **deferred** until `driver_node` integration.
 
 ```mermaid
 graph LR
@@ -19,7 +19,7 @@ graph LR
   end
 
   subgraph pi5 [Pi5_aarch64]
-    Daemon[rudydae]
+    Daemon[cortex]
     Daemon --> CAN[SocketCAN]
   end
 
@@ -39,9 +39,9 @@ distinct concern; no single folder dominates.
 | Directory  | Toolchain            | Role                                              |
 | ---------- | -------------------- | ------------------------------------------------- |
 | `ros/src/` | colcon / ament_cmake | ROS 2 Jazzy packages (see table below)            |
-| `crates/`  | Cargo workspace      | Non-ROS Rust — currently `rudydae` daemon           |
+| `crates/`  | Cargo workspace      | Non-ROS Rust — currently `cortex` daemon           |
 | `link/`    | npm / Vite           | React + TypeScript operator-console UI            |
-| `config/`  | YAML / TOML          | Actuator specs, `rudyd.toml`, inventory           |
+| `config/`  | YAML / TOML          | Actuator specs, `cortex.toml`, inventory           |
 | `deploy/`  | shell / systemd      | Pi 5 bring-up, systemd units, Tailscale           |
 | `docs/`    | markdown             | Architecture, ADRs, runbooks, research            |
 | `tools/`   | Python               | RobStride bench scripts, Motor Studio exports     |
@@ -64,17 +64,17 @@ distinct concern; no single folder dominates.
 | `tests`       | `launch_testing` + parity tests                                                                                                       |
 
 
-## Operator console (`rudydae` + `link`)
+## Operator console (`cortex` + `link`)
 
-Separate from the ROS 2 runtime. `rudydae` (in `crates/rudydae/`) owns the CAN bus
+Separate from the ROS 2 runtime. `cortex` (in `crates/cortex/`) owns the CAN bus
 directly and exposes two network surfaces: HTTPS CRUD (axum) for parameter
 editing + commands, and WebTransport over HTTP/3 (wtransport) for the
 telemetry firehose. The `link` SPA (in `link/`) consumes both. Tailscale-only
 reachable. See [ADR-0004](decisions/0004-operator-console.md).
 
 When the ROS 2 `driver_node` is eventually written, it will be a sibling
-consumer of the same `rudydae` CAN handle — not a competitor. This is why
-`rudydae` is the long-lived process and not `driver_node`.
+consumer of the same `cortex` CAN handle — not a competitor. This is why
+`cortex` is the long-lived process and not `driver_node`.
 
 ## Data flow (target)
 

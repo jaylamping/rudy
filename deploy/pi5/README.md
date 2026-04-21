@@ -2,7 +2,7 @@
 
 Scripts in this directory target **Ubuntu LTS (aarch64)** on a Raspberry Pi 5 with the **Waveshare 2-CH CAN HAT** (MCP2515).
 
-**Onboard today:** `rudydae` + SocketCAN + systemd (`robot-can`, `rudyd`, `rudy-update`, `rudy-watchdog`). **ROS 2 on the Pi is not installed** by these scripts; it will return when `driver_node` / `ros2_control` integration is implemented (desktop `ros/` workspace unchanged).
+**Onboard today:** `cortex` + SocketCAN + systemd (`robot-can`, `cortex`, `rudy-update`, `rudy-watchdog`). **ROS 2 on the Pi is not installed** by these scripts; it will return when `driver_node` / `ros2_control` integration is implemented (desktop `ros/` workspace unchanged).
 
 ## How deployment works now
 
@@ -10,14 +10,14 @@ Scripts in this directory target **Ubuntu LTS (aarch64)** on a Raspberry Pi 5 wi
 git push to main
     ↓
 .github/workflows/release.yaml
-    cross-builds rudydae for aarch64
+    cross-builds cortex for aarch64
     builds the link/ SPA
     publishes a GitHub Release with a tarball + latest.json manifest
     ↓
 Pi: rudy-update.timer fires every 60s
     rudy-update.sh checks latest.json, downloads tarball, verifies sha256
-    apply-release.sh installs into /opt/rudy, re-renders /etc/rudy/rudyd.toml,
-        re-asserts `tailscale serve`, restarts rudyd
+    apply-release.sh installs into /opt/rudy, re-renders /etc/rudy/cortex.toml,
+        re-asserts `tailscale serve`, restarts cortex
     ↓
 new build live in ~60–90s, no SSH required
 ```
@@ -26,7 +26,7 @@ The Pi never compiles anything. After the one-time bootstrap, you can leave it a
 
 ## How the operator console is reached
 
-`rudyd` does **not** terminate TLS itself for the REST/SPA surface. It binds
+`cortex` does **not** terminate TLS itself for the REST/SPA surface. It binds
 plaintext on `127.0.0.1:8443`, and `tailscale serve` fronts it with HTTPS
 on `:443` of the Pi's tailnet IP using an auto-renewing Tailscale Let's
 Encrypt cert. Operators browse:
@@ -52,13 +52,13 @@ sudo tailscale up --ssh --hostname rudy-pi
 #    later by a follow-up timer). Tailscale Serve handles the REST/SPA cert
 #    automatically — no manual provisioning needed for the main UI.
 TAILNAME=$(tailscale status --json | jq -r '.Self.DNSName' | sed 's/\.$//')
-sudo install -d -o rudy -g rudy -m 0750 /var/lib/rudyd/tailscale
+sudo install -d -o rudy -g rudy -m 0750 /var/lib/rudy/cortex/tailscale
 sudo tailscale cert \
-  --cert-file "/var/lib/rudyd/tailscale/${TAILNAME}.crt" \
-  --key-file  "/var/lib/rudyd/tailscale/${TAILNAME}.key" \
+  --cert-file "/var/lib/rudy/cortex/tailscale/${TAILNAME}.crt" \
+  --key-file  "/var/lib/rudy/cortex/tailscale/${TAILNAME}.key" \
   "${TAILNAME}"
-sudo chown rudy:rudy "/var/lib/rudyd/tailscale/${TAILNAME}".*
-sudo chmod 0640 "/var/lib/rudyd/tailscale/${TAILNAME}.key"
+sudo chown rudy:rudy "/var/lib/rudy/cortex/tailscale/${TAILNAME}".*
+sudo chmod 0640 "/var/lib/rudy/cortex/tailscale/${TAILNAME}.key"
 
 # 3. Bootstrap. Clone once, then this script is the only thing you ever run.
 git clone https://github.com/jaylamping/rudy ~/rudy
@@ -72,16 +72,16 @@ sudo bash ~/rudy/deploy/pi5/bootstrap.sh
 3. Install the `robot-can` service so `can0`/`can1` come up at boot.
 4. Install `rudy-update.timer` and trigger the first update.
 5. Install `rudy-watchdog.timer` so unhealthy daemon/UI states auto-restart.
-6. Configure `tailscale serve` to front `rudyd` on `https://<host>/`.
+6. Configure `tailscale serve` to front `cortex` on `https://<host>/`.
 
-After it finishes, `journalctl -u rudy-update -f` will show the Pi pull the latest GitHub Release and start `rudyd`. Open `https://rudy-pi/` from any device on the same tailnet.
+After it finishes, `journalctl -u rudy-update -f` will show the Pi pull the latest GitHub Release and start `cortex`. Open `https://rudy-pi/` from any device on the same tailnet.
 
 ## CAN I/O CPU pinning (Pi 5)
 
 `bootstrap.sh` pins each CAN interface's **hard IRQ** to a non-zero CPU
 core (one per iface, in the alphabetical order returned by
 `ip -o link show type can`, leaving core 0 for the kernel + tokio +
-axum / WebTransport). `rudydae` then pins each per-bus worker thread to
+axum / WebTransport). `cortex` then pins each per-bus worker thread to
 the same core via the per-bus `cpu_pin` field in `[[can.buses]]` (or
 the same auto-assignment rule, when `cpu_pin` is omitted).
 
@@ -90,7 +90,7 @@ received the hard IRQ. Pinning the IRQ to the worker's core keeps the
 kernel-side packet path and the user-space `recv()` loop resident in
 the same L1/L2 cache, eliminating an inter-core hop on every received
 frame. This is the highest-impact bus-determinism knob short of moving
-to `SCHED_FIFO` (deferred — see `crates/rudydae/src/can/bus_worker.rs`).
+to `SCHED_FIFO` (deferred — see `crates/cortex/src/can/bus_worker.rs`).
 
 **Verify after bootstrap (or reboot):**
 
@@ -100,9 +100,9 @@ grep can1 /proc/interrupts          # → e.g. 87:  1234567 ... spi0.0  can1
 # Confirm it's pinned to the expected CPU (core 1 for the first bus).
 cat /proc/irq/87/smp_affinity_list  # → 1
 
-# Confirm the rudydae worker is also on that core. The `Cpus_allowed_list`
+# Confirm the cortex worker is also on that core. The `Cpus_allowed_list`
 # row of /proc/<pid>/status reflects current affinity.
-pidof rudydae | xargs -I{} grep -H Cpus_allowed_list /proc/{}/task/*/status \
+pidof cortex | xargs -I{} grep -H Cpus_allowed_list /proc/{}/task/*/status \
   | grep rudy-can-can1
 ```
 
@@ -120,7 +120,7 @@ ssh jaylamping@rudy-pi "cat /opt/rudy/current.sha"
 
 # Watch the next deploy land (push from desktop, then on Pi)
 journalctl -u rudy-update -f
-journalctl -u rudyd -f
+journalctl -u cortex -f
 journalctl -u rudy-watchdog.service -f
 journalctl -t rudy-watchdog -f
 
@@ -138,14 +138,14 @@ curl -sS http://127.0.0.1:8443/api/health | jq
 | -------------------------- | -------------------------------------------------------------------- |
 | `bootstrap.sh`             | **One-time Pi setup** (apt, CAN, updater timer). Run once after flash. |
 | `rudy-update.sh`           | Polls GitHub for new releases; downloads + verifies + applies.       |
-| `apply-release.sh`         | Installs a staged tarball into `/opt/rudy` and restarts `rudyd`.     |
+| `apply-release.sh`         | Installs a staged tarball into `/opt/rudy` and restarts `cortex`.     |
 | `rudy-update.service`      | systemd unit for the updater (oneshot).                              |
 | `rudy-update.timer`        | systemd timer; polls every 60s.                                      |
-| `rudy-watchdog.sh`         | Health probe script; restarts `rudyd` after repeated failures.       |
+| `rudy-watchdog.sh`         | Health probe script; restarts `cortex` after repeated failures.       |
 | `rudy-watchdog.service`    | systemd oneshot unit that runs the watchdog probe.                   |
 | `rudy-watchdog.timer`      | systemd timer; runs watchdog probe every 15s.                        |
-| `render-rudyd-toml.sh`     | Renders `/etc/rudy/rudyd.toml` from live system state.               |
-| `rudyd.service`            | systemd unit for the daemon itself.                                  |
+| `render-cortex-toml.sh`     | Renders `/etc/rudy/cortex.toml` from live system state.               |
+| `cortex.service`            | systemd unit for the daemon itself.                                  |
 | `robot-can.service`        | systemd unit that brings `can0`/`can1` up at 1 Mbps.                 |
 | `can_setup.sh`             | Helper invoked by `robot-can.service`.                               |
 | `install_can_overlays.sh`  | Idempotent append of MCP2515 overlays to `/boot/firmware/config.txt`. |

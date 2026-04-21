@@ -68,7 +68,7 @@ export function LevelControl() {
           autoComplete="off"
           className="h-7 flex-1 font-mono text-xs"
           value={draft}
-          placeholder="info,rudydae=debug,wtransport=warn"
+          placeholder="info,cortex=debug,wtransport=warn"
           onChange={(e) => {
             setDraft(e.target.value);
             if (error) setError(null);

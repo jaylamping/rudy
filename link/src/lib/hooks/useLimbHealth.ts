@@ -7,7 +7,7 @@ export function effectiveLimbId(m: MotorSummary): string {
   return m.limb ?? m.role;
 }
 
-/** Matches `limb_health::quarantining_boot_state` in rudydae. */
+/** Matches `limb_health::quarantining_boot_state` in cortex. */
 export function bootStateQuarantinesLimb(bs: BootState): boolean {
   switch (bs.kind) {
     case "out_of_band":
@@ -30,7 +30,7 @@ export type LimbHealthForMotion = {
 };
 
 /**
- * Client-side mirror of rudydae's sibling-only limb quarantine so motion
+ * Client-side mirror of cortex's sibling-only limb quarantine so motion
  * buttons can disable early. Uses the shared `["motors"]` query cache.
  */
 export function useLimbHealth(role: string): LimbHealthForMotion {

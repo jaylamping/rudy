@@ -3,6 +3,6 @@ import type { LogLevel } from "./LogLevel";
 
 /**
  * One parsed `EnvFilter` directive. `target = None` means the bare
- * default level (`info` in `info,rudydae=debug`).
+ * default level (`info` in `info,cortex=debug`).
  */
 export type LogFilterDirective = { target: string | null, level: LogLevel, };

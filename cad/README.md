@@ -25,7 +25,7 @@ cad/
 
 | CAD path | Repo concept |
 |----------|--------------|
-| `cad/actuators/robstride/rs03/` | [`config/actuators/robstride_rs03.yaml`](../config/actuators/robstride_rs03.yaml) (firmware spec), [`crates/rudydae/src/can/`](../crates/rudydae/src/can/) (driver) |
+| `cad/actuators/robstride/rs03/` | [`config/actuators/robstride_rs03.yaml`](../config/actuators/robstride_rs03.yaml) (firmware spec), [`crates/cortex/src/can/`](../crates/cortex/src/can/) (driver) |
 | `cad/actuators/robstride/rs02/` | RS02 reference (not currently in the inventory) |
 | `cad/actuators/cycloidal/` | Reference printed actuator; not used on Rudy today |
 | `cad/actuators/openqdd/` | Reference QDD design + ODrive pinouts |
@@ -71,7 +71,7 @@ The script is idempotent: it skips outputs that are newer than their source.
 
 The vendor `MotorStudio` Windows binary that originally lived alongside
 this directory (~30 MB of Qt DLLs + `motor_tool.exe`) is **deliberately
-not** imported. Replacing Motor Studio is the entire point of `rudydae`
+not** imported. Replacing Motor Studio is the entire point of `cortex`
 + `link/` per [ADR-0004](../docs/decisions/0004-operator-console.md).
 Bundling the vendor app into the repo would put it on life support and
 inflate every clone. If you need it: it is still in

@@ -428,6 +428,44 @@ dependencies = [
 ]
 
 [[package]]
+name = "cortex"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "axum-server",
+ "chrono",
+ "ciborium",
+ "core_affinity",
+ "driver",
+ "futures-util",
+ "http",
+ "http-body-util",
+ "hyper",
+ "mime_guess",
+ "reqwest",
+ "rusqlite",
+ "rust-embed",
+ "rustls",
+ "sd-notify",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "toml",
+ "tower",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+ "ts-rs",
+ "uuid",
+ "walkdir",
+ "wtransport",
+]
+
+[[package]]
 name = "cpufeatures"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1748,44 +1786,6 @@ dependencies = [
  "libc",
  "untrusted",
  "windows-sys 0.52.0",
-]
-
-[[package]]
-name = "rudydae"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "axum-server",
- "chrono",
- "ciborium",
- "core_affinity",
- "driver",
- "futures-util",
- "http",
- "http-body-util",
- "hyper",
- "mime_guess",
- "reqwest",
- "rusqlite",
- "rust-embed",
- "rustls",
- "sd-notify",
- "serde",
- "serde_json",
- "serde_yaml",
- "tempfile",
- "thiserror 1.0.69",
- "tokio",
- "toml",
- "tower",
- "tower-http",
- "tracing",
- "tracing-subscriber",
- "ts-rs",
- "uuid",
- "walkdir",
- "wtransport",
 ]
 
 [[package]]

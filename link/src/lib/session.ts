@@ -1,4 +1,4 @@
-// Per-tab session id used by the rudydae single-operator lock.
+// Per-tab session id used by the cortex single-operator lock.
 //
 // Minted lazily on first use, cached in `sessionStorage` so a route swap
 // doesn't churn the id. The id is opaque to the daemon — it just needs a

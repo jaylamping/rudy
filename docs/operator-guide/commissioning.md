@@ -1,6 +1,6 @@
 # Commissioning actuators (commissioned zero)
 
-This guide is for operators using **Rudy’s operator console** (`rudydae` + Link SPA) with RobStride RS03 hardware. Canonical protocol detail lives in [ADR 0002: RS03 CAN protocol](../decisions/0002-rs03-protocol-spec.md), especially **Commissioned mechanical zero (rudydae)**.
+This guide is for operators using **Rudy’s operator console** (`cortex` + Link SPA) with RobStride RS03 hardware. Canonical protocol detail lives in [ADR 0002: RS03 CAN protocol](../decisions/0002-rs03-protocol-spec.md), especially **Commissioned mechanical zero (cortex)**.
 
 ## What “commissioned zero” means
 
@@ -20,7 +20,7 @@ The firmware stores a mechanical position offset (`add_offset`, parameter `0x702
 1. Physically move the joint to the pose you want as **neutral** (mechanical + logical zero for this joint).
 2. Open the actuator **Controls** tab and use **Commission Zero** (calls `POST /api/motors/:role/commission`).
 3. Confirm success in the UI and check the audit log if needed.
-4. **Restart `rudydae`** (or power-cycle). On boot you should see either:
+4. **Restart `cortex`** (or power-cycle). On boot you should see either:
    - **Auto-homing** briefly (`AutoHoming` boot state), then **Homed**, or
    - **In band** / **Verify & Home** if the motor was never commissioned (`commissioned_zero_offset` null) or auto-home is disabled.
 

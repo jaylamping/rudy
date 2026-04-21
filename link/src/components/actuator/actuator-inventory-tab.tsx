@@ -138,7 +138,7 @@ export function ActuatorInventoryTab({ motor }: { motor: MotorSummary }) {
           {!supported && (
             <p className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-400">
               Inventory passthrough endpoint is not yet deployed on this
-              rudydae build.
+              cortex build.
             </p>
           )}
           {detail.isPending && supported && (

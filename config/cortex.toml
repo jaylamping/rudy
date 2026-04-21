@@ -1,0 +1,115 @@
+# cortex operator-console daemon configuration.
+#
+# See ADR-0004 (docs/decisions/0004-operator-console.md) for the architecture.
+# See docs/runbooks/operator-console.md for start/stop.
+
+[http]
+# Address cortex binds for the REST + SPA listener (always plaintext).
+#
+# On the Pi: `127.0.0.1:8443`. The Pi's `tailscale serve` (configured by
+# deploy/pi5/bootstrap.sh) terminates TLS on the tailnet IP at :443 with the
+# auto-managed Tailscale Let's Encrypt cert and proxies decrypted requests
+# here. Operators browse `https://rudy-pi/` from any tailnet device.
+#
+# On dev machines: `127.0.0.1:8443` is fine; Vite proxies `/api/*` to it.
+bind = "127.0.0.1:8443"
+
+[webtransport]
+# HTTP/3 / QUIC listener for the telemetry + log firehose.
+#
+# `tailscale serve` does NOT proxy HTTP/3, so WebTransport keeps doing its own
+# TLS using the same Tailscale-issued cert. Bind to the tailnet IP on the Pi
+# (`render-cortex-toml.sh` substitutes it at install time); leave on
+# `127.0.0.1` for dev (where WT is typically disabled anyway since browsers
+# require HTTP/3+TLS).
+bind = "127.0.0.1:4433"
+enabled = false
+# cert_path = "/var/lib/rudy/cortex/tailscale/<host>.<tailnet>.ts.net.crt"
+# key_path  = "/var/lib/rudy/cortex/tailscale/<host>.<tailnet>.ts.net.key"
+
+[paths]
+# All relative paths are resolved against the working directory cortex was
+# launched from.
+#
+# `inventory` is read AND written by cortex (travel_limits / verified /
+# rename PUTs all rewrite it atomically). For dev work the in-tree copy is
+# fine because the editor and the daemon both have write access. On the
+# Pi, `deploy/pi5/render-cortex-toml.sh` rewrites this to
+# `/var/lib/rudy/inventory.yaml` (writable, preserved across releases) and
+# adds an `inventory_seed = "/opt/rudy/config/actuators/inventory.yaml"`
+# line so the first boot bootstraps from the release-tarball baseline.
+actuator_spec = "./config/actuators/robstride_rs03.yaml"
+inventory = "./config/actuators/inventory.yaml"
+audit_log = "./.cortex/audit.jsonl"
+
+[can]
+# Left empty in Phase 1. On the Pi, a future block will list:
+#   [[can.buses]]
+#   iface = "can1"   # Linux netlink iface (see deploy/pi5/README.md for
+#                    #   can0/can1 vs silkscreen labels)
+#   bitrate = 1_000_000
+# For now cortex emits mocked telemetry so the UI can be developed end-to-end.
+mock = true
+
+[telemetry]
+# Slow-cadence type-17 sweep for the auxiliary observables that don't
+# ride the type-2 stream (`fault_sta`, `vbus`). The dedicated bus
+# worker (`crates/cortex/src/can/bus_worker.rs`) streams pos / vel /
+# torque / temp into `state.latest` at native bus cadence (~60 Hz on
+# the RS03), so this interval is now just for the housekeeping reads,
+# NOT the live position feedback that the jog safety check reads from.
+#
+# Bumped from 100 ms (10 Hz) to 16 ms (~60 Hz) to match the SPA's new
+# 60 Hz tick; this also matches `MotorBackoff::INITIAL_BACKOFF` so the
+# very first retry after a per-motor failure happens on the next tick.
+poll_interval_ms = 16
+
+[safety]
+# `cortex` refuses to enable a motor whose inventory entry lacks
+# `verified: true`. The Rust driver enforces the same gate; this is belt +
+# suspenders. Override only for benchtop commissioning of a fresh motor.
+require_verified = true
+
+# Maximum tolerated age of cached telemetry, in ms, on the jog path.
+# Pinned here (not just defaulted) because the right value is bus-shaped:
+# the type-17 fallback round-robins across motors at roughly
+# `telemetry.poll_interval_ms × motors_per_bus + slack` per role, so an
+# idle motor's `state.latest` row only refreshes every ~100 ms even
+# under healthy conditions. 250 ms absorbs that worst-case fallback
+# gap (still ~15 missed type-2 frames at 60 Hz, so a real mid-sweep
+# stall still fails closed within ~4 SPA tick budgets).
+#
+# The SPA mirror in `link/src/components/actuator/motion-tests-card.tsx`
+# reads the same value; bump both together if you change this.
+max_feedback_age_ms = 250
+
+# Tolerance for the boot orchestrator's add_offset readback check
+# (commissioned-zero quick-home plan, Phase C). On every boot the
+# orchestrator reads firmware param 0x702B over CAN and compares it
+# against the `commissioned_zero_offset` recorded in inventory.yaml.
+# A mismatch larger than this lands the motor in
+# `BootState::OffsetChanged` and refuses motion until the operator
+# either re-commissions (POST /commission) or restores the stored
+# value (POST /restore_offset).
+#
+# 1e-3 rad ≈ 0.057°: tight enough to catch a deliberate set_zero from
+# the bench tool, loose enough to ignore the usual firmware-side float
+# rounding when the same value survives a flash round-trip.
+commission_readback_tolerance_rad = 1e-3
+
+# Master switch for the boot orchestrator's auto-home flow. With true
+# (the default), every commissioned motor whose first valid telemetry
+# lands InBand is automatically driven to its predefined_home_rad via
+# the slow-ramp homer — the operator never has to click Verify & Home
+# on every boot for those motors. Uncommissioned motors continue to
+# require the manual Verify & Home flow regardless.
+#
+# Flip to false as an escape hatch during a hardware investigation;
+# commissioned motors then need the manual flow until you flip it back.
+# No commissioning state on disk is touched.
+auto_home_on_boot = true
+
+# After SocketCAN workers start, run one active discovery scan (type-17
+# probes across 0x01..0x7F on each configured bus). Disable to trim boot
+# latency or on noisy test benches.
+scan_on_boot = true

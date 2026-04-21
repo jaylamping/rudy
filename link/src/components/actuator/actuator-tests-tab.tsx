@@ -127,7 +127,7 @@ export function ActuatorTestsTab({ motor }: { motor: MotorSummary }) {
         <CardHeader>
           <CardTitle className="text-base">Bench routines</CardTitle>
           <CardDescription>
-            Native rudydae implementations of the canonical RS03 bench
+            Native cortex implementations of the canonical RS03 bench
             routines. Each run is single-operator-locked, audit-logged, and
             broadcasts step-by-step progress over a reliable WebTransport
             stream.
@@ -136,7 +136,7 @@ export function ActuatorTestsTab({ motor }: { motor: MotorSummary }) {
         <CardContent className="space-y-3">
           {!available && (
             <p className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-400">
-              Tests endpoint is not yet deployed on this rudydae build.
+              Tests endpoint is not yet deployed on this cortex build.
             </p>
           )}
           {TESTS.map((t) => (

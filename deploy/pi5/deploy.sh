@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Sync the source tree needed for a Pi-native rudydae build, then run install.sh remotely.
+# Sync the source tree needed for a Pi-native cortex build, then run install.sh remotely.
 # Usage: ./deploy.sh user@pi-host [remote_repo_dir]
 set -euo pipefail
 

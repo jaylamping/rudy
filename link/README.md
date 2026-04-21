@@ -12,7 +12,7 @@ See [ADR-0004](../docs/decisions/0004-operator-console.md) for architecture.
 cd link
 npm install
 
-# Point at a locally-running rudydae (http://127.0.0.1:8443).
+# Point at a locally-running cortex (http://127.0.0.1:8443).
 npm run dev
 # -> http://localhost:5173
 ```
@@ -27,9 +27,9 @@ not get live WT streaming. The SPA falls back to REST polling in that case
 npm run build       # -> link/dist/
 ```
 
-`cargo build -p rudydae` runs the `link/dist/` -> `crates/rudydae/static/` copy in
-`build.rs`, and `rust-embed` bakes it into the `rudydae` binary. Single-binary
-Pi deploys therefore only need `rudydae` + the TOML config + the Tailscale cert.
+`cargo build -p cortex` runs the `link/dist/` -> `crates/cortex/static/` copy in
+`build.rs`, and `rust-embed` bakes it into the `cortex` binary. Single-binary
+Pi deploys therefore only need `cortex` + the TOML config + the Tailscale cert.
 
 ## Add a shadcn/ui component
 
@@ -45,9 +45,9 @@ npx shadcn@latest add button input dialog
 
 ## Regenerate wire types
 
-The canonical wire types live in `crates/rudydae/src/types.rs` (and related
+The canonical wire types live in `crates/cortex/src/types.rs` (and related
 Rust modules) and are exported to `src/lib/types/` via `ts-rs` when you run
-`npm run gen:types` (runs `cargo test -p rudydae export_bindings` in `crates/` and normalizes serde_json imports).
+`npm run gen:types` (runs `cargo test -p cortex export_bindings` in `crates/` and normalizes serde_json imports).
 
 ## Layout
 

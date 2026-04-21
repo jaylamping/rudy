@@ -1,9 +1,9 @@
 [workspace]
 resolver = "2"
-members = ["rudydae"]
+members = ["cortex"]
 
 # Non-ROS Rust lives here. The `driver` crate stays in `ros/src/driver/`
-# because it is a hybrid ament_cmake / Cargo package today; `rudydae` depends on
+# because it is a hybrid ament_cmake / Cargo package today; `cortex` depends on
 # it by relative path. If/when `driver` is split into a pure library crate +
 # a thin `ros/src/driver_node/` ament wrapper (see ADR-0004), the library
 # moves here and joins `members`.
@@ -20,7 +20,7 @@ thiserror = "1.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # Explicit tokio feature set instead of `"full"`. Audited against actual
-# usage in rudydae (the only workspace member that uses tokio): macros for
+# usage in cortex (the only workspace member that uses tokio): macros for
 # `#[tokio::main]` / `#[tokio::test]`, rt-multi-thread for the runtime +
 # `spawn`/`spawn_blocking`/`JoinSet`, sync for `broadcast` + async `Mutex`,
 # time for `sleep`/`interval`/`Instant`, signal for `ctrl_c`. We do NOT
