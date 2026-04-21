@@ -21,6 +21,7 @@ fn validate_rejects_duplicate_can_id_same_bus() {
                     limb: None,
                     joint_kind: None,
                     notes_yaml: None,
+                    desired_params: std::collections::BTreeMap::new(),
                 },
                 family: ActuatorFamily::Robstride {
                     model: RobstrideModel::Rs03,
@@ -42,6 +43,7 @@ fn validate_rejects_duplicate_can_id_same_bus() {
                     limb: None,
                     joint_kind: None,
                     notes_yaml: None,
+                    desired_params: std::collections::BTreeMap::new(),
                 },
                 family: ActuatorFamily::Robstride {
                     model: RobstrideModel::Rs03,
@@ -93,4 +95,52 @@ motors:
         .as_ref()
         .expect("notes")
         .contains("sourced_from"));
+}
+
+#[test]
+fn desired_params_roundtrips_in_yaml() {
+    use serde_json::json;
+    use std::collections::BTreeMap;
+
+    let dir = tempfile::tempdir().expect("tmpdir");
+    let path = dir.path().join("inv.yaml");
+    let mut desired = BTreeMap::new();
+    desired.insert("limit_torque".into(), json!(10.0));
+    let inv = Inventory {
+        schema_version: Some(2),
+        devices: vec![Device::Actuator(Actuator {
+            common: ActuatorCommon {
+                role: "bench.m1".into(),
+                can_bus: "can0".into(),
+                can_id: 3,
+                present: true,
+                verified: false,
+                commissioned_at: None,
+                firmware_version: None,
+                travel_limits: None,
+                commissioned_zero_offset: None,
+                active_report_persisted: false,
+                predefined_home_rad: None,
+                limb: None,
+                joint_kind: None,
+                notes_yaml: None,
+                desired_params: desired,
+            },
+            family: ActuatorFamily::Robstride {
+                model: RobstrideModel::Rs03,
+            },
+        })],
+    };
+    inv.validate().expect("validate");
+    let yaml = serde_yaml::to_string(&inv).expect("serialize");
+    std::fs::write(&path, &yaml).expect("write");
+    let back = Inventory::load(&path).expect("load");
+    let a = back.actuator_by_role("bench.m1").expect("motor");
+    assert_eq!(
+        a.common
+            .desired_params
+            .get("limit_torque")
+            .and_then(|v| v.as_f64()),
+        Some(10.0)
+    );
 }

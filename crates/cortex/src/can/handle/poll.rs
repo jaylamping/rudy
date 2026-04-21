@@ -122,6 +122,8 @@ impl LinuxCanCore {
                         units: desc.units.clone(),
                         value,
                         hardware_range: desc.hardware_range,
+                        desired: None,
+                        drift: None,
                     },
                 );
             }

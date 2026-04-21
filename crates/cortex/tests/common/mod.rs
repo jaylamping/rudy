@@ -319,6 +319,8 @@ pub fn seed_params(state: &SharedState) {
                     units: desc.units.clone(),
                     value: default,
                     hardware_range: desc.hardware_range,
+                    desired: None,
+                    drift: None,
                 },
             );
         }

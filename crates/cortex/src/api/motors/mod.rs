@@ -18,6 +18,11 @@ mod travel;
 pub fn router() -> Router<SharedState> {
     Router::new()
         .route("/motors/:role/params", get(params::get_params))
+        .route("/motors/:role/params/sync", post(params::sync_params))
+        .route(
+            "/motors/:role/params/:name/adopt",
+            post(params::adopt_param),
+        )
         .route("/motors/:role/params/:name", put(params::put_param))
         .route("/motors/:role/save", post(control::save_to_flash))
         .route("/motors/:role/enable", post(control::enable))

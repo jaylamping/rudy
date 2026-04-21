@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::time::Duration;
 
 use anyhow::{anyhow, Result};
@@ -29,8 +30,10 @@ impl LinuxCanCore {
         Ok(())
     }
 
-    /// RAM-write low torque AND speed limits for every present motor.
+    /// Apply low torque/speed limits at boot from `inventory.desired_params`, or seed
+    /// commissioning defaults into inventory on first run (write + save to flash).
     pub fn seed_boot_low_limits(&self, state: &SharedState) {
+        let inv_path = state.cfg.paths.inventory.clone();
         let motors: Vec<Actuator> = state
             .inventory
             .read()
@@ -42,6 +45,22 @@ impl LinuxCanCore {
 
         for motor in motors {
             let spec = state.spec_for(motor.robstride_model());
+            if !motor.common.desired_params.is_empty() {
+                for (name, val) in &motor.common.desired_params {
+                    if let Some(desc) = spec.firmware_limits.get(name) {
+                        if let Err(e) = self.write_param(motor, desc, val, true) {
+                            tracing::warn!(
+                                role = %motor.common.role,
+                                param = %name,
+                                error = ?e,
+                                "boot-time desired_params write failed",
+                            );
+                        }
+                    }
+                }
+                continue;
+            }
+
             let limit_torque_nm = spec
                 .commissioning_defaults
                 .get("limit_torque_nm")
@@ -53,18 +72,64 @@ impl LinuxCanCore {
                 .and_then(|v| v.as_f64())
                 .map(|v| v as f32);
 
+            let mut fresh_desired: BTreeMap<String, serde_json::Value> = BTreeMap::new();
+
             if let (Some(t), Some(_)) = (limit_torque_nm, &motor.common.travel_limits) {
                 if let Some(desc) = spec.firmware_limits.get("limit_torque") {
-                    if let Err(e) = self.write_param(&motor, desc, &serde_json::json!(t), false) {
-                        tracing::warn!(role = %motor.common.role, error = ?e, "boot-time limit_torque RAM write failed");
+                    if self
+                        .write_param(&motor, desc, &serde_json::json!(t), true)
+                        .is_ok()
+                    {
+                        fresh_desired.insert("limit_torque".into(), serde_json::json!(t as f64));
+                    } else {
+                        tracing::warn!(
+                            role = %motor.common.role,
+                            "boot-time limit_torque write failed",
+                        );
                     }
                 }
             }
             if let Some(s) = limit_spd_rad_s {
                 if let Some(desc) = spec.firmware_limits.get("limit_spd") {
-                    if let Err(e) = self.write_param(&motor, desc, &serde_json::json!(s), false) {
-                        tracing::warn!(role = %motor.common.role, error = ?e, "boot-time limit_spd RAM write failed");
+                    if self
+                        .write_param(&motor, desc, &serde_json::json!(s), true)
+                        .is_ok()
+                    {
+                        fresh_desired.insert("limit_spd".into(), serde_json::json!(s as f64));
+                    } else {
+                        tracing::warn!(
+                            role = %motor.common.role,
+                            "boot-time limit_spd write failed",
+                        );
                     }
+                }
+            }
+
+            if fresh_desired.is_empty() {
+                continue;
+            }
+
+            let role = motor.common.role.clone();
+            match inventory::write_atomic(&inv_path, |inv| {
+                let actuator = inv
+                    .devices
+                    .iter_mut()
+                    .find_map(|device| match device {
+                        Device::Actuator(a) if a.common.role == role => Some(a),
+                        _ => None,
+                    })
+                    .ok_or_else(|| anyhow!("actuator {role} missing during seed"))?;
+                for (k, v) in &fresh_desired {
+                    actuator.common.desired_params.insert(k.clone(), v.clone());
+                }
+                Ok(())
+            }) {
+                Ok(new_inv) => {
+                    *state.inventory.write().expect("inventory poisoned") = new_inv;
+                    tracing::info!(role = %role, "boot-time persisted commissioning defaults to desired_params");
+                }
+                Err(e) => {
+                    tracing::warn!(role = %role, error = ?e, "boot-time desired_params inventory write failed");
                 }
             }
         }

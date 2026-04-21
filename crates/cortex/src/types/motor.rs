@@ -32,6 +32,9 @@ pub struct MotorSummary {
     pub limb: Option<String>,
     /// Canonical position in the kinematic chain. None for ungrouped motors.
     pub joint_kind: Option<crate::limb::JointKind>,
+    /// Writable params where live RAM differs from `inventory.desired_params`.
+    #[serde(default)]
+    pub drifted_param_count: u32,
 }
 
 /// One snapshot of telemetry for a motor. Sent:
@@ -71,6 +74,22 @@ pub struct ParamValue {
     pub units: Option<String>,
     pub value: serde_json::Value,
     pub hardware_range: Option<[f32; 2]>,
+    /// From `inventory.desired_params` for writable params.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub desired: Option<serde_json::Value>,
+    /// Present when live value differs from desired (writable limits only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub drift: Option<ParamDrift>,
+}
+
+/// Live vs desired mismatch for a single param (writable firmware limits).
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "./")]
+pub struct ParamDrift {
+    pub live: serde_json::Value,
+    pub desired: serde_json::Value,
 }
 
 /// PUT /api/motors/:role/params/:index body.
@@ -78,11 +97,19 @@ pub struct ParamValue {
 #[ts(export, export_to = "./")]
 pub struct ParamWrite {
     pub value: serde_json::Value,
-    /// If `true`, cortex also issues the type-22 save after the write. If
-    /// `false` (default), the value lives in RAM and `POST /api/motors/:role/save`
-    /// is required to persist it.
+    /// Ignored: writes always persist to actuator flash (type-22) and `inventory.desired_params`.
     #[serde(default)]
     pub save_after: bool,
+}
+
+/// POST /api/motors/:role/params/sync body.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "./")]
+pub struct ParamSyncRequest {
+    /// When `None`, sync every param that currently has drift.
+    #[serde(default)]
+    #[ts(optional)]
+    pub names: Option<Vec<String>>,
 }
 
 /// One motor contributing to a [`limb_quarantined`](ApiError::error) refusal.

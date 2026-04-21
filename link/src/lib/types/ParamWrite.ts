@@ -6,8 +6,6 @@ import type { JsonValue } from "./serde_json/JsonValue";
  */
 export type ParamWrite = { value: JsonValue, 
 /**
- * If `true`, cortex also issues the type-22 save after the write. If
- * `false` (default), the value lives in RAM and `POST /api/motors/:role/save`
- * is required to persist it.
+ * Ignored: writes always persist to actuator flash (type-22) and `inventory.desired_params`.
  */
 save_after: boolean, };

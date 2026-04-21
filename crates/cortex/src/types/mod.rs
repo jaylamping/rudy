@@ -18,8 +18,8 @@ mod wt;
 pub use logs::{LogEntry, LogFilterDirective, LogFilterState, LogLevel, LogSource};
 pub use meta::{ServerConfig, ServerFeatures, WebTransportAdvert};
 pub use motor::{
-    ApiError, LimbQuarantineMotor, MotorFeedback, MotorSummary, ParamSnapshot, ParamValue,
-    ParamWrite,
+    ApiError, LimbQuarantineMotor, MotorFeedback, MotorSummary, ParamDrift, ParamSnapshot,
+    ParamSyncRequest, ParamValue, ParamWrite,
 };
 pub use reminders::{Reminder, ReminderInput};
 pub use safety::SafetyEvent;

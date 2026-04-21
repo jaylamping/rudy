@@ -9,4 +9,8 @@ export type ActuatorCommon = { role: string, can_bus: string, can_id: number, pr
 /**
  * YAML fragment (string) preserving v1 `extra` map entries so nothing is silently dropped.
  */
-notes_yaml: string | null, };
+notes_yaml: string | null, 
+/**
+ * Operator intent for writable firmware parameters (RAM/flash mirrors of type-18 writes).
+ */
+desired_params?: Record<string, unknown>, };

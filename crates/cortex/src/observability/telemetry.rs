@@ -39,6 +39,8 @@ pub fn spawn(state: SharedState) {
                     units: desc.units.clone(),
                     value: default,
                     hardware_range: desc.hardware_range,
+                    desired: None,
+                    drift: None,
                 },
             );
         }
@@ -51,6 +53,22 @@ pub fn spawn(state: SharedState) {
         );
     }
     *state.params.write().expect("params poisoned") = seeded;
+
+    // Apply desired/drift decoration from inventory (seed values are zeros until refresh).
+    {
+        let mut params = state.params.write().expect("params poisoned");
+        for motor in &inventory_snap {
+            let spec = state.spec_for(motor.robstride_model());
+            if let Some(snap) = params.get_mut(&motor.common.role) {
+                let n = crate::param_sync::decorate_snapshot(motor, &spec, snap);
+                state
+                    .drift_counts
+                    .write()
+                    .expect("drift_counts poisoned")
+                    .insert(motor.common.role.clone(), n);
+            }
+        }
+    }
 
     // Mock CAN drives its own feedback + parameter shadow; only the real
     // Linux CAN core needs the periodic type-17 poller.
@@ -65,6 +83,25 @@ pub fn spawn(state: SharedState) {
     if !state.cfg.can.mock {
         #[cfg(target_os = "linux")]
         if let Some(core) = state.real_can.clone() {
+            let state_reconcile = state.clone();
+            let core_reconcile = core.clone();
+            tokio::spawn(async move {
+                let mut slow = tokio::time::interval(std::time::Duration::from_secs(5));
+                loop {
+                    slow.tick().await;
+                    if let Err(e) = tokio::task::spawn_blocking({
+                        let state = state_reconcile.clone();
+                        let core = core_reconcile.clone();
+                        move || core.reconcile_inventory(&state)
+                    })
+                    .await
+                    .expect("reconcile_inventory task panicked")
+                    {
+                        tracing::warn!(error = ?e, "param inventory reconcile failed");
+                    }
+                }
+            });
+
             tokio::spawn(async move {
                 // Layer 4: RAM-write low torque/speed before doing
                 // ANYTHING else with the bus. Runs once at startup; the

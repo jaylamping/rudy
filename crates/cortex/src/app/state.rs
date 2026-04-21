@@ -90,6 +90,9 @@ pub struct AppState {
     /// whenever the telemetry loop decodes a type-17 read or a write succeeds.
     pub params: RwLock<BTreeMap<String, ParamSnapshot>>,
 
+    /// Per-motor count of drifted writable params (live RAM vs `desired_params`).
+    pub drift_counts: RwLock<HashMap<String, u32>>,
+
     /// Broadcast channels for live fan-out to the WebTransport sessions.
     pub feedback_tx: broadcast::Sender<MotorFeedback>,
 
@@ -235,6 +238,7 @@ impl AppState {
             latest: RwLock::new(BTreeMap::new()),
             last_type2_at: RwLock::new(HashMap::new()),
             params: RwLock::new(BTreeMap::new()),
+            drift_counts: RwLock::new(HashMap::new()),
             feedback_tx,
             system_tx,
             test_progress_tx,

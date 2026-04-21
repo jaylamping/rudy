@@ -66,6 +66,13 @@ fn summary_for(
         boot_state: boot_state::current(state, &m.common.role),
         limb: m.common.limb.clone(),
         joint_kind: m.common.joint_kind,
+        drifted_param_count: state
+            .drift_counts
+            .read()
+            .expect("drift_counts poisoned")
+            .get(&m.common.role)
+            .copied()
+            .unwrap_or(0),
     }
 }
 

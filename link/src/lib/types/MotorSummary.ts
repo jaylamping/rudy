@@ -31,4 +31,8 @@ limb: string | null,
 /**
  * Canonical position in the kinematic chain. None for ungrouped motors.
  */
-joint_kind: JointKind | null, };
+joint_kind: JointKind | null, 
+/**
+ * Writable params where live RAM differs from `inventory.desired_params`.
+ */
+drifted_param_count: number, };

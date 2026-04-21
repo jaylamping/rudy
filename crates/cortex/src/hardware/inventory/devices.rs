@@ -1,5 +1,7 @@
 //! Inventory device rows: actuators, sensors, batteries.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -66,6 +68,10 @@ pub struct ActuatorCommon {
     /// YAML fragment (string) preserving v1 `extra` map entries so nothing is silently dropped.
     #[serde(default)]
     pub notes_yaml: Option<String>,
+    /// Operator intent for writable firmware parameters (RAM/flash mirrors of type-18 writes).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[ts(type = "Record<string, unknown>")]
+    pub desired_params: BTreeMap<String, serde_json::Value>,
 }
 
 /// Protocol family inside actuators. Extensible (new vendor → new variant).
