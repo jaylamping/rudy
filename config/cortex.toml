@@ -103,6 +103,10 @@ step_size_rad = 0.004
 # sub-half-degree home position.
 target_tolerance_rad = 0.010
 
+# Consecutive fresh in-tolerance telemetry samples before declaring home-ramp success.
+# Default 5 (~50 ms at `tick_interval_ms=10`). See `SafetyConfig::target_dwell_ticks`.
+target_dwell_ticks = 5
+
 # Tolerance for the boot orchestrator's add_offset readback check
 # (commissioned-zero quick-home plan, Phase C). On every boot the
 # orchestrator reads firmware param 0x702B over CAN and compares it

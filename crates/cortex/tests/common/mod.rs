@@ -93,6 +93,7 @@ pub fn make_state() -> (SharedState, tempfile::TempDir) {
             // same thresholds they always have.
             boot_tracking_error_max_rad: 0.05,
             target_tolerance_rad: 0.005,
+            target_dwell_ticks: 5,
             homer_timeout_ms: 5_000,
             max_feedback_age_ms: 100,
             commission_readback_tolerance_rad: 1e-3,
@@ -183,6 +184,7 @@ pub fn make_state_commission_can_path_fails() -> (SharedState, tempfile::TempDir
             band_violation_debounce_ticks: 3,
             boot_tracking_error_max_rad: 0.05,
             target_tolerance_rad: 0.005,
+            target_dwell_ticks: 5,
             homer_timeout_ms: 5_000,
             max_feedback_age_ms: 100,
             commission_readback_tolerance_rad: 1e-3,

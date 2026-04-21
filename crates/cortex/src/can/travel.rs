@@ -10,6 +10,7 @@
 
 use anyhow::Result;
 
+use crate::can::angle::UnwrappedAngle;
 use crate::can::motion::{shortest_signed_delta, wrap_to_pi};
 use crate::inventory::TravelLimits;
 use crate::state::SharedState;
@@ -47,8 +48,8 @@ pub enum BandCheck {
     /// No travel band on file → unrestricted (firmware envelope still applies).
     NoLimit,
     /// Inside the band; safe to forward. `delta_rad` is the shortest signed
-    /// principal-angle distance from current to target, populated by
-    /// `enforce_position_with_path` (zero from the simpler `enforce_position`).
+    /// principal-angle distance from current to target, set by
+    /// `enforce_position_with_path`.
     InBand {
         min_rad: f32,
         max_rad: f32,
@@ -73,46 +74,6 @@ pub enum BandCheck {
     },
 }
 
-/// Look up the travel band for `role` and check `target_rad` against it.
-/// Broadcasts a `SafetyEvent::TravelLimitViolation` on rejection so the
-/// dashboard can render the alert without polling.
-///
-/// Returns `Ok(BandCheck::OutOfBand)` rather than `Err` so handlers can
-/// decide how to surface the rejection (e.g. as a 409 with structured
-/// detail rather than a 500 with anyhow text).
-pub fn enforce_position(state: &SharedState, role: &str, target_rad: f32) -> Result<BandCheck> {
-    let limits: Option<TravelLimits> = state
-        .inventory
-        .read()
-        .map_err(|_| anyhow::anyhow!("inventory poisoned"))?
-        .actuator_by_role(role)
-        .and_then(|m| m.common.travel_limits.clone());
-    let Some(limits) = limits else {
-        return Ok(BandCheck::NoLimit);
-    };
-    if target_rad < limits.min_rad || target_rad > limits.max_rad {
-        let _ = state
-            .safety_event_tx
-            .send(SafetyEvent::TravelLimitViolation {
-                t_ms: chrono::Utc::now().timestamp_millis(),
-                role: role.to_string(),
-                attempted_rad: target_rad,
-                min_rad: limits.min_rad,
-                max_rad: limits.max_rad,
-            });
-        return Ok(BandCheck::OutOfBand {
-            min_rad: limits.min_rad,
-            max_rad: limits.max_rad,
-            attempted_rad: target_rad,
-        });
-    }
-    Ok(BandCheck::InBand {
-        min_rad: limits.min_rad,
-        max_rad: limits.max_rad,
-        delta_rad: 0.0,
-    })
-}
-
 /// Principal-angle path-aware band check. Use this from any handler that
 /// produces motion (jog, home, bench-tests-that-command-position).
 ///
@@ -133,8 +94,8 @@ pub fn enforce_position(state: &SharedState, role: &str, target_rad: f32) -> Res
 pub fn enforce_position_with_path(
     state: &SharedState,
     role: &str,
-    current_rad: f32,
-    target_rad: f32,
+    current: UnwrappedAngle,
+    target: UnwrappedAngle,
 ) -> Result<BandCheck> {
     let limits: Option<TravelLimits> = state
         .inventory
@@ -146,8 +107,8 @@ pub fn enforce_position_with_path(
         return Ok(BandCheck::NoLimit);
     };
 
-    let cur_p = wrap_to_pi(current_rad);
-    let tgt_p = wrap_to_pi(target_rad);
+    let cur_p = wrap_to_pi(current.raw());
+    let tgt_p = wrap_to_pi(target.raw());
 
     if tgt_p < limits.min_rad || tgt_p > limits.max_rad {
         let _ = state

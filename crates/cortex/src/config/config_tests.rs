@@ -39,6 +39,7 @@ fn cfg_with(audit_log: &str, db_path: Option<&str>) -> Config {
             band_violation_debounce_ticks: super::safety::default_band_violation_debounce_ticks(),
             boot_tracking_error_max_rad: super::safety::default_boot_tracking_error_max_rad(),
             target_tolerance_rad: super::safety::default_target_tolerance_rad(),
+            target_dwell_ticks: super::safety::default_target_dwell_ticks(),
             homer_timeout_ms: super::safety::default_homer_timeout_ms(),
             max_feedback_age_ms: super::safety::default_max_feedback_age_ms(),
             commission_readback_tolerance_rad:

@@ -6,6 +6,7 @@
 use super::*;
 use crate::audit::AuditLog;
 use crate::can;
+use crate::can::angle::UnwrappedAngle;
 use crate::config::{
     CanConfig, Config, HttpConfig, LogsConfig, PathsConfig, SafetyConfig, TelemetryConfig,
     WebTransportConfig,
@@ -68,6 +69,7 @@ fn state_with_band(min: f32, max: f32) -> (crate::state::SharedState, tempfile::
             band_violation_debounce_ticks: 3,
             boot_tracking_error_max_rad: 0.05,
             target_tolerance_rad: 0.005,
+            target_dwell_ticks: 5,
             homer_timeout_ms: 5_000,
             max_feedback_age_ms: 100,
             commission_readback_tolerance_rad: 1e-3,
@@ -93,7 +95,8 @@ fn state_with_band(min: f32, max: f32) -> (crate::state::SharedState, tempfile::
 #[test]
 fn path_check_in_band_returns_inband_with_delta() {
     let (s, _d) = state_with_band(-1.0, 1.0);
-    let r = enforce_position_with_path(&s, "m", 0.0, 0.5).unwrap();
+    let r = enforce_position_with_path(&s, "m", UnwrappedAngle::new(0.0), UnwrappedAngle::new(0.5))
+        .unwrap();
     match r {
         BandCheck::InBand { delta_rad, .. } => {
             assert!((delta_rad - 0.5).abs() < 1e-5);
@@ -105,14 +108,16 @@ fn path_check_in_band_returns_inband_with_delta() {
 #[test]
 fn path_check_target_outside_band_returns_outofband() {
     let (s, _d) = state_with_band(-1.0, 1.0);
-    let r = enforce_position_with_path(&s, "m", 0.0, 1.5).unwrap();
+    let r = enforce_position_with_path(&s, "m", UnwrappedAngle::new(0.0), UnwrappedAngle::new(1.5))
+        .unwrap();
     assert!(matches!(r, BandCheck::OutOfBand { .. }));
 }
 
 #[test]
 fn path_check_current_outside_band_returns_pathviolation() {
     let (s, _d) = state_with_band(-1.0, 1.0);
-    let r = enforce_position_with_path(&s, "m", 1.5, 0.0).unwrap();
+    let r = enforce_position_with_path(&s, "m", UnwrappedAngle::new(1.5), UnwrappedAngle::new(0.0))
+        .unwrap();
     assert!(matches!(r, BandCheck::PathViolation { .. }));
 }
 
@@ -167,6 +172,7 @@ fn path_check_no_band_returns_nolimit() {
             band_violation_debounce_ticks: 3,
             boot_tracking_error_max_rad: 0.05,
             target_tolerance_rad: 0.005,
+            target_dwell_ticks: 5,
             homer_timeout_ms: 5_000,
             max_feedback_age_ms: 100,
             commission_readback_tolerance_rad: 1e-3,
@@ -184,6 +190,12 @@ fn path_check_no_band_returns_nolimit() {
     let real_can = can::build_handle(&cfg, &inv).unwrap();
     let reminders = ReminderStore::open(dir.path().join("reminders.json")).unwrap();
     let s = Arc::new(AppState::new(cfg, specs, inv, audit, real_can, reminders));
-    let r = enforce_position_with_path(&s, "m", 100.0, 100.0).unwrap();
+    let r = enforce_position_with_path(
+        &s,
+        "m",
+        UnwrappedAngle::new(100.0),
+        UnwrappedAngle::new(100.0),
+    )
+    .unwrap();
     assert!(matches!(r, BandCheck::NoLimit));
 }

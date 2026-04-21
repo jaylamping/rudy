@@ -79,6 +79,7 @@ fn state_with_real_can_stub_inner(
             band_violation_debounce_ticks: 3,
             boot_tracking_error_max_rad: 0.05,
             target_tolerance_rad: 0.005,
+            target_dwell_ticks: 1,
             homer_timeout_ms: 5_000,
             max_feedback_age_ms: 100,
             commission_readback_tolerance_rad: 1e-3,
@@ -471,7 +472,9 @@ async fn stale_telemetry_hold_then_fresh_run_completes() {
             let fb = w.get_mut(&role2).unwrap();
             if phase2 {
                 fb.t_ms = chrono::Utc::now().timestamp_millis();
-                fb.mech_pos_rad = (fb.mech_pos_rad + 0.03).min(0.25);
+                // Cap at the home target so post-home hold verification (200 ms later)
+                // still sees the joint on the commissioned pose, not an overshoot past it.
+                fb.mech_pos_rad = (fb.mech_pos_rad + 0.03).min(0.12);
             }
         }
     });

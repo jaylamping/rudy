@@ -162,6 +162,12 @@ pub struct SafetyConfig {
     #[serde(default = "default_target_tolerance_rad")]
     pub target_tolerance_rad: f32,
 
+    /// Consecutive **fresh** in-tolerance telemetry samples required before the
+    /// home-ramp declares success. Prevents drive-through successes when the
+    /// joint passes through the tolerance band at speed without settling.
+    #[serde(default = "default_target_dwell_ticks")]
+    pub target_dwell_ticks: u32,
+
     /// Hard timeout on the home-ramp loops, in milliseconds. Default 30 s.
     #[serde(default = "default_homer_timeout_ms")]
     pub homer_timeout_ms: u32,
@@ -281,6 +287,10 @@ pub(crate) fn default_boot_tracking_error_max_rad() -> f32 {
 
 pub(crate) fn default_target_tolerance_rad() -> f32 {
     0.010
+}
+
+pub(crate) fn default_target_dwell_ticks() -> u32 {
+    5
 }
 
 pub(crate) fn default_homer_timeout_ms() -> u32 {

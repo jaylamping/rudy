@@ -18,7 +18,10 @@
 //! telemetry stream doesn't double-spawn the home-ramp homer. Roles
 //! are removed from the set when leaving the orchestrator's "in-band"
 //! flight envelope (OutOfBand transition) so a future re-entry can
-//! retrigger.
+//! retrigger. After a successful auto-home, the motor stays **in**
+//! band in RS03 profile-position hold (`state.position_hold`); the joint
+//! does not droop back `OutOfBand`, so oscillation from `InBand → OutOfBand
+//! → InBand` replays is avoided.
 //!
 //! Decision tree on every fire:
 //!
@@ -376,7 +379,7 @@ pub async fn maybe_run(state: SharedState, role: String) {
                 role = %role,
                 final_pos_rad,
                 ticks,
-                "boot_orchestrator: auto-home succeeded",
+                "boot_orchestrator: auto-home succeeded (PP position hold engaged)",
             );
         }
         Err((reason, last_pos_rad)) => {

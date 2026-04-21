@@ -24,6 +24,7 @@ use tracing::warn;
 use crate::api::error::err;
 use crate::audit::{AuditEntry, AuditResult};
 use crate::boot_state::{self, BootState};
+use crate::can::angle::UnwrappedAngle;
 use crate::can::home_ramp;
 use crate::can::travel::{enforce_position_with_path, BandCheck};
 use crate::inventory::Actuator;
@@ -104,7 +105,12 @@ async fn drive_predefined_home(
         .map(|f| f.mech_pos_rad)
         .ok_or_else(|| ("no_telemetry".into(), f32::NAN))?;
 
-    let check = match enforce_position_with_path(&state, &role, current_pos, target_rad) {
+    let check = match enforce_position_with_path(
+        &state,
+        &role,
+        UnwrappedAngle::new(current_pos),
+        UnwrappedAngle::new(target_rad),
+    ) {
         Ok(c) => c,
         Err(e) => return Err((format!("internal: {e:#}"), current_pos)),
     };

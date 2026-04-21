@@ -4,6 +4,7 @@
 
 use anyhow::Result;
 
+use crate::can::angle::PrincipalAngle;
 use crate::inventory::Actuator;
 use crate::spec::ParamDescriptor;
 use crate::state::SharedState;
@@ -61,6 +62,10 @@ impl RealCanHandle {
     pub fn set_velocity_setpoint(&self, _motor: &Actuator, _vel_rad_s: f32) -> Result<()> {
         // No-op success so non-Linux integration/unit tests can exercise
         // `home_ramp` with `real_can = Some` without a SocketCAN stack.
+        Ok(())
+    }
+
+    pub fn set_position_hold(&self, _motor: &Actuator, _target: PrincipalAngle) -> Result<()> {
         Ok(())
     }
 

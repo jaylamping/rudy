@@ -96,6 +96,10 @@ async fn orchestrator_happy_path_auto_homes_on_mock_can() {
         cortex::boot_state::current(&state, ROLE),
         BootState::Homed
     ));
+    assert!(
+        state.is_position_hold(ROLE),
+        "auto-home should leave the joint in RS03 PP hold until jog/stop"
+    );
 }
 
 #[tokio::test]

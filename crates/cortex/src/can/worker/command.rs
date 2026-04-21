@@ -72,6 +72,15 @@ pub enum Cmd {
         role: String,
         reply: Sender<io::Result<()>>,
     },
+    /// Profile-position hold: `cmd_stop` → `RUN_MODE=1` → `LOC_REF` → `cmd_enable`.
+    /// `target_principal_rad` is defensive Principal-angle (−π, π] (see `home_ramp`).
+    SetPositionHold {
+        motor_id: u8,
+        host_id: u8,
+        target_principal_rad: f32,
+        role: String,
+        reply: Sender<io::Result<()>>,
+    },
     /// Single-parameter write.
     WriteParam {
         motor_id: u8,

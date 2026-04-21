@@ -20,6 +20,7 @@ use crate::config::Config;
 use crate::inventory::Inventory;
 use crate::state::SharedState;
 
+pub mod angle;
 pub mod backoff;
 pub mod discovery;
 pub mod math;

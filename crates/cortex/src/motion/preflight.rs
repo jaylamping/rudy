@@ -27,6 +27,7 @@
 use chrono::Utc;
 
 use crate::boot_state::{self, BootState};
+use crate::can::angle::UnwrappedAngle;
 use crate::can::motion::shortest_signed_delta;
 use crate::can::travel::{enforce_position_with_path, BandCheck};
 use crate::inventory::Actuator;
@@ -272,9 +273,13 @@ impl PreflightChecks<'_> {
         };
 
         let projected = feedback.mech_pos_rad + self.vel_rad_s * (self.horizon_ms as f32 / 1000.0);
-        let check =
-            enforce_position_with_path(self.state, self.role, feedback.mech_pos_rad, projected)
-                .map_err(|e| PreflightFailure::Internal(format!("{e:#}")))?;
+        let check = enforce_position_with_path(
+            self.state,
+            self.role,
+            UnwrappedAngle::new(feedback.mech_pos_rad),
+            UnwrappedAngle::new(projected),
+        )
+        .map_err(|e| PreflightFailure::Internal(format!("{e:#}")))?;
 
         match check {
             BandCheck::OutOfBand {

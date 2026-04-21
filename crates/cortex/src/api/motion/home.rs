@@ -22,6 +22,7 @@ use serde::{Deserialize, Serialize};
 use crate::api::error::err;
 use crate::audit::{AuditEntry, AuditResult};
 use crate::boot_state::{self, BootState};
+use crate::can::angle::UnwrappedAngle;
 use crate::can::home_ramp;
 use crate::can::travel::{enforce_position_with_path, BandCheck};
 use crate::state::SharedState;
@@ -165,7 +166,13 @@ pub async fn home(
         })?;
 
     // Path-aware band check at the front door.
-    match enforce_position_with_path(&state, &role, current_pos, target_rad).map_err(|e| {
+    match enforce_position_with_path(
+        &state,
+        &role,
+        UnwrappedAngle::new(current_pos),
+        UnwrappedAngle::new(target_rad),
+    )
+    .map_err(|e| {
         err(
             StatusCode::INTERNAL_SERVER_ERROR,
             "internal",

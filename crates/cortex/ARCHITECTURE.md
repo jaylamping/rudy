@@ -6,7 +6,7 @@ Single crate (`cortex`) for the operator-console daemon. Top-level modules are d
 
 - **`app/`** — `AppState`, daemon `bootstrap` (`run` from argv).
 - **`api/`** — Axum REST: `meta/` (config, health, system, logs), `inventory/`, `motors/` (incl. bench tests), `motion/`, `ops/`, plus `error.rs` / `lock_gate.rs`.
-- **`can/`** — `worker/` (per-bus SocketCAN thread), `handle/` (`LinuxCanCore`), math, travel, discovery, mocks.
+- **`can/`** — `worker/` (per-bus SocketCAN thread), `handle/` (`LinuxCanCore`), math, angle (units/frames), travel, discovery, mocks. Angular units and principal vs unwrapped frames: [docs/decisions/0005-angle-units-and-frames.md](../docs/decisions/0005-angle-units-and-frames.md).
 - **`config/`** — TOML config (`Config::load`), split by HTTP / WT / CAN / safety / logs / telemetry.
 - **`hardware/`** — Inventory YAML, actuator specs, boot state / orchestrator, limbs.
 - **`http/`** — Plaintext HTTP server, SPA static bundle, session header helpers.

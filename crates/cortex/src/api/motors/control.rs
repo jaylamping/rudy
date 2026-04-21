@@ -22,6 +22,7 @@ use serde::Deserialize;
 use crate::api::error::err;
 use crate::audit::{AuditEntry, AuditResult};
 use crate::boot_state::{self, BootState};
+use crate::can::angle::UnwrappedAngle;
 use crate::can::travel::{enforce_position_with_path, BandCheck};
 use crate::state::SharedState;
 use crate::types::ApiError;
@@ -129,7 +130,13 @@ pub async fn enable(
             .get(&role)
             .map(|f| f.mech_pos_rad);
         if let Some(pos) = cached {
-            let check = enforce_position_with_path(&state, &role, pos, pos).map_err(|e| {
+            let check = enforce_position_with_path(
+                &state,
+                &role,
+                UnwrappedAngle::new(pos),
+                UnwrappedAngle::new(pos),
+            )
+            .map_err(|e| {
                 err(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "internal",

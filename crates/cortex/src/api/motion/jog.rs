@@ -32,6 +32,7 @@ use crate::api::error::err;
 use crate::api::lock_gate;
 use crate::audit::{AuditEntry, AuditResult};
 use crate::boot_state::{self, BootState};
+use crate::can::angle::UnwrappedAngle;
 use crate::can::motion::shortest_signed_delta;
 use crate::can::travel::{enforce_position_with_path, BandCheck};
 use crate::state::SharedState;
@@ -210,14 +211,19 @@ pub async fn jog(
         // refuse if that lands outside the band. Path-aware: also rejects
         // any jog that would sweep across the band boundary.
         let projected = fb.mech_pos_rad + clamped * (ttl_ms as f32 / 1000.0);
-        let check =
-            enforce_position_with_path(&state, &role, fb.mech_pos_rad, projected).map_err(|e| {
-                err(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "internal",
-                    Some(format!("{e:#}")),
-                )
-            })?;
+        let check = enforce_position_with_path(
+            &state,
+            &role,
+            UnwrappedAngle::new(fb.mech_pos_rad),
+            UnwrappedAngle::new(projected),
+        )
+        .map_err(|e| {
+            err(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "internal",
+                Some(format!("{e:#}")),
+            )
+        })?;
         match check {
             BandCheck::OutOfBand {
                 min_rad,

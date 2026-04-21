@@ -161,6 +161,11 @@ pub struct AppState {
     /// motion-safety hazard.
     pub enabled: RwLock<BTreeSet<String>>,
 
+    /// Roles currently in RS03 profile-position (PP) hold after a successful
+    /// home-ramp. `SetVelocity` treats this like "needs re-arm" so the next jog
+    /// rewrites `RUN_MODE` before `SPD_REF`.
+    pub position_hold: RwLock<BTreeSet<String>>,
+
     /// Per-role idempotency set for the boot orchestrator's auto-home
     /// flow (commissioned-zero plan, Phase C.5). The orchestrator
     /// inserts a role when it begins, removes it on terminal-failure
@@ -250,6 +255,7 @@ impl AppState {
             reminders,
             boot_state: RwLock::new(HashMap::new()),
             enabled: RwLock::new(BTreeSet::new()),
+            position_hold: RwLock::new(BTreeSet::new()),
             boot_orchestrator_attempted: Mutex::new(std::collections::HashSet::new()),
             log_store: OnceLock::new(),
             log_event_tx,
@@ -296,9 +302,29 @@ impl AppState {
 
     /// Clear a motor's enabled bit. Idempotent. Called from every code path
     /// that successfully sends a `stop` frame (per-motor stop, e-stop, jog
-    /// watchdog timeout, home-ramp cleanup).
+    /// watchdog timeout, home-ramp cleanup). Also clears PP position-hold tracking.
     pub fn mark_stopped(&self, role: &str) {
         self.enabled.write().expect("enabled poisoned").remove(role);
+        self.position_hold
+            .write()
+            .expect("position_hold poisoned")
+            .remove(role);
+    }
+
+    /// Mark a role as holding position in RS03 profile-position mode after homing.
+    pub fn mark_position_hold(&self, role: &str) {
+        self.position_hold
+            .write()
+            .expect("position_hold poisoned")
+            .insert(role.to_string());
+    }
+
+    /// Clear PP hold tracking (e.g. after switching back to velocity mode).
+    pub fn clear_position_hold(&self, role: &str) {
+        self.position_hold
+            .write()
+            .expect("position_hold poisoned")
+            .remove(role);
     }
 
     /// Cheap predicate for the `rename` / `assign` gates.
@@ -306,6 +332,14 @@ impl AppState {
         self.enabled
             .read()
             .expect("enabled poisoned")
+            .contains(role)
+    }
+
+    /// True when the role is in PP hold after a successful home-ramp.
+    pub fn is_position_hold(&self, role: &str) -> bool {
+        self.position_hold
+            .read()
+            .expect("position_hold poisoned")
             .contains(role)
     }
 

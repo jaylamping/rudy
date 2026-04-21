@@ -11,12 +11,14 @@ use anyhow::{Context, Result};
 use chrono::Utc;
 use driver::rs03::feedback::{decode_motor_feedback, MotorFeedback as DriverFeedback};
 use driver::rs03::frame::{comm_type_from_id, passive_observer_node_id, strip_eff_flag};
+use driver::rs03::params::LOC_REF;
 use driver::rs03::session;
 use driver::{CanBus, Rs03, RsActuator};
 use tokio::runtime::Handle;
 use tracing::{debug, info, warn};
 
 use crate::boot_state;
+use crate::can::angle::UnwrappedAngle;
 use crate::types::MotorFeedback;
 
 use super::command::{
@@ -25,6 +27,9 @@ use super::command::{
 };
 use super::handle::BusHandle;
 use super::pin::pin_to_cpu;
+
+/// RS03 `run_mode`: profile position (PP). See `driver::rs03::params::RUN_MODE`.
+const RUN_MODE_PP: u8 = 1;
 
 /// Spawn a worker thread for `bus`, returning a [`BusHandle`].
 ///
@@ -252,7 +257,8 @@ fn apply_type2(
         "type-2 frame applied"
     );
 
-    let classify_outcome = boot_state::classify(&state, &role, latest.mech_pos_rad);
+    let classify_outcome =
+        boot_state::classify(&state, &role, UnwrappedAngle::new(latest.mech_pos_rad));
     crate::boot_orchestrator::spawn_if_orchestrator_qualifies(
         state.clone(),
         role.clone(),
@@ -358,7 +364,7 @@ fn handle_cmd(
             reply,
         } => {
             let need_rearm = match state.upgrade() {
-                Some(state) => !state.is_enabled(&role),
+                Some(state) => !state.is_enabled(&role) || state.is_position_hold(&role),
                 None => true,
             };
 
@@ -386,11 +392,49 @@ fn handle_cmd(
                 })()
             };
             log_send_result(iface, "set_velocity", motor_id, &result);
+            if result.is_ok() && !role.is_empty() {
+                if let Some(state) = state.upgrade() {
+                    state.clear_position_hold(&role);
+                }
+            }
             if result.is_ok() && need_rearm && !role.is_empty() {
                 if let Some(state) = state.upgrade() {
                     state.mark_enabled(&role);
                 }
             }
+            let _ = reply.send(result);
+        }
+        Cmd::SetPositionHold {
+            motor_id,
+            host_id,
+            target_principal_rad,
+            role,
+            reply,
+        } => {
+            let result: io::Result<()> = {
+                let guard = bus.lock().expect("bus mutex poisoned");
+                (|| {
+                    let dev = Rs03::new(host_id, motor_id);
+                    session::cmd_stop(&guard, host_id, motor_id, false)?;
+                    session::write_param_u8(
+                        &guard,
+                        dev.host_id(),
+                        dev.motor_id(),
+                        dev.param_index_run_mode(),
+                        RUN_MODE_PP,
+                    )?;
+                    session::write_param_f32(
+                        &guard,
+                        dev.host_id(),
+                        dev.motor_id(),
+                        LOC_REF,
+                        target_principal_rad,
+                    )?;
+                    session::cmd_enable(&guard, dev.host_id(), dev.motor_id())?;
+                    Ok(())
+                })()
+            };
+            log_send_result(iface, "set_position_hold", motor_id, &result);
             let _ = reply.send(result);
         }
         Cmd::WriteParam {

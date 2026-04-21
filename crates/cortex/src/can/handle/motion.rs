@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Result};
 
+use crate::can::angle::PrincipalAngle;
 use crate::inventory::{self, Actuator, Device};
 use crate::state::SharedState;
 
@@ -26,6 +27,18 @@ impl LinuxCanCore {
             motor.common.can_id,
             &motor.common.role,
             vel_rad_s,
+        )?;
+        Ok(())
+    }
+
+    /// RS03 profile-position hold (`RUN_MODE=1`, `LOC_REF`, enable). `target` is principal-angle.
+    pub fn set_position_hold(&self, motor: &Actuator, target: PrincipalAngle) -> Result<()> {
+        let handle = self.handle_for(&motor.common.can_bus)?;
+        handle.set_position_hold(
+            self.host_id,
+            motor.common.can_id,
+            &motor.common.role,
+            target.raw(),
         )?;
         Ok(())
     }
@@ -294,6 +307,7 @@ mod tests {
                 band_violation_debounce_ticks: 15,
                 boot_tracking_error_max_rad: 0.2,
                 target_tolerance_rad: 0.005,
+                target_dwell_ticks: 5,
                 homer_timeout_ms: 30_000,
                 max_feedback_age_ms: 250,
                 commission_readback_tolerance_rad: 1e-3,

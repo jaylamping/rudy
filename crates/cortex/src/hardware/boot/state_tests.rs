@@ -1,4 +1,5 @@
 use super::*;
+use crate::can::angle::UnwrappedAngle;
 
 fn limits(min: f32, max: f32) -> TravelLimits {
     TravelLimits {
@@ -11,31 +12,31 @@ fn limits(min: f32, max: f32) -> TravelLimits {
 #[test]
 fn distance_to_band_zero_when_in_band() {
     let l = limits(-1.0, 1.0);
-    assert_eq!(distance_to_band(0.0, &l), 0.0);
-    assert_eq!(distance_to_band(-1.0, &l), 0.0);
-    assert_eq!(distance_to_band(1.0, &l), 0.0);
+    assert_eq!(distance_to_band(UnwrappedAngle::new(0.0), &l), 0.0);
+    assert_eq!(distance_to_band(UnwrappedAngle::new(-1.0), &l), 0.0);
+    assert_eq!(distance_to_band(UnwrappedAngle::new(1.0), &l), 0.0);
 }
 
 #[test]
 fn distance_to_band_picks_nearer_edge() {
     let l = limits(-1.0, 1.0);
-    assert!((distance_to_band(1.5, &l) - 0.5).abs() < 1e-5);
-    assert!((distance_to_band(-1.5, &l) - 0.5).abs() < 1e-5);
+    assert!((distance_to_band(UnwrappedAngle::new(1.5), &l) - 0.5).abs() < 1e-5);
+    assert!((distance_to_band(UnwrappedAngle::new(-1.5), &l) - 0.5).abs() < 1e-5);
 }
 
 #[test]
 fn recovery_target_lands_inside_band() {
     let l = limits(-1.0, 1.0);
-    let t = recovery_target(1.5, &l, 0.1).expect("out of band on max side");
+    let t = recovery_target(UnwrappedAngle::new(1.5), &l, 0.1).expect("out of band on max side");
     assert!((t - 0.9).abs() < 1e-5, "got {t}");
-    let t = recovery_target(-1.5, &l, 0.1).expect("out of band on min side");
+    let t = recovery_target(UnwrappedAngle::new(-1.5), &l, 0.1).expect("out of band on min side");
     assert!((t - (-0.9)).abs() < 1e-5, "got {t}");
 }
 
 #[test]
 fn recovery_target_none_when_in_band() {
     let l = limits(-1.0, 1.0);
-    assert!(recovery_target(0.0, &l, 0.1).is_none());
+    assert!(recovery_target(UnwrappedAngle::new(0.0), &l, 0.1).is_none());
 }
 
 #[test]

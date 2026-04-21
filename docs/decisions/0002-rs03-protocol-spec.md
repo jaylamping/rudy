@@ -131,6 +131,14 @@ bits  7..0  : destination host_id
 | 3     | Current mode                  |
 | 5     | Position mode (CSP, cyclic)   |
 
+**Cortex (post-home hold).** After a successful home-ramp, `cortex` leaves the
+joint in **PP** (`run_mode = 1`) with `loc_ref` set to the principal-angle home
+target (`wrap_to_pi` of `predefined_home_rad` / HTTP target — see
+[ADR 0005](./0005-angle-units-and-frames.md)). Sequence on the bus worker:
+`cmd_stop` → `RUN_MODE=1` → `LOC_REF` → `cmd_enable`. The next operator jog
+(`spd_ref`) forces a velocity-mode re-arm (`run_mode = 2`) via
+`state.position_hold` + smart re-arm in `Cmd::SetVelocity`.
+
 ### Safety-critical parameters
 
 Writable via type 18, **persisted to flash only after type 22 save**. Firmware

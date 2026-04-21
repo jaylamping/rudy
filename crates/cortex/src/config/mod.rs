@@ -18,6 +18,12 @@ pub use http::HttpConfig;
 pub use logs::LogsConfig;
 pub use paths::PathsConfig;
 pub use safety::SafetyConfig;
+
+/// Used by `can::home_ramp::dwell_tests`; keep defaults single-sourced in `safety.rs`.
+#[cfg(test)]
+pub(crate) use safety::{
+    default_step_size_rad, default_target_dwell_ticks, default_target_tolerance_rad,
+};
 pub use telemetry::TelemetryConfig;
 pub use webtransport::WebTransportConfig;
 

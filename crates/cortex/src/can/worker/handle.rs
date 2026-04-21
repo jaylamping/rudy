@@ -128,6 +128,25 @@ impl BusHandle {
         recv_blocking(rx, REPLY_TIMEOUT)?
     }
 
+    /// Profile-position hold (`RUN_MODE=1`, `LOC_REF`, `cmd_enable` after `cmd_stop`).
+    pub fn set_position_hold(
+        &self,
+        host_id: u8,
+        motor_id: u8,
+        role: &str,
+        target_principal_rad: f32,
+    ) -> io::Result<()> {
+        let (tx, rx) = mpsc::channel();
+        self.submit(Cmd::SetPositionHold {
+            motor_id,
+            host_id,
+            target_principal_rad,
+            role: role.to_string(),
+            reply: tx,
+        })?;
+        recv_blocking(rx, REPLY_TIMEOUT)?
+    }
+
     pub fn write_param(
         &self,
         host_id: u8,

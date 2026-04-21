@@ -21,6 +21,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use crate::can::angle::UnwrappedAngle;
 use crate::can::motion::{shortest_signed_delta, wrap_to_pi};
 use crate::inventory::TravelLimits;
 use crate::state::SharedState;
@@ -112,7 +113,7 @@ pub enum ClassifyOutcome {
 ///
 /// Returns the previous and new state when they differ so the caller can
 /// log the transition or spawn the boot orchestrator.
-pub fn classify(state: &SharedState, role: &str, mech_pos_rad: f32) -> ClassifyOutcome {
+pub fn classify(state: &SharedState, role: &str, mech_pos: UnwrappedAngle) -> ClassifyOutcome {
     let limits: Option<TravelLimits> = state
         .inventory
         .read()
@@ -127,6 +128,7 @@ pub fn classify(state: &SharedState, role: &str, mech_pos_rad: f32) -> ClassifyO
         return transition(state, role, BootState::InBand);
     };
 
+    let mech_pos_rad = mech_pos.raw();
     if !mech_pos_rad.is_finite() {
         return transition(state, role, BootState::Unknown);
     }
@@ -257,8 +259,8 @@ pub fn current(state: &SharedState, role: &str) -> BootState {
 
 /// Distance (in radians, positive) to the nearest band edge that brings
 /// the motor back into the band. Returns 0.0 if already in band.
-pub fn distance_to_band(mech_pos_rad: f32, limits: &TravelLimits) -> f32 {
-    let principal = wrap_to_pi(mech_pos_rad);
+pub fn distance_to_band(mech_pos: UnwrappedAngle, limits: &TravelLimits) -> f32 {
+    let principal = wrap_to_pi(mech_pos.raw());
     if principal >= limits.min_rad && principal <= limits.max_rad {
         return 0.0;
     }
@@ -272,8 +274,12 @@ pub fn distance_to_band(mech_pos_rad: f32, limits: &TravelLimits) -> f32 {
 
 /// Compute a band re-entry target: the band edge nearest to `mech_pos`
 /// plus a small inside-the-band margin. Returns `None` if already in band.
-pub fn recovery_target(mech_pos_rad: f32, limits: &TravelLimits, margin_rad: f32) -> Option<f32> {
-    let principal = wrap_to_pi(mech_pos_rad);
+pub fn recovery_target(
+    mech_pos: UnwrappedAngle,
+    limits: &TravelLimits,
+    margin_rad: f32,
+) -> Option<f32> {
+    let principal = wrap_to_pi(mech_pos.raw());
     if principal >= limits.min_rad && principal <= limits.max_rad {
         return None;
     }

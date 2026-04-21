@@ -10,6 +10,7 @@ use tokio::time::interval;
 use tracing::info;
 
 use crate::boot_state;
+use crate::can::angle::UnwrappedAngle;
 use crate::state::SharedState;
 use crate::types::MotorFeedback;
 
@@ -54,8 +55,11 @@ pub fn spawn(state: SharedState) -> Result<()> {
                     .expect("latest poisoned")
                     .insert(motor.common.role.clone(), fb.clone());
 
-                let classify_outcome =
-                    boot_state::classify(&state, &motor.common.role, fb.mech_pos_rad);
+                let classify_outcome = boot_state::classify(
+                    &state,
+                    &motor.common.role,
+                    UnwrappedAngle::new(fb.mech_pos_rad),
+                );
                 crate::boot_orchestrator::spawn_if_orchestrator_qualifies(
                     state.clone(),
                     motor.common.role.clone(),

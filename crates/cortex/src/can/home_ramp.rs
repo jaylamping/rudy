@@ -64,10 +64,12 @@
 use std::time::{Duration, Instant};
 
 use chrono::Utc;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
+use crate::can::angle::{PrincipalAngle, UnwrappedAngle};
 use crate::can::motion::{shortest_signed_delta, wrap_to_pi};
 use crate::can::travel::{enforce_position_with_path, BandCheck};
+use crate::config::SafetyConfig;
 use crate::inventory::Actuator;
 use crate::state::SharedState;
 
@@ -267,6 +269,73 @@ pub async fn run(
 
 /// Resolve inventory override vs global `[safety].homing_speed_rad_s` vs
 /// `step_size_rad / tick_interval` (see [`crate::config::SafetyConfig::effective_homing_speed_rad_s`]).
+/// After a successful home-ramp loop: RS03 profile-position hold, then verify
+/// telemetry after 200 ms. On verification failure, `cmd_stop` and `mark_stopped`.
+async fn finish_home_success(
+    state: &SharedState,
+    motor: &Actuator,
+    role: &str,
+    target_rad: f32,
+    cfg: &SafetyConfig,
+    last_measured: f32,
+) -> Result<(), (String, f32)> {
+    let target_p = PrincipalAngle::from_wrapped_rad(target_rad);
+    if let Some(core) = state.real_can.clone() {
+        let motor_owned = motor.clone();
+        let t = target_p;
+        match tokio::task::spawn_blocking(move || core.set_position_hold(&motor_owned, t)).await {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                if let Some(c2) = state.real_can.clone() {
+                    let motor_st = motor.clone();
+                    let _ = tokio::task::spawn_blocking(move || c2.stop(&motor_st)).await;
+                }
+                state.mark_stopped(role);
+                return Err((format!("can_command_failed: {e:#}"), last_measured));
+            }
+            Err(e) => return Err((format!("internal: spawn_blocking: {e}"), last_measured)),
+        }
+    }
+    // Bookkeeping for PP hold (worker does not touch `AppState`; stubs do not either).
+    state.mark_stopped(role);
+    state.mark_position_hold(role);
+
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    let from_latest = state
+        .latest
+        .read()
+        .expect("latest poisoned")
+        .get(role)
+        .map(|fb| fb.mech_pos_rad);
+    let err_latest = from_latest
+        .map(|m| shortest_signed_delta(m, target_p.raw()).abs())
+        .unwrap_or(f32::INFINITY);
+    // The dwell gate used `last_measured` from the same control loop; mock CAN does not
+    // always rewrite `state.latest` to match the synthesized ramp. Accept either source.
+    let err_final = shortest_signed_delta(last_measured, target_p.raw()).abs();
+    let err = err_latest.min(err_final);
+    let limit = cfg.target_tolerance_rad * 2.0;
+    let reported_pos = from_latest.unwrap_or(last_measured);
+    if err >= limit {
+        warn!(
+            role = %role,
+            mech_pos_latest_or_final = reported_pos,
+            target_principal = target_p.raw(),
+            err,
+            limit,
+            "home_ramp: hold verification failed"
+        );
+        if let Some(core) = state.real_can.clone() {
+            let motor_owned = motor.clone();
+            let _ = tokio::task::spawn_blocking(move || core.stop(&motor_owned)).await;
+        }
+        state.mark_stopped(role);
+        return Err(("hold_verification_failed".into(), reported_pos));
+    }
+    Ok(())
+}
+
 pub fn resolve_homing_speed(state: &SharedState, motor: &Actuator) -> (f32, &'static str) {
     if let Some(v) = motor.common.homing_speed_rad_s {
         if v.is_finite() && v > 0.0 {
@@ -366,6 +435,8 @@ pub async fn run_with_overrides(
     let mut stale_stretch_logged = false;
     let mut consec_over: u32 = 0;
     let mut consec_band_over: u32 = 0;
+    let mut consec_in_tolerance: u32 = 0;
+    let dwell_need = cfg.target_dwell_ticks.max(1);
 
     // Emit once-per-run: every knob and every starting condition that
     // could matter when post-mortem'ing a failure. Operators looking at
@@ -396,6 +467,7 @@ pub async fn run_with_overrides(
         homer_timeout_ms = cfg.homer_timeout_ms,
         tracking_freshness_max_age_ms = cfg.tracking_freshness_max_age_ms,
         has_real_can = homer_has_real_can,
+        target_dwell_ticks = dwell_need,
         "home_ramp: starting"
     );
 
@@ -410,7 +482,7 @@ pub async fn run_with_overrides(
     // else every 200 ticks" — same idea, no per-test spam.
     let progress_every_ticks = (1_000 / cfg.tick_interval_ms.max(1)).max(20);
 
-    let outcome = loop {
+    let mut outcome = loop {
         if start.elapsed() >= timeout {
             break Err(("timeout".into(), last_measured));
         }
@@ -467,48 +539,21 @@ pub async fn run_with_overrides(
             true
         };
 
-        // Early in-tolerance check: declare success at the TOP of the
-        // tick so we never command another velocity once the motor is
-        // physically inside the success window. Without this, the loop
-        // body below recomputes `direction` from `governing =
-        // max(|target-setpoint|, |target-measured|)`, and a measured
-        // position that just barely overshot the target flips
-        // `direction` and commands a tapered velocity in the OPPOSITE
-        // direction. That overshoots back through the target, flips
-        // again, and the motor audibly limit-cycles around the home
-        // position for a couple seconds until natural decay parks it
-        // inside the tolerance band on a tick where the BOTTOM-of-loop
-        // success check happens to evaluate. Checking here — and only
-        // on fresh telemetry, so we don't declare success against a
-        // stale `mech_pos_rad` snapshot — short-circuits the bounce
-        // entirely: as soon as the motor enters the deadband the homer
-        // exits Ok and the unconditional motor-stop at the bottom
-        // (type-4 + `mark_stopped`) parks it without another velocity
-        // command going out. The duplicate bottom-of-loop check
-        // remains as a backstop for mock-mode (where `last_measured`
-        // is rewritten to track the setpoint *after* the velocity
-        // command, so the freshly-converged position only becomes
-        // visible at the bottom of the same tick).
-        if (homer_has_real_can || ticks > 1)
-            && is_fresh
-            && shortest_signed_delta(last_measured, unwrapped_target).abs()
-                < cfg.target_tolerance_rad
-        {
-            // Issue an explicit stop *before* breaking. The
-            // unconditional cleanup below also calls `core.stop`, but
-            // doing it here on the success path gets the type-4 frame
-            // out one round-trip earlier — matters because the
-            // intervening `info!` and the cleanup `spawn_blocking`
-            // each add a few hundred microseconds of latency, during
-            // which a freshly-parked motor would otherwise still see
-            // the previous tick's velocity command holding it.
-            if let Some(core) = state.real_can.clone() {
-                let motor_for_zero = motor.clone();
-                let _ = tokio::task::spawn_blocking(move || {
-                    core.set_velocity_setpoint(&motor_for_zero, 0.0)
-                })
-                .await;
+        let in_tolerance =
+            shortest_signed_delta(last_measured, unwrapped_target).abs() < cfg.target_tolerance_rad;
+        if is_fresh {
+            if in_tolerance {
+                consec_in_tolerance = consec_in_tolerance.saturating_add(1);
+            } else {
+                consec_in_tolerance = 0;
             }
+        } else {
+            consec_in_tolerance = 0;
+        }
+
+        // Dwell gate: require N consecutive fresh in-tolerance samples before
+        // declaring success (see `SafetyConfig::target_dwell_ticks`).
+        if (homer_has_real_can || ticks > 1) && is_fresh && consec_in_tolerance >= dwell_need {
             break Ok((last_measured, ticks));
         }
 
@@ -530,11 +575,15 @@ pub async fn run_with_overrides(
         // tightens the band on the very next iteration — the
         // `limits_snapshot` taken at entry is only consulted by the
         // predictive band-edge velocity cap below.
-        let check =
-            match enforce_position_with_path(&state, &role, last_measured, setpoint_unwrapped) {
-                Ok(c) => c,
-                Err(e) => break Err((format!("internal: {e:#}"), last_measured)),
-            };
+        let check = match enforce_position_with_path(
+            &state,
+            &role,
+            UnwrappedAngle::new(last_measured),
+            UnwrappedAngle::new(setpoint_unwrapped),
+        ) {
+            Ok(c) => c,
+            Err(e) => break Err((format!("internal: {e:#}"), last_measured)),
+        };
         let band_violation = matches!(
             check,
             BandCheck::OutOfBand { .. } | BandCheck::PathViolation { .. }
@@ -738,6 +787,7 @@ pub async fn run_with_overrides(
             lag_scale,
             vel,
             consec_band_over,
+            consec_in_tolerance,
             consec_tracking_over = consec_over,
             "home_ramp: tick"
         );
@@ -789,25 +839,26 @@ pub async fn run_with_overrides(
             break Err(("tracking_error".into(), last_measured));
         }
 
-        // Success when we're within tolerance of the target. Also
-        // compared via shortest signed delta so a measured value that
-        // happens to land on the other side of a wrap from the
-        // unwrapped_target still counts.
-        if shortest_signed_delta(last_measured, unwrapped_target).abs() < cfg.target_tolerance_rad {
-            break Ok((last_measured, ticks));
-        }
-
         tokio::time::sleep(tick).await;
     };
 
-    // Always stop the motor before returning. Errors here are logged
-    // but don't change the outcome — the watchdog and firmware
-    // canTimeout backstop us if cmd_stop didn't reach the bus.
-    if let Some(core) = state.real_can.clone() {
-        let motor_for_stop = motor.clone();
-        let _ = tokio::task::spawn_blocking(move || core.stop(&motor_for_stop)).await;
+    // Success: profile-position hold + verification. Failure/timeout: stop + clear enabled.
+    match &outcome {
+        Ok((final_pos, _ticks_done)) => {
+            if let Err(e) =
+                finish_home_success(&state, &motor, &role, target_rad, &cfg, *final_pos).await
+            {
+                outcome = Err(e);
+            }
+        }
+        Err(_) => {
+            if let Some(core) = state.real_can.clone() {
+                let motor_for_stop = motor.clone();
+                let _ = tokio::task::spawn_blocking(move || core.stop(&motor_for_stop)).await;
+            }
+            state.mark_stopped(&role);
+        }
     }
-    state.mark_stopped(&role);
 
     // Bookend the entry log. Same `role` + `target` so log filters
     // pair them up automatically; success and failure go through
@@ -873,3 +924,11 @@ mod band_edge_distance_tests;
 #[cfg(all(test, not(target_os = "linux")))]
 #[path = "home_ramp_real_can_stub_tests.rs"]
 mod real_can_stub_tests;
+
+#[cfg(test)]
+#[path = "home_ramp_dwell_tests.rs"]
+mod dwell_tests;
+
+#[cfg(test)]
+#[path = "home_ramp_position_hold_tests.rs"]
+mod position_hold_tests;

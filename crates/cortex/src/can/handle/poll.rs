@@ -2,6 +2,7 @@ use anyhow::Result;
 use chrono::Utc;
 
 use crate::boot_state;
+use crate::can::angle::UnwrappedAngle;
 use crate::inventory::Actuator;
 use crate::state::SharedState;
 use crate::types::{MotorFeedback, ParamValue};
@@ -216,7 +217,11 @@ impl LinuxCanCore {
             ),
         }
 
-        let classify_outcome = boot_state::classify(state, &motor.common.role, merged.mech_pos_rad);
+        let classify_outcome = boot_state::classify(
+            state,
+            &motor.common.role,
+            UnwrappedAngle::new(merged.mech_pos_rad),
+        );
         let aux_seeded_first_row = matches!(outcome, MergeOutcome::Seeded);
         crate::boot_orchestrator::spawn_if_orchestrator_qualifies(
             state.clone(),
