@@ -347,9 +347,10 @@ export const api = {
       `/api/motors/${encodeURIComponent(role)}/rename`,
       { method: "POST", body: JSON.stringify({ new_role }) },
     ),
-  // Convenience: set limb + joint_kind on an unassigned motor and let
-  // the daemon derive the canonical role. Same auto-stop/auto-reenable
-  // behavior as `renameMotor` for already-assigned motors.
+  // Set limb + joint_kind and the canonical `role` in one write (replaces
+  // a prior role string). Use for first assignment or any reassignment
+  // so inventory stays consistent. Same auto-stop/auto-reenable behavior
+  // as `renameMotor` when the motor was enabled.
   assignMotor: (
     role: string,
     body: { limb: string; joint_kind: import("@/lib/types/JointKind").JointKind },

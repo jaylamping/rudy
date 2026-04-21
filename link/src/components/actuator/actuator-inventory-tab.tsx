@@ -199,11 +199,11 @@ export function ActuatorInventoryTab({ motor }: { motor: MotorSummary }) {
   );
 }
 
-// Scaffold UI to assign a limb + joint_kind to an unassigned motor, OR to
-// rename an already-assigned motor to a different position. Calls
-// `/api/motors/:role/assign` for the unassigned case (the daemon derives
-// the new canonical role) or `/api/motors/:role/rename` for an explicit
-// canonical role change.
+// limb + joint_kind + `role` must stay the canonical `limb.joint_kind`.
+// Always call `/api/motors/:role/assign` when both are set: it rewrites
+// `role`, `limb`, and `joint_kind` together. Using `/rename` here was wrong
+// for already-assigned motors because rename only changes `role`, which
+// breaks inventory validation when the operator changes limb or joint.
 function LimbAssignmentCard({ motor }: { motor: MotorSummary }) {
   const qc = useQueryClient();
   const navigate = useNavigate();
@@ -211,7 +211,13 @@ function LimbAssignmentCard({ motor }: { motor: MotorSummary }) {
   const [joint, setJoint] = useState<JointKind | "">(motor.joint_kind ?? "");
   const previewRole =
     limb && joint ? `${limb}.${joint}` : motor.role;
-  const isAssigned = motor.limb && motor.joint_kind;
+  const isAssigned = !!(motor.limb && motor.joint_kind);
+  const canonicalFromSummary =
+    motor.limb && motor.joint_kind
+      ? `${motor.limb}.${motor.joint_kind}`
+      : null;
+  const roleOutOfSync =
+    canonicalFromSummary !== null && canonicalFromSummary !== motor.role;
 
   // We hold the auto-stop / auto-reenable flags from the last successful
   // rename so the operator gets one notice on the new-role page after the
@@ -225,10 +231,7 @@ function LimbAssignmentCard({ motor }: { motor: MotorSummary }) {
   const assign = useMutation({
     mutationFn: async () => {
       if (!limb || !joint) throw new Error("limb and joint_kind required");
-      if (!isAssigned) {
-        return await api.assignMotor(motor.role, { limb, joint_kind: joint });
-      }
-      return await api.renameMotor(motor.role, previewRole);
+      return await api.assignMotor(motor.role, { limb, joint_kind: joint });
     },
     onSuccess: async (resp) => {
       // The role just changed under us. Before we navigate, the motors
@@ -269,11 +272,21 @@ function LimbAssignmentCard({ motor }: { motor: MotorSummary }) {
         <CardTitle className="text-base">Limb assignment</CardTitle>
         <CardDescription>
           {isAssigned
-            ? "This motor is assigned to a limb / joint kind. Renaming will change its role and broadcast a MotorRenamed event."
+            ? "Update limb / joint to move this actuator on the tree. The server keeps role, limb, and joint_kind in one atomic write and emits MotorRenamed when the role string changes."
             : "Pick a limb and joint kind to enable homing under POST /api/home_all. The daemon derives the canonical role."}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
+        {roleOutOfSync && (
+          <p className="rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-800 dark:text-amber-200">
+            <span className="font-medium">Inventory mismatch: </span>
+            <code className="font-mono">role</code> is{" "}
+            <code className="font-mono">{motor.role}</code> but limb and joint
+            kind imply <code className="font-mono">{canonicalFromSummary}</code>
+            . Choose the correct limb and joint below, then click{" "}
+            {isAssigned ? "Update assignment" : "Assign"} to repair.
+          </p>
+        )}
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label className="text-sm">Limb</Label>
@@ -328,7 +341,7 @@ function LimbAssignmentCard({ motor }: { motor: MotorSummary }) {
             {assign.isPending
               ? "Saving..."
               : isAssigned
-                ? "Rename"
+                ? "Update assignment"
                 : "Assign"}
           </Button>
         </div>
