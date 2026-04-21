@@ -467,6 +467,51 @@ pub async fn run_with_overrides(
             true
         };
 
+        // Early in-tolerance check: declare success at the TOP of the
+        // tick so we never command another velocity once the motor is
+        // physically inside the success window. Without this, the loop
+        // body below recomputes `direction` from `governing =
+        // max(|target-setpoint|, |target-measured|)`, and a measured
+        // position that just barely overshot the target flips
+        // `direction` and commands a tapered velocity in the OPPOSITE
+        // direction. That overshoots back through the target, flips
+        // again, and the motor audibly limit-cycles around the home
+        // position for a couple seconds until natural decay parks it
+        // inside the tolerance band on a tick where the BOTTOM-of-loop
+        // success check happens to evaluate. Checking here — and only
+        // on fresh telemetry, so we don't declare success against a
+        // stale `mech_pos_rad` snapshot — short-circuits the bounce
+        // entirely: as soon as the motor enters the deadband the homer
+        // exits Ok and the unconditional motor-stop at the bottom
+        // (type-4 + `mark_stopped`) parks it without another velocity
+        // command going out. The duplicate bottom-of-loop check
+        // remains as a backstop for mock-mode (where `last_measured`
+        // is rewritten to track the setpoint *after* the velocity
+        // command, so the freshly-converged position only becomes
+        // visible at the bottom of the same tick).
+        if (homer_has_real_can || ticks > 1)
+            && is_fresh
+            && shortest_signed_delta(last_measured, unwrapped_target).abs()
+                < cfg.target_tolerance_rad
+        {
+            // Issue an explicit stop *before* breaking. The
+            // unconditional cleanup below also calls `core.stop`, but
+            // doing it here on the success path gets the type-4 frame
+            // out one round-trip earlier — matters because the
+            // intervening `info!` and the cleanup `spawn_blocking`
+            // each add a few hundred microseconds of latency, during
+            // which a freshly-parked motor would otherwise still see
+            // the previous tick's velocity command holding it.
+            if let Some(core) = state.real_can.clone() {
+                let motor_for_zero = motor.clone();
+                let _ = tokio::task::spawn_blocking(move || {
+                    core.set_velocity_setpoint(&motor_for_zero, 0.0)
+                })
+                .await;
+            }
+            break Ok((last_measured, ticks));
+        }
+
         // Ramp the setpoint only when telemetry is fresh (real CAN) or in
         // mock mode, so a stale `mech_pos_rad` cannot accumulate phantom
         // tracking error against a marching setpoint.
@@ -609,7 +654,24 @@ pub async fn run_with_overrides(
         // `tracking_error` abort OR running unboundedly past the
         // virtual setpoint into the band edge.
         let lag_scale = (1.0 - overrun / step_size_rad.max(1e-6)).clamp(0.0, 1.0);
-        let vel = direction * nominal_speed * approach_scale * lag_scale;
+        let mut vel = direction * nominal_speed * approach_scale * lag_scale;
+
+        // Final-approach deadband: if the motor is already inside the
+        // success tolerance, command zero velocity even if the early
+        // success check above didn't fire (e.g. telemetry was stale on
+        // *this* tick but `last_measured` is sticky from the most
+        // recent fresh sample, which happens to be in-tolerance). This
+        // is the symmetric companion to the early break: where that
+        // exits the loop on fresh in-tolerance telemetry, this clamps
+        // the commanded velocity on stale-but-likely-arrived
+        // telemetry, so neither code path can keep nudging a parked
+        // motor and re-introducing the limit cycle. Uses the same
+        // shortest-signed-delta the success check uses so a measured
+        // value on the other side of a wrap from `unwrapped_target`
+        // still counts as in-tolerance.
+        if shortest_signed_delta(last_measured, unwrapped_target).abs() < cfg.target_tolerance_rad {
+            vel = 0.0;
+        }
 
         // The band-edge cap is the most diagnostic single piece of
         // information for "is fix #2 actually doing anything?" — when

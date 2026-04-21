@@ -135,8 +135,30 @@ pub struct SafetyConfig {
     #[serde(default = "default_boot_tracking_error_max_rad")]
     pub boot_tracking_error_max_rad: f32,
 
-    /// Tolerance for "we have arrived at the target." Default 0.005 rad
-    /// ~= 0.3 deg.
+    /// Tolerance for "we have arrived at the target." Default 0.010 rad
+    /// ~= 0.57 deg.
+    ///
+    /// Sized to comfortably exceed the per-tick travel budget
+    /// (`step_size_rad`, default 0.004 rad). With tolerance ≤ step the
+    /// motor can ping-pong inside the success window: terminal-approach
+    /// velocity tapers across the last `step_size_rad` of error, but
+    /// firmware velocity-loop response time + inertia routinely
+    /// overshoot the target by ~step_size_rad. If tolerance is smaller
+    /// than that, the next tick recomputes `direction` from the
+    /// post-overshoot `last_measured`, flips it, and commands a tapered
+    /// velocity in the OPPOSITE direction. The motor crosses back,
+    /// overshoots again, and the cycle repeats — operators hear this
+    /// as a "vibrate/bounce for a couple seconds" before the homer
+    /// finally reports success on a tick where the natural decay
+    /// happens to land inside the band.
+    ///
+    /// At 2.5× `step_size_rad` the deadband absorbs the worst-case
+    /// single-tick overshoot, and combined with the early in-tolerance
+    /// break inside `home_ramp` (which exits Ok the *first* fresh tick
+    /// the motor lands in the deadband, before another velocity goes
+    /// out) the bounce is gone. Tighten only if you have a
+    /// hardware-in-the-loop reason to trust a sub-half-degree home
+    /// position; otherwise leave it at the default.
     #[serde(default = "default_target_tolerance_rad")]
     pub target_tolerance_rad: f32,
 
@@ -258,7 +280,7 @@ pub(crate) fn default_boot_tracking_error_max_rad() -> f32 {
 }
 
 pub(crate) fn default_target_tolerance_rad() -> f32 {
-    0.005
+    0.010
 }
 
 pub(crate) fn default_homer_timeout_ms() -> u32 {

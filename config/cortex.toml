@@ -89,6 +89,20 @@ max_feedback_age_ms = 250
 tick_interval_ms = 10
 step_size_rad = 0.004
 
+# Success window for the home-ramp homer ("we have arrived at the
+# target"). Must be comfortably larger than `step_size_rad`, otherwise
+# a single-tick overshoot at terminal-approach velocity puts the motor
+# back outside the deadband on the very next tick, the homer flips
+# `direction`, and the motor audibly limit-cycles (vibrates/bounces
+# about the home pose) for a couple seconds before the natural decay
+# parks it inside the band. At 0.010 rad (~0.57°, 2.5x the default
+# `step_size_rad`) the deadband absorbs the worst-case single-tick
+# overshoot, and the home_ramp's early in-tolerance break exits Ok
+# the FIRST fresh tick the motor lands in the band — no bounce.
+# Tighten only with a hardware-in-the-loop reason to trust a
+# sub-half-degree home position.
+target_tolerance_rad = 0.010
+
 # Tolerance for the boot orchestrator's add_offset readback check
 # (commissioned-zero quick-home plan, Phase C). On every boot the
 # orchestrator reads firmware param 0x702B over CAN and compares it

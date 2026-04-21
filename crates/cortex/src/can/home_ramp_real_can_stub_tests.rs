@@ -343,6 +343,98 @@ async fn motor_outrunning_setpoint_does_not_trip_tracking() {
 }
 
 #[tokio::test]
+async fn motor_landing_in_tolerance_breaks_immediately_no_bounce() {
+    // Pin the early in-tolerance break that fixes the audible
+    // "vibrate/bounce" at the end of an auto-home. Pre-fix, the
+    // success check sat at the BOTTOM of the loop body, so a tick
+    // where the motor first crossed into the deadband would still
+    // recompute `direction` (which can flip if the motor overshot the
+    // target by < tolerance) and command another tapered velocity in
+    // the OPPOSITE direction. The motor would oscillate around the
+    // home pose for several ticks until natural decay landed it
+    // squarely enough inside the tolerance for the bottom-of-loop
+    // check to evaluate Ok.
+    //
+    // Post-fix the check runs at the TOP of the tick, gated on fresh
+    // telemetry, so the very first tick whose `last_measured` lands in
+    // the deadband exits Ok before any other velocity command goes
+    // out. This test pins:
+    //
+    //   1. The homer exits Ok within a small bounded number of ticks
+    //      once the simulated motor parks inside the tolerance window
+    //      (proving the early break fires, not the bottom check after
+    //      a long bounce).
+    //   2. The reported `final_pos` is the in-tolerance measured
+    //      position, not the target value (proving we returned actual
+    //      telemetry rather than a synthetic value from mock-mode).
+    //
+    // Setup: fixture target_tolerance_rad = 0.005, step_size_rad = 0.02,
+    // tick_interval_ms = 5. We start the motor at 0.0 with target 0.10,
+    // simulate it parking at 0.099 (inside the 0.005 tolerance from
+    // 0.10), and assert Ok lands within ~30 ticks (well below the 5 s
+    // / 1000-tick timeout).
+    let (state, motor) = state_with_real_can_stub();
+    let role = motor.common.role.clone();
+    {
+        let mut latest = state.latest.write().unwrap();
+        latest.insert(
+            role.clone(),
+            MotorFeedback {
+                t_ms: chrono::Utc::now().timestamp_millis(),
+                role: role.clone(),
+                can_id: 1,
+                mech_pos_rad: 0.0,
+                mech_vel_rad_s: 0.0,
+                torque_nm: 0.0,
+                vbus_v: 48.0,
+                temp_c: 30.0,
+                fault_sta: 0,
+                warn_sta: 0,
+            },
+        );
+    }
+    let updater = {
+        let state = state.clone();
+        let role = role.clone();
+        tokio::spawn(async move {
+            // Drive measured to 0.099 (inside the 0.005 tolerance from
+            // the 0.10 target), then hold there. Without the early
+            // break, the homer would wedge `direction` to ±1 each
+            // tick depending on which side of 0.10 the previous
+            // velocity command happened to push the motor — but we
+            // only ever advertise 0.099 here, so the early break is
+            // the ONLY path that can produce Ok.
+            loop {
+                tokio::time::sleep(Duration::from_millis(2)).await;
+                let mut w = state.latest.write().unwrap();
+                if let Some(fb) = w.get_mut(&role) {
+                    fb.t_ms = chrono::Utc::now().timestamp_millis();
+                    fb.mech_pos_rad = (fb.mech_pos_rad + 0.02).min(0.099);
+                }
+            }
+        })
+    };
+    let r = run_with_tracking_budget(state.clone(), motor, 0.0, 0.10, 0.05).await;
+    updater.abort();
+    let Ok((final_pos, ticks)) = r else {
+        panic!("expected Ok (motor reached tolerance band), got {r:?}");
+    };
+    // Generous upper bound: with 5 ms ticks and motor ramping at 0.02
+    // rad/tick, it takes ~5 ticks of physical motion to cross 0.099.
+    // 60 ticks gives plenty of headroom for the grace_ticks=0 fixture
+    // and any spawn-blocking jitter while still aborting if the early
+    // break regresses and we fall through to the natural-decay path.
+    assert!(
+        ticks <= 60,
+        "expected early break within ~60 ticks, got {ticks} (suggests bounce regression)"
+    );
+    assert!(
+        (final_pos - 0.099_f32).abs() < 1e-3,
+        "expected final_pos ~= 0.099 (the in-tolerance measured value), got {final_pos}"
+    );
+}
+
+#[tokio::test]
 async fn stale_telemetry_hold_then_fresh_run_completes() {
     let (state, motor) = state_with_real_can_stub();
     let role = motor.common.role.clone();
