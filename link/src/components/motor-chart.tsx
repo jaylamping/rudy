@@ -1,4 +1,4 @@
-// Reusable per-motor uPlot chart driven by the cached `["motors"]` query.
+// Reusable per-motor uPlot chart driven by the cached `queryKeys.motors.all()` query.
 //
 // Originally inlined inside `<TelemetryGrid>`'s `<MotorCard>`; pulled out so
 // the per-actuator detail page (`/actuators/:role`) can render one

@@ -2,13 +2,14 @@
 //
 // Sticky header with role / can_id / bus / verified+present pills + last
 // telemetry, then six tabs (Overview, Travel, Firmware, Controls, Tests,
-// Inventory). Reads from the shared `["motors"]` cache so the WT bridge's
-// per-frame updates flow in without any new subscription.
+// Inventory). Reads from the shared `queryKeys.motors.all()` cache so the
+// WT bridge's per-frame updates flow in without any new subscription.
 
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Home, Lock, LockOpen, Radio, WifiOff } from "lucide-react";
 import { useState } from "react";
+import { queryKeys } from "@/api";
 import { api } from "@/lib/api";
 import { HomingProgressBar } from "@/components/actuator/homing-progress";
 import { useLiveInterval } from "@/lib/hooks/useLiveInterval";
@@ -48,7 +49,7 @@ export const Route = createFileRoute("/_app/actuators/$role")({
   // on an unknown role with a clean 404 instead of "Loading..." -> empty.
   loader: async ({ context, params }) => {
     const motors = await context.queryClient.ensureQueryData({
-      queryKey: ["motors"],
+      queryKey: queryKeys.motors.all(),
       queryFn: () => api.listMotors(),
     });
     if (!motors.find((m) => m.role === params.role)) {
@@ -87,7 +88,7 @@ function ActuatorDetailPage() {
   const navigate = Route.useNavigate();
 
   const motorsQ = useQuery({
-    queryKey: ["motors"],
+    queryKey: queryKeys.motors.all(),
     queryFn: () => api.listMotors(),
     refetchInterval: useLiveInterval({ live: 30_000, fallback: 2_000 }),
   });
@@ -376,7 +377,7 @@ function BootStateBadge({ motor }: { motor: MotorSummary }) {
             setRestoreBusy(true);
             try {
               await api.restoreOffset(motor.role);
-              await qc.invalidateQueries({ queryKey: ["motors"] });
+              await qc.invalidateQueries({ queryKey: queryKeys.motors.all() });
             } catch (e) {
               const msg =
                 e instanceof Error ? e.message : "restore_offset failed";

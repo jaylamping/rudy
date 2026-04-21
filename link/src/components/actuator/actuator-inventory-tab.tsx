@@ -8,6 +8,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
+import { queryKeys } from "@/api";
 import { api, ApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import {
@@ -83,7 +84,7 @@ const LIMB_JOINTS: Record<string, JointKind[]> = {
 export function ActuatorInventoryTab({ motor }: { motor: MotorSummary }) {
   const qc = useQueryClient();
   const detail = useQuery({
-    queryKey: ["inventory", motor.role],
+    queryKey: queryKeys.inventory.byRole(motor.role),
     queryFn: () => api.getInventory(motor.role),
     retry: false,
   });
@@ -100,8 +101,8 @@ export function ActuatorInventoryTab({ motor }: { motor: MotorSummary }) {
     onSuccess: () => {
       setConfirm(false);
       setNote("");
-      qc.invalidateQueries({ queryKey: ["motors"] });
-      qc.invalidateQueries({ queryKey: ["inventory", motor.role] });
+      qc.invalidateQueries({ queryKey: queryKeys.motors.all() });
+      qc.invalidateQueries({ queryKey: queryKeys.inventory.byRole(motor.role) });
     },
   });
 
@@ -230,17 +231,18 @@ function LimbAssignmentCard({ motor }: { motor: MotorSummary }) {
       return await api.renameMotor(motor.role, previewRole);
     },
     onSuccess: async (resp) => {
-      // The role just changed under us. Before we navigate, `["motors"]`
-      // must reflect the new role — otherwise the detail route's loader
-      // calls `ensureQueryData(["motors"])`, gets the stale cached
-      // array, can't find `resp.new_role`, and renders NotFoundActuator
-      // until you hit refresh. So we explicitly refetch and *await* it.
+      // The role just changed under us. Before we navigate, the motors
+      // cache must reflect the new role — otherwise the detail route's loader
+      // calls `ensureQueryData({ queryKey: queryKeys.motors.all() })`, gets
+      // the stale cached array, can't find `resp.new_role`, and renders
+      // NotFoundActuator until you hit refresh. So we explicitly refetch
+      // and *await* it.
       //
-      // Also: drop the old inventory cache entry and warm the new one,
-      // since the old key (`["inventory", motor.role]`) now points at a
-      // role the daemon no longer knows about.
-      qc.removeQueries({ queryKey: ["inventory", motor.role], exact: true });
-      await qc.refetchQueries({ queryKey: ["motors"], exact: true });
+      // Also: drop the old inventory cache entry, since the old key
+      // (`queryKeys.inventory.byRole(motor.role)`) now points at a role the
+      // daemon no longer knows about.
+      qc.removeQueries({ queryKey: queryKeys.inventory.byRole(motor.role), exact: true });
+      await qc.refetchQueries({ queryKey: queryKeys.motors.all(), exact: true });
       if (resp.auto_stopped) {
         setLastAutoFlags({
           auto_stopped: true,

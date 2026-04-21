@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
+import { queryKeys } from "@/api";
 import { api } from "@/lib/api";
 import {
   bootStateShortLabel,
@@ -14,12 +15,12 @@ import type { MotorSummary } from "@/lib/types/MotorSummary";
 const MAX_LINKS = 5;
 
 /**
- * Sticky header summary of actuator boot health. Uses the same `["motors"]`
+ * Sticky header summary of actuator boot health. Uses the same `queryKeys.motors.all()`
  * query as the dashboard (no extra polling pattern).
  */
 export function GlobalActuatorHealthBar() {
   const q = useQuery({
-    queryKey: ["motors"],
+    queryKey: queryKeys.motors.all(),
     queryFn: () => api.listMotors(),
     refetchInterval: useLiveInterval({ live: 30_000, fallback: 2_000 }),
   });

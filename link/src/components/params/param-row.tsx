@@ -5,6 +5,7 @@
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
+import { queryKeys } from "@/api";
 import { api, ApiError } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -73,24 +74,24 @@ export function ParamRow({ role, param }: ParamRowProps) {
     },
     onSuccess: () => {
       setConfirmSave(false);
-      qc.invalidateQueries({ queryKey: ["params", role] });
-      qc.invalidateQueries({ queryKey: ["motors"] });
+      qc.invalidateQueries({ queryKey: queryKeys.params.byRole(role) });
+      qc.invalidateQueries({ queryKey: queryKeys.motors.all() });
     },
   });
 
   const adopt = useMutation({
     mutationFn: () => api.adoptParam(role, param.name),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["params", role] });
-      qc.invalidateQueries({ queryKey: ["motors"] });
+      qc.invalidateQueries({ queryKey: queryKeys.params.byRole(role) });
+      qc.invalidateQueries({ queryKey: queryKeys.motors.all() });
     },
   });
 
   const push = useMutation({
     mutationFn: () => api.syncParams(role, { names: [param.name] }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["params", role] });
-      qc.invalidateQueries({ queryKey: ["motors"] });
+      qc.invalidateQueries({ queryKey: queryKeys.params.byRole(role) });
+      qc.invalidateQueries({ queryKey: queryKeys.motors.all() });
     },
   });
 

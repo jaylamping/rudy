@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "@/api";
 import { api } from "@/lib/api";
 import { useLiveInterval } from "@/lib/hooks/useLiveInterval";
 import { getBridgeWt } from "@/lib/hooks/wtBridgeHandle";
-import { LIVE_LOG_CAP, LIVE_LOGS_KEY } from "@/lib/hooks/wtReducers";
+import { LIVE_LOG_CAP } from "@/lib/hooks/wtReducers";
 import type { LogEntry } from "@/lib/types/LogEntry";
 import type { LogLevel } from "@/lib/types/LogLevel";
 import type { LogSource } from "@/lib/types/LogSource";
@@ -132,8 +133,8 @@ function LogsPage() {
   }, []);
 
   // Live tail comes from the WT reducer, which writes the cache key
-  // `LIVE_LOGS_KEY`. We also keep a REST safety-net poll on the same
-  // key (slow when WT is healthy, fast when it isn't) so the page
+  // `queryKeys.logs.live()`. We also keep a REST safety-net poll on the
+  // same key (slow when WT is healthy, fast when it isn't) so the page
   // never goes silent if the WT firehose stalls — matches the cadence
   // every other live surface uses via `useLiveInterval`.
   //
@@ -142,12 +143,12 @@ function LogsPage() {
   // up-to-`LIVE_LOG_CAP` entries the WT reducer has accumulated.
   const refetchInterval = useLiveInterval({ live: 30_000, fallback: 2_000 });
   const liveQ = useQuery<LogEntry[]>({
-    queryKey: LIVE_LOGS_KEY,
+    queryKey: queryKeys.logs.live(),
     queryFn: async () => {
       // Limit 500 keeps the initial paint snappy and matches the cap
       // used by older `dmesg`-style consoles.
       const res = await api.logs.list({ limit: 500 });
-      const prev = qc.getQueryData<LogEntry[]>(LIVE_LOGS_KEY) ?? [];
+      const prev = qc.getQueryData<LogEntry[]>(queryKeys.logs.live()) ?? [];
       return mergeLiveEntries(res.entries, prev);
     },
     refetchInterval,
@@ -185,7 +186,7 @@ function LogsPage() {
   const clearMut = useMutation({
     mutationFn: () => api.logs.clear(),
     onSuccess: () => {
-      qc.setQueryData<LogEntry[]>(LIVE_LOGS_KEY, []);
+      qc.setQueryData<LogEntry[]>(queryKeys.logs.live(), []);
       setSelectedId(null);
     },
   });

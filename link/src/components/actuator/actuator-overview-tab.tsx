@@ -1,12 +1,13 @@
 // Overview tab: 2x2 metric grid plus a per-joint URDF highlight.
 //
-// Reads from the cached `["motors"]` summary. The WT bridge mounted at
+// Reads from the cached `queryKeys.motors.all()` summary. The WT bridge mounted at
 // the router root keeps `motor.latest` fresh without any per-tab
 // subscription work; uPlot picks up new samples via the `motor` prop.
 
 import { Home, Maximize2 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "@/api";
 import { api, ApiError } from "@/lib/api";
 import { HomingProgressBar } from "@/components/actuator/homing-progress";
 import { Button } from "@/components/ui/button";
@@ -91,7 +92,7 @@ function GoHomeBar({ motor }: { motor: MotorSummary }) {
   const home = useMutation({
     mutationFn: () => api.homeMotor(motor.role, 0),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["motors"] });
+      qc.invalidateQueries({ queryKey: queryKeys.motors.all() });
     },
   });
   const bs = motor.boot_state;

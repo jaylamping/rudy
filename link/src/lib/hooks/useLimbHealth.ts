@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { queryKeys } from "@/api";
 import { api } from "@/lib/api";
 import type { BootState } from "@/lib/types/BootState";
 import type { MotorSummary } from "@/lib/types/MotorSummary";
@@ -31,11 +32,11 @@ export type LimbHealthForMotion = {
 
 /**
  * Client-side mirror of cortex's sibling-only limb quarantine so motion
- * buttons can disable early. Uses the shared `["motors"]` query cache.
+ * buttons can disable early. Uses the shared `queryKeys.motors.all()` query cache.
  */
 export function useLimbHealth(role: string): LimbHealthForMotion {
   const q = useQuery({
-    queryKey: ["motors"],
+    queryKey: queryKeys.motors.all(),
     queryFn: () => api.listMotors(),
   });
   const motors = q.data;

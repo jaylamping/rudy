@@ -25,6 +25,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, RefreshCw, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { ConfirmDialog } from "@/components/params";
+import { queryKeys } from "@/api";
 import { ApiError, api } from "@/lib/api";
 import { DevicesSection } from "@/components/devices/devices-section";
 import { OnboardingWizard } from "@/components/devices/onboarding-wizard";
@@ -139,19 +140,19 @@ function DevicesPage() {
   };
 
   const devicesQ = useQuery({
-    queryKey: ["devices"],
+    queryKey: queryKeys.devices.all(),
     queryFn: () => api.listDevices(),
     refetchInterval: poll,
   });
 
   const motorsQ = useQuery({
-    queryKey: ["motors"],
+    queryKey: queryKeys.motors.all(),
     queryFn: () => api.listMotors(),
     refetchInterval: poll,
   });
 
   const unassignedQ = useQuery({
-    queryKey: ["hardware", "unassigned"],
+    queryKey: queryKeys.devices.unassigned(),
     queryFn: () => api.listUnassignedHardware(),
     refetchInterval: poll,
   });
@@ -159,15 +160,15 @@ function DevicesPage() {
   const scanMut = useMutation({
     mutationFn: () => api.scanHardware({}),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["hardware", "unassigned"] });
+      void qc.invalidateQueries({ queryKey: queryKeys.devices.unassigned() });
     },
   });
   const removeMut = useMutation({
     mutationFn: (target: { role: string }) => api.removeDevice(target.role),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["devices"] });
-      void qc.invalidateQueries({ queryKey: ["motors"] });
-      void qc.invalidateQueries({ queryKey: ["hardware", "unassigned"] });
+      void qc.invalidateQueries({ queryKey: queryKeys.devices.all() });
+      void qc.invalidateQueries({ queryKey: queryKeys.motors.all() });
+      void qc.invalidateQueries({ queryKey: queryKeys.devices.unassigned() });
       setRemoveTarget(null);
     },
   });

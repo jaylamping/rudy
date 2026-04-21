@@ -1,6 +1,7 @@
 // Pi CPU / memory / temperatures / throttle state, polled from /api/system.
 
 import { useQuery } from "@tanstack/react-query";
+import { queryKeys } from "@/api";
 import { api } from "@/lib/api";
 import { useLiveInterval } from "@/lib/hooks/useLiveInterval";
 import { cn } from "@/lib/utils";
@@ -11,7 +12,7 @@ export function SystemHealthCard({ className }: { className?: string }) {
   // broadcast at ~2 s on the daemon side). REST stays as the bootstrap +
   // disconnected fallback.
   const q = useQuery({
-    queryKey: ["system"],
+    queryKey: queryKeys.system(),
     queryFn: () => api.system(),
     refetchInterval: useLiveInterval({ live: 30_000, fallback: 5_000 }),
   });

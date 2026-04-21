@@ -29,7 +29,7 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import { api } from "@/lib/api";
+import { configQueryOptions, queryKeys } from "@/api";
 import { useWebTransport } from "@/lib/hooks/useWebTransport";
 import { publishBridgeWt } from "@/lib/hooks/wtBridgeHandle";
 import { publishWtStatus } from "@/lib/hooks/wtStatus";
@@ -71,19 +71,15 @@ export function WebTransportBridge({
 }: BridgeProps = {}) {
   const queryClient = useQueryClient();
 
-  // Discover the WT advert. We fetch `/api/config` here — the dashboard's
-  // ConnectionCard fetches it too, but TanStack Query dedupes by ["config"]
-  // queryKey so the network only sees one request.
+  // Discover the WT advert. The dashboard's `ConnectionCard` also reads
+  // `/api/config`; both go through `configQueryOptions()` so they share
+  // one cache entry, one staleTime, and one network request.
   const [cfg, setCfg] = useState<ServerConfig | null>(null);
   useEffect(() => {
     if (urlOverride !== undefined) return;
     let cancelled = false;
     queryClient
-      .fetchQuery({
-        queryKey: ["config"],
-        queryFn: () => api.config(),
-        staleTime: 60_000,
-      })
+      .fetchQuery(configQueryOptions())
       .then((c) => {
         if (!cancelled) setCfg(c);
       })
@@ -202,7 +198,7 @@ export function WebTransportBridge({
     // a refetch is the only honest fix.
     const unsubInv = wt.onKind<{ kind: string }>("safety_event", (env) => {
       if (env.data.kind === "motor_renamed") {
-        queryClient.invalidateQueries({ queryKey: ["motors"] });
+        queryClient.invalidateQueries({ queryKey: queryKeys.motors.all() });
       }
     });
 

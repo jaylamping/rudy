@@ -7,6 +7,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
+import { queryKeys } from "@/api";
 import { api, ApiError } from "@/lib/api";
 import { degToRad, formatAngularVelDeg, radToDeg } from "@/lib/units";
 import { Button } from "@/components/ui/button";
@@ -37,7 +38,7 @@ const MAX_HOMING_DEG_S = 100;
 export function ActuatorTravelTab({ motor }: { motor: MotorSummary }) {
   const qc = useQueryClient();
   const limitsQ = useQuery({
-    queryKey: ["travel_limits", motor.role],
+    queryKey: queryKeys.travelLimits.byRole(motor.role),
     queryFn: () => api.getTravelLimits(motor.role),
     retry: false,
   });
@@ -95,8 +96,8 @@ export function ActuatorTravelTab({ motor }: { motor: MotorSummary }) {
       }),
     onSuccess: () => {
       setConfirm(false);
-      qc.invalidateQueries({ queryKey: ["travel_limits", motor.role] });
-      qc.invalidateQueries({ queryKey: ["motors"] });
+      qc.invalidateQueries({ queryKey: queryKeys.travelLimits.byRole(motor.role) });
+      qc.invalidateQueries({ queryKey: queryKeys.motors.all() });
     },
   });
 
@@ -106,7 +107,7 @@ export function ActuatorTravelTab({ motor }: { motor: MotorSummary }) {
         predefined_home_rad: degToRad(homeDeg),
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["motors"] });
+      qc.invalidateQueries({ queryKey: queryKeys.motors.all() });
     },
   });
 
@@ -116,7 +117,7 @@ export function ActuatorTravelTab({ motor }: { motor: MotorSummary }) {
         homing_speed_rad_s: degToRad(clamp(homingDegS, MIN_HOMING_DEG_S, MAX_HOMING_DEG_S)),
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["motors"] });
+      qc.invalidateQueries({ queryKey: queryKeys.motors.all() });
     },
   });
 
@@ -124,7 +125,7 @@ export function ActuatorTravelTab({ motor }: { motor: MotorSummary }) {
     mutationFn: () =>
       api.setHomingSpeed(motor.role, { homing_speed_rad_s: null }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["motors"] });
+      qc.invalidateQueries({ queryKey: queryKeys.motors.all() });
     },
   });
 
@@ -597,7 +598,7 @@ function VerifyAndHomeCard({ motor }: { motor: MotorSummary }) {
   const home = useMutation({
     mutationFn: () => api.homeMotor(motor.role, degToRad(target)),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["motors"] });
+      qc.invalidateQueries({ queryKey: queryKeys.motors.all() });
     },
   });
   const bs = motor.boot_state;

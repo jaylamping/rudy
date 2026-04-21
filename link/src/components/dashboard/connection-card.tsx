@@ -1,13 +1,12 @@
 // Small "what am I talking to?" card. Shows version, actuator model,
 // CAN mode (live/mock), and WebTransport advert. Mostly diagnostic.
 
-import { useQuery } from "@tanstack/react-query";
-import { api } from "@/lib/api";
+import { useConfigQuery } from "@/api";
 import { cn } from "@/lib/utils";
 import { DashboardCard } from "./dashboard-card";
 
 export function ConnectionCard({ className }: { className?: string }) {
-  const q = useQuery({ queryKey: ["config"], queryFn: () => api.config() });
+  const q = useConfigQuery();
   const cfg = q.data;
 
   return (

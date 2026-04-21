@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, RotateCcw, Save } from "lucide-react";
+import { queryKeys, useLogsLevelQuery } from "@/api";
 import { api, ApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,10 +14,7 @@ import { cn } from "@/lib/utils";
  * we surface inline. */
 export function LevelControl() {
   const qc = useQueryClient();
-  const stateQ = useQuery({
-    queryKey: ["logs", "level"],
-    queryFn: () => api.logs.getLevel(),
-  });
+  const stateQ = useLogsLevelQuery();
 
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -31,7 +29,7 @@ export function LevelControl() {
   const setMut = useMutation({
     mutationFn: (raw: string) => api.logs.setLevel(raw),
     onSuccess: (next) => {
-      qc.setQueryData(["logs", "level"], next);
+      qc.setQueryData(queryKeys.logs.level(), next);
       setDraft(next.raw);
       setError(null);
     },

@@ -9,7 +9,7 @@
 //
 // Usage:
 //   useQuery({
-//     queryKey: ["motors"],
+//     queryKey: queryKeys.motors.all(),
 //     queryFn: () => api.listMotors(),
 //     refetchInterval: useLiveInterval({ live: 30_000, fallback: 1_000 }),
 //   });

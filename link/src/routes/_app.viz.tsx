@@ -5,21 +5,20 @@
 
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { UrdfViewer } from "@/components/viz/urdf-viewer";
 import {
   ViewerControls,
   type ViewerControlsState,
 } from "@/components/viz/viewer-controls";
 import { useJointStates } from "@/components/viz/use-joint-states";
-import { api } from "@/lib/api";
+import { useConfigQuery } from "@/api";
 
 export const Route = createFileRoute("/_app/viz")({
   component: VizPage,
 });
 
 function VizPage() {
-  const cfg = useQuery({ queryKey: ["config"], queryFn: () => api.config() });
+  const cfg = useConfigQuery();
   const { jointStates, staleness } = useJointStates();
   const [controls, setControls] = useState<ViewerControlsState>({
     showGrid: true,

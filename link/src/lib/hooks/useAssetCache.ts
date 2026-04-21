@@ -8,6 +8,7 @@ import {
   useQueryClient,
   type UseQueryResult,
 } from "@tanstack/react-query";
+import { queryKeys } from "@/api";
 import {
   clearAssetCache,
   indexManifest,
@@ -32,7 +33,7 @@ async function fetchManifest(): Promise<Manifest> {
 
 export function useAssetManifest(): UseQueryResult<Manifest> {
   return useQuery({
-    queryKey: ["asset-manifest"],
+    queryKey: queryKeys.assets.manifest(),
     queryFn: fetchManifest,
     staleTime: 30_000,
     refetchOnWindowFocus: true,
@@ -46,7 +47,7 @@ export function useAssetManifest(): UseQueryResult<Manifest> {
  */
 export function useCacheStats(): UseQueryResult<CacheStats> {
   return useQuery({
-    queryKey: ["asset-cache-stats"],
+    queryKey: queryKeys.assets.cacheStats(),
     queryFn: () => readCacheStats(),
     staleTime: 5_000,
   });
@@ -61,7 +62,7 @@ export function useClearAssetCache() {
   return useMutation({
     mutationFn: () => clearAssetCache(),
     onSettled: () => {
-      qc.invalidateQueries({ queryKey: ["asset-cache-stats"] });
+      qc.invalidateQueries({ queryKey: queryKeys.assets.cacheStats() });
     },
   });
 }

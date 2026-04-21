@@ -6,6 +6,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { queryKeys } from "@/api";
 import { api, ApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -38,7 +39,7 @@ function observableUnitCell(p: ParamValue): string {
 export function ActuatorFirmwareTab({ role }: { role: string }) {
   const qc = useQueryClient();
   const paramsQ = useQuery({
-    queryKey: ["params", role],
+    queryKey: queryKeys.params.byRole(role),
     queryFn: () => api.getParams(role),
   });
   const [confirmSync, setConfirmSync] = useState(false);
@@ -47,8 +48,8 @@ export function ActuatorFirmwareTab({ role }: { role: string }) {
     mutationFn: () => api.syncParams(role, {}),
     onSuccess: () => {
       setConfirmSync(false);
-      qc.invalidateQueries({ queryKey: ["params", role] });
-      qc.invalidateQueries({ queryKey: ["motors"] });
+      qc.invalidateQueries({ queryKey: queryKeys.params.byRole(role) });
+      qc.invalidateQueries({ queryKey: queryKeys.motors.all() });
     },
   });
 

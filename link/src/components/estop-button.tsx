@@ -7,6 +7,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { ShieldAlert } from "lucide-react";
+import { queryKeys } from "@/api";
 import { api, ApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/params";
@@ -18,7 +19,7 @@ export function EstopButton({ className }: { className?: string }) {
     mutationFn: () => api.estop(),
     onSuccess: () => {
       setConfirm(false);
-      qc.invalidateQueries({ queryKey: ["motors"] });
+      qc.invalidateQueries({ queryKey: queryKeys.motors.all() });
     },
   });
 

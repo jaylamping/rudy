@@ -14,6 +14,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { queryKeys } from "@/api";
 import {
   WebTransportBridge,
   type WtReducer,
@@ -173,7 +174,7 @@ function renderBridge(
 }
 
 describe("WebTransportBridge", () => {
-  it("merges MotorFeedback into the ['motors'] cache by role, preserving metadata", async () => {
+  it("merges MotorFeedback into the queryKeys.motors.all() cache by role, preserving metadata", async () => {
     const baseline: MotorSummary[] = [
       motorSummaryFixture({
         role: "shoulder_a",
@@ -192,7 +193,7 @@ describe("WebTransportBridge", () => {
         present: true,
       }),
     ];
-    qc.setQueryData(["motors"], baseline);
+    qc.setQueryData(queryKeys.motors.all(), baseline);
 
     decodeMock.mockReturnValueOnce(
       env("motor_feedback", 0, makeFeedback("shoulder_a", 1000, 0.42)),
@@ -209,13 +210,13 @@ describe("WebTransportBridge", () => {
     });
     await waitFor(
       () => {
-        const cached = qc.getQueryData<MotorSummary[]>(["motors"]);
+        const cached = qc.getQueryData<MotorSummary[]>(queryKeys.motors.all());
         expect(cached?.find((m) => m.role === "shoulder_a")?.latest).not.toBeNull();
       },
       { timeout: 1000 },
     );
 
-    const cached = qc.getQueryData<MotorSummary[]>(["motors"])!;
+    const cached = qc.getQueryData<MotorSummary[]>(queryKeys.motors.all())!;
     const a = cached.find((m) => m.role === "shoulder_a")!;
     expect(a.latest?.mech_pos_rad).toBe(0.42);
     expect(a.can_id).toBe(8);
@@ -235,7 +236,7 @@ describe("WebTransportBridge", () => {
         present: true,
       }),
     ];
-    qc.setQueryData(["motors"], baseline);
+    qc.setQueryData(queryKeys.motors.all(), baseline);
 
     decodeMock
       .mockReturnValueOnce(env("motor_feedback", 0, makeFeedback("x", 1, 0.1)))
@@ -261,12 +262,12 @@ describe("WebTransportBridge", () => {
     });
     await new Promise((r) => setTimeout(r, 60));
 
-    const cached = qc.getQueryData<MotorSummary[]>(["motors"])!;
+    const cached = qc.getQueryData<MotorSummary[]>(queryKeys.motors.all())!;
     expect(cached[0].latest?.mech_pos_rad).toBe(0.3);
     expect(writes).toBeLessThan(3);
   });
 
-  it("drops MotorFeedback when the ['motors'] cache is empty (no inventory baseline)", async () => {
+  it("drops MotorFeedback when the queryKeys.motors.all() cache is empty (no inventory baseline)", async () => {
     decodeMock.mockReturnValueOnce(
       env("motor_feedback", 0, makeFeedback("nobody", 1, 0.5)),
     );
@@ -281,10 +282,10 @@ describe("WebTransportBridge", () => {
     });
     await new Promise((r) => setTimeout(r, 60));
 
-    expect(qc.getQueryData(["motors"])).toBeUndefined();
+    expect(qc.getQueryData(queryKeys.motors.all())).toBeUndefined();
   });
 
-  it("writes SystemSnapshot envelopes into the ['system'] cache", async () => {
+  it("writes SystemSnapshot envelopes into the queryKeys.system() cache", async () => {
     decodeMock.mockReturnValueOnce(
       env("system_snapshot", 0, makeSystem(1000)),
     );
@@ -299,7 +300,7 @@ describe("WebTransportBridge", () => {
     });
     await new Promise((r) => setTimeout(r, 60));
 
-    const snap = qc.getQueryData<SystemSnapshot>(["system"])!;
+    const snap = qc.getQueryData<SystemSnapshot>(queryKeys.system())!;
     expect(snap.cpu_pct).toBe(17.5);
     expect(snap.hostname).toBe("test");
   });
@@ -368,7 +369,7 @@ describe("WebTransportBridge", () => {
     });
     await new Promise((r) => setTimeout(r, 60));
 
-    expect(qc.getQueryData(["motors"])).toBeUndefined();
-    expect(qc.getQueryData(["system"])).toBeUndefined();
+    expect(qc.getQueryData(queryKeys.motors.all())).toBeUndefined();
+    expect(qc.getQueryData(queryKeys.system())).toBeUndefined();
   });
 });

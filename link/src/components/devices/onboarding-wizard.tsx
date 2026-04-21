@@ -3,10 +3,11 @@
  * Commission + verify are separate steps using existing REST endpoints.
  */
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { Loader2 } from "lucide-react";
+import { queryKeys, useConfigQuery } from "@/api";
 import { ApiError, api } from "@/lib/api";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
@@ -75,7 +76,10 @@ export function OnboardingWizard({
   device: UnassignedDevice | null;
 }) {
   const qc = useQueryClient();
-  const configQ = useQuery({ queryKey: ["config"], queryFn: () => api.config() });
+  // Only fetch config when the wizard is actually open. The component is
+  // always mounted in the parent route, so without `enabled` we'd fetch
+  // /api/config on every page visit even when nobody opened the dialog.
+  const configQ = useConfigQuery({ enabled: open });
 
   const modelOptions = (configQ.data?.actuator_models ?? ["RS03"]).map(
     specLabelToModelId,
@@ -110,9 +114,9 @@ export function OnboardingWizard({
     onSuccess: (data) => {
       setCreatedRole(data.role);
       setPhase("after");
-      void qc.invalidateQueries({ queryKey: ["devices"] });
-      void qc.invalidateQueries({ queryKey: ["motors"] });
-      void qc.invalidateQueries({ queryKey: ["hardware", "unassigned"] });
+      void qc.invalidateQueries({ queryKey: queryKeys.devices.all() });
+      void qc.invalidateQueries({ queryKey: queryKeys.motors.all() });
+      void qc.invalidateQueries({ queryKey: queryKeys.devices.unassigned() });
     },
   });
 
@@ -122,8 +126,8 @@ export function OnboardingWizard({
       return api.commissionMotor(createdRole);
     },
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["motors"] });
-      void qc.invalidateQueries({ queryKey: ["devices"] });
+      void qc.invalidateQueries({ queryKey: queryKeys.motors.all() });
+      void qc.invalidateQueries({ queryKey: queryKeys.devices.all() });
     },
   });
 
@@ -133,7 +137,7 @@ export function OnboardingWizard({
       return api.setVerified(createdRole, { verified: true });
     },
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["motors"] });
+      void qc.invalidateQueries({ queryKey: queryKeys.motors.all() });
     },
   });
 

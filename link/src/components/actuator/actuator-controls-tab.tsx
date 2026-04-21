@@ -13,6 +13,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { queryKeys } from "@/api";
 import { api, ApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import {
@@ -60,8 +61,8 @@ export function ActuatorControlsTab({ motor }: { motor: MotorSummary }) {
     },
     onSuccess: () => {
       setConfirm(null);
-      qc.invalidateQueries({ queryKey: ["motors"] });
-      qc.invalidateQueries({ queryKey: ["params", motor.role] });
+      qc.invalidateQueries({ queryKey: queryKeys.motors.all() });
+      qc.invalidateQueries({ queryKey: queryKeys.params.byRole(motor.role) });
     },
   });
 
@@ -228,7 +229,7 @@ function CommissioningCard({ motor }: { motor: MotorSummary }) {
   // which round-trips the typed Motor via serde_json::to_value(motor)
   // so the typed scalars are present alongside the YAML extras.
   const inv = useQuery({
-    queryKey: ["inventory", motor.role],
+    queryKey: queryKeys.inventory.byRole(motor.role),
     queryFn: () => api.getInventory(motor.role),
     retry: false,
   });
@@ -247,9 +248,9 @@ function CommissioningCard({ motor }: { motor: MotorSummary }) {
     mutationFn: () => api.commissionMotor(motor.role),
     onSuccess: () => {
       setConfirm(null);
-      qc.invalidateQueries({ queryKey: ["motors"] });
-      qc.invalidateQueries({ queryKey: ["inventory", motor.role] });
-      qc.invalidateQueries({ queryKey: ["params", motor.role] });
+      qc.invalidateQueries({ queryKey: queryKeys.motors.all() });
+      qc.invalidateQueries({ queryKey: queryKeys.inventory.byRole(motor.role) });
+      qc.invalidateQueries({ queryKey: queryKeys.params.byRole(motor.role) });
     },
   });
 
@@ -257,8 +258,8 @@ function CommissioningCard({ motor }: { motor: MotorSummary }) {
     mutationFn: () => api.setZero(motor.role),
     onSuccess: () => {
       setConfirm(null);
-      qc.invalidateQueries({ queryKey: ["motors"] });
-      qc.invalidateQueries({ queryKey: ["params", motor.role] });
+      qc.invalidateQueries({ queryKey: queryKeys.motors.all() });
+      qc.invalidateQueries({ queryKey: queryKeys.params.byRole(motor.role) });
     },
   });
 

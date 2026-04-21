@@ -5,6 +5,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
+import { queryKeys } from "@/api";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import type { Reminder } from "@/lib/types/Reminder";
@@ -16,12 +17,13 @@ export function RemindersCard({ className }: { className?: string }) {
   const [dueAt, setDueAt] = useState("");
 
   const list = useQuery({
-    queryKey: ["reminders"],
+    queryKey: queryKeys.reminders.all(),
     queryFn: () => api.reminders.list(),
     refetchInterval: 15_000,
   });
 
-  const invalidate = () => qc.invalidateQueries({ queryKey: ["reminders"] });
+  const invalidate = () =>
+    qc.invalidateQueries({ queryKey: queryKeys.reminders.all() });
 
   const create = useMutation({
     mutationFn: () =>

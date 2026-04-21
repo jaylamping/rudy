@@ -12,6 +12,7 @@
 // queryClient)` runs once per requestAnimationFrame.
 
 import type { QueryClient } from "@tanstack/react-query";
+import { queryKeys } from "@/api";
 import type { WtEnvelope } from "@/lib/hooks/useWebTransport";
 import type { LogEntry } from "@/lib/types/LogEntry";
 import type { MotorFeedback } from "@/lib/types/MotorFeedback";
@@ -24,9 +25,6 @@ import type { SystemSnapshot } from "@/lib/types/SystemSnapshot";
  * developer to scroll through a few seconds of debug-level chatter
  * without the page going laggy. */
 export const LIVE_LOG_CAP = 5000;
-
-/** Cache key the Logs page subscribes to via `useQuery({ queryKey: LIVE_LOGS_KEY })`. */
-export const LIVE_LOGS_KEY = ["logs", "live"] as const;
 
 export interface WtReducer<TPayload = unknown, TBucket = unknown> {
   /** snake_case kind (matches the daemon's `WtPayload::KIND`). */
@@ -59,11 +57,11 @@ const motorFeedbackReducer: WtReducer<
   },
   flush(bucket, queryClient) {
     if (bucket.size === 0) return;
-    queryClient.setQueryData<MotorSummary[]>(["motors"], (prev) => {
+    queryClient.setQueryData<MotorSummary[]>(queryKeys.motors.all(), (prev) => {
       // The motors list (inventory metadata) must come from the REST
       // bootstrap before we can merge live frames. If it isn't seeded
       // yet, drop the updates: the next motor frame will retry, and
-      // the initial `useQuery({queryKey: ["motors"]})` populates the
+      // the initial `useQuery({queryKey: queryKeys.motors.all()})` populates the
       // baseline within ~one network RTT.
       if (!prev) return prev;
       let changed = false;
@@ -99,7 +97,7 @@ const systemSnapshotReducer: WtReducer<
   flush(bucket, queryClient) {
     if (!bucket.latest) return;
     const snap = bucket.latest;
-    queryClient.setQueryData<SystemSnapshot>(["system"], (prev) => {
+    queryClient.setQueryData<SystemSnapshot>(queryKeys.system(), (prev) => {
       if (prev && Number(prev.t_ms) >= Number(snap.t_ms)) return prev;
       return snap;
     });
@@ -131,7 +129,7 @@ const logEventReducer: WtReducer<LogEntry, { incoming: LogEntry[] }> = {
     // burst); the cache stores newest-first. Reverse the burst then
     // prepend so the cache stays sorted without resorting the whole tail.
     const burst = bucket.incoming.slice().reverse();
-    queryClient.setQueryData<LogEntry[]>(LIVE_LOGS_KEY, (prev) => {
+    queryClient.setQueryData<LogEntry[]>(queryKeys.logs.live(), (prev) => {
       const base = prev ?? [];
       const merged = burst.concat(base);
       return merged.length > LIVE_LOG_CAP ? merged.slice(0, LIVE_LOG_CAP) : merged;

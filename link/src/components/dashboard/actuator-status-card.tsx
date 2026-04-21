@@ -5,6 +5,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { ArrowRight } from "lucide-react";
+import { queryKeys } from "@/api";
 import { api } from "@/lib/api";
 import {
   bootStateDotClass,
@@ -30,7 +31,7 @@ export function ActuatorStatusCard({ className }: { className?: string }) {
   // poll is a slow safety net for dropped datagrams and the disconnected
   // fallback for environments without WebTransport (Vite dev, non-Chromium).
   const q = useQuery({
-    queryKey: ["motors"],
+    queryKey: queryKeys.motors.all(),
     queryFn: () => api.listMotors(),
     refetchInterval: useLiveInterval({ live: 30_000, fallback: 2_000 }),
   });
