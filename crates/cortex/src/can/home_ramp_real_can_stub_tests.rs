@@ -474,7 +474,7 @@ async fn stale_telemetry_hold_then_fresh_run_completes() {
             let fb = w.get_mut(&role2).unwrap();
             if phase2 {
                 fb.t_ms = chrono::Utc::now().timestamp_millis();
-                // Cap at the home target so post-home hold verification (200 ms later)
+                // Cap at the home target so post-home hold verification (500 ms later)
                 // still sees the joint on the commissioned pose, not an overshoot past it.
                 fb.mech_pos_rad = (fb.mech_pos_rad + 0.03).min(0.12);
             }

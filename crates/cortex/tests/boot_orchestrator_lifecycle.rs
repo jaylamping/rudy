@@ -90,7 +90,9 @@ async fn orchestrator_happy_path_auto_homes_on_mock_can() {
     common::seed_feedback(&state);
     common::set_boot_state(&state, ROLE, BootState::InBand);
 
+    let clock = common::spawn_latest_timestamp_refresh(state.clone(), ROLE, 0.0);
     boot_orchestrator::maybe_run(state.clone(), ROLE.into()).await;
+    clock.abort();
 
     assert!(matches!(
         cortex::boot_state::current(&state, ROLE),
@@ -109,6 +111,7 @@ async fn orchestrator_second_invocation_is_noop_after_success() {
     common::seed_feedback(&state);
     common::set_boot_state(&state, ROLE, BootState::InBand);
 
+    let clock = common::spawn_latest_timestamp_refresh(state.clone(), ROLE, 0.0);
     boot_orchestrator::maybe_run(state.clone(), ROLE.into()).await;
     assert!(matches!(
         cortex::boot_state::current(&state, ROLE),
@@ -116,6 +119,7 @@ async fn orchestrator_second_invocation_is_noop_after_success() {
     ));
 
     boot_orchestrator::maybe_run(state.clone(), ROLE.into()).await;
+    clock.abort();
     assert!(matches!(
         cortex::boot_state::current(&state, ROLE),
         BootState::Homed
@@ -142,7 +146,9 @@ async fn orchestrator_waits_for_fresh_telemetry_then_succeeds() {
     ));
 
     common::seed_feedback(&state);
+    let clock = common::spawn_latest_timestamp_refresh(state.clone(), ROLE, 0.0);
     boot_orchestrator::maybe_run(state.clone(), ROLE.into()).await;
+    clock.abort();
     assert!(matches!(
         cortex::boot_state::current(&state, ROLE),
         BootState::Homed
@@ -192,7 +198,9 @@ async fn orchestrator_skips_when_mech_pos_outside_travel_limits() {
         );
     }
 
+    let clock = common::spawn_latest_timestamp_refresh(state.clone(), ROLE, 0.0);
     boot_orchestrator::maybe_run(state.clone(), ROLE.into()).await;
+    clock.abort();
     assert!(matches!(
         cortex::boot_state::current(&state, ROLE),
         BootState::Homed
@@ -242,6 +250,7 @@ async fn spawn_if_triggers_maybe_run_on_out_of_band_to_in_band() {
         new: BootState::InBand,
     };
 
+    let clock = common::spawn_latest_timestamp_refresh(state.clone(), ROLE, 0.0);
     boot_orchestrator::spawn_if_orchestrator_qualifies(state.clone(), ROLE.into(), outcome, false);
 
     tokio::time::timeout(Duration::from_secs(3), async {
@@ -254,4 +263,5 @@ async fn spawn_if_triggers_maybe_run_on_out_of_band_to_in_band() {
     })
     .await
     .expect("orchestrator should reach Homed within 3s");
+    clock.abort();
 }

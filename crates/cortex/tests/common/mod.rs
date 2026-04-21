@@ -375,6 +375,36 @@ pub fn seed_feedback(state: &SharedState) {
     }
 }
 
+/// Mock CAN fixtures do not advance `state.latest[*]` during wall-clock sleeps
+/// inside the homer (`finish_home_success` waits 500 ms before hold
+/// verification). On non-Linux, `real_can` is `None` so the home-ramp loop
+/// uses perfect tracking in RAM (`last_measured = setpoint_unwrapped`) but
+/// **never rewrites** `state.latest[*].mech_pos_rad`, which still holds the
+/// pre-home seed (often `0.1` from [`seed_feedback`]). Real hardware keeps
+/// publishing type-2 feedback at the true joint angle, so hold verification
+/// reads fresh `t_ms` **and** a `mech_pos` consistent with the home target.
+///
+/// `mech_pos_rad_reported` should match the principal home angle the
+/// orchestrator ramps to (typically `0.0`, or `predefined_home_rad` when set).
+pub fn spawn_latest_timestamp_refresh(
+    state: SharedState,
+    role: impl Into<String>,
+    mech_pos_rad_reported: f32,
+) -> tokio::task::JoinHandle<()> {
+    let role = role.into();
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            let now = chrono::Utc::now().timestamp_millis();
+            let mut w = state.latest.write().expect("latest poisoned");
+            if let Some(fb) = w.get_mut(&role) {
+                fb.t_ms = now;
+                fb.mech_pos_rad = mech_pos_rad_reported;
+            }
+        }
+    })
+}
+
 /// Force every motor's boot state to `Homed`. Call from tests whose intent
 /// pre-dates the boot-time gate so they don't trip the new enable
 /// preconditions; tests for the gate itself should NOT use this.

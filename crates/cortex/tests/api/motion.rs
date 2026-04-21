@@ -28,6 +28,10 @@ async fn home_succeeds_then_enable_succeeds() {
     common::set_boot_state(&state, "shoulder_actuator_a", BootState::InBand);
     let app = cortex::build_app(state.clone());
 
+    // Mock CAN does not clock `state.latest` during `finish_home_success`'s settle;
+    // mirror type-2 freshness + mech_pos at home so hold verification passes.
+    let clock = common::spawn_latest_timestamp_refresh(state.clone(), "shoulder_actuator_a", 0.0);
+
     // POST /home with an empty body (defaults to target=0).
     let resp = app
         .clone()
@@ -41,6 +45,7 @@ async fn home_succeeds_then_enable_succeeds() {
         )
         .await
         .unwrap();
+    clock.abort();
     assert_eq!(
         resp.status(),
         StatusCode::OK,
