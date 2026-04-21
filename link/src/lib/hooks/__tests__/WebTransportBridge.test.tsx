@@ -118,6 +118,8 @@ function motorSummaryFixture(
     enabled: false,
     travel_limits: null,
     predefined_home_rad: null,
+    homing_speed_rad_s: null,
+    default_homing_speed_rad_s: 0.4,
     latest: null,
     boot_state: { kind: "unknown" },
     limb: null,

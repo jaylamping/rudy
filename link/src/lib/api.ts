@@ -219,6 +219,16 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(body),
     }),
+  /** Per-actuator home-ramp nominal speed (rad/s); `null` clears override. */
+  setHomingSpeed: (role: string, body: { homing_speed_rad_s: number | null }) =>
+    apiFetch<{
+      ok: boolean;
+      role: string;
+      homing_speed_rad_s: number | null;
+    }>(`/api/motors/${encodeURIComponent(role)}/homing_speed`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
   // Hold-to-jog. The TTL is also a server-side watchdog: if no follow-up
   // jog frame arrives within ttl_ms the daemon issues `cmd_stop`.
   //

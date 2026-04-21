@@ -61,6 +61,10 @@ pub struct ActuatorCommon {
     pub active_report_persisted: bool,
     #[serde(default)]
     pub predefined_home_rad: Option<f32>,
+    /// Optional override for home-ramp nominal speed (rad/s). `None` uses
+    /// global `cortex.toml` [`crate::config::SafetyConfig::effective_homing_speed_rad_s`].
+    #[serde(default)]
+    pub homing_speed_rad_s: Option<f32>,
     #[serde(default)]
     pub limb: Option<String>,
     #[serde(default)]

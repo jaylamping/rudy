@@ -4,12 +4,18 @@
 // per-actuator detail page can reuse the same row + confirm dialog.
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { JsonValue } from "@/lib/types/serde_json/JsonValue";
 import type { ParamValue } from "@/lib/types/ParamValue";
+import {
+  degToRad,
+  isAngleUnit,
+  isAngularVelUnit,
+  radToDeg,
+} from "@/lib/units";
 import { ConfirmDialog } from "./confirm-dialog";
 
 export interface ParamRowProps {
@@ -17,18 +23,55 @@ export interface ParamRowProps {
   param: ParamValue;
 }
 
+function paramDisplayMode(param: ParamValue): {
+  displayInDeg: boolean;
+  displayUnit: string;
+} {
+  const angle = isAngleUnit(param.units);
+  const angVel = isAngularVelUnit(param.units);
+  if (angle || angVel) {
+    return {
+      displayInDeg: true,
+      displayUnit: angVel && !angle ? "°/s" : "°",
+    };
+  }
+  return { displayInDeg: false, displayUnit: param.units ?? "" };
+}
+
+function wireNumericValue(value: JsonValue): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  return null;
+}
+
 export function ParamRow({ role, param }: ParamRowProps) {
   const qc = useQueryClient();
-  const [draft, setDraft] = useState<string>(String(param.value ?? ""));
+  const { displayInDeg, displayUnit } = useMemo(
+    () => paramDisplayMode(param),
+    [param.units],
+  );
+  const [draft, setDraft] = useState<string>("");
   const [confirmSave, setConfirmSave] = useState(false);
 
   useEffect(() => {
-    setDraft(String(param.value ?? ""));
-  }, [param.value]);
+    const n = wireNumericValue(param.value);
+    if (displayInDeg && n != null) {
+      setDraft(String(radToDeg(n)));
+    } else {
+      setDraft(
+        param.value === undefined || param.value === null
+          ? ""
+          : String(param.value),
+      );
+    }
+  }, [param.value, displayInDeg]);
 
   const write = useMutation({
     mutationFn: async () => {
-      const value = parseValue(draft, param.type);
+      const raw = parseValue(draft, param.type);
+      const value: JsonValue =
+        displayInDeg && typeof raw === "number"
+          ? degToRad(raw)
+          : raw;
       return api.writeParam(role, param.name, { value, save_after: true });
     },
     onSuccess: () => {
@@ -55,6 +98,12 @@ export function ParamRow({ role, param }: ParamRowProps) {
   });
 
   const [lo, hi] = param.hardware_range ?? [null, null];
+  const rangeCell =
+    lo !== null && hi !== null
+      ? displayInDeg
+        ? `[${radToDeg(lo).toFixed(4)}, ${radToDeg(hi).toFixed(4)}]`
+        : `[${lo}, ${hi}]`
+      : "-";
 
   return (
     <tr className="border-t border-border/60 align-middle">
@@ -69,10 +118,8 @@ export function ParamRow({ role, param }: ParamRowProps) {
           onChange={(e) => setDraft(e.target.value)}
         />
       </td>
-      <td className="px-3 py-2 font-mono text-muted-foreground">
-        {lo !== null && hi !== null ? `[${lo}, ${hi}]` : "-"}
-      </td>
-      <td className="px-3 py-2 text-muted-foreground">{param.units ?? ""}</td>
+      <td className="px-3 py-2 font-mono text-muted-foreground">{rangeCell}</td>
+      <td className="px-3 py-2 text-muted-foreground">{displayUnit}</td>
       <td className="px-3 py-2">
         <div className="flex flex-wrap items-center gap-2">
           {param.drift && (
@@ -124,7 +171,7 @@ export function ParamRow({ role, param }: ParamRowProps) {
             description={
               <>
                 Write <code className="font-mono">{param.name}</code> ={" "}
-                <code className="font-mono">{draft}</code> {param.units ?? ""}{" "}
+                <code className="font-mono">{draft}</code> {displayUnit}{" "}
                 on <code className="font-mono">{role}</code>, save to actuator
                 flash, and record as desired in inventory.
               </>

@@ -15,6 +15,7 @@ import {
 } from "@/lib/bootStateUi";
 import { useLiveInterval } from "@/lib/hooks/useLiveInterval";
 import { cn } from "@/lib/utils";
+import { radToDeg } from "@/lib/units";
 import type { MotorSummary } from "@/lib/types/MotorSummary";
 import { DashboardCard } from "./dashboard-card";
 
@@ -162,7 +163,9 @@ function MotorRow({ motor }: { motor: MotorSummary }) {
         <div className="flex items-center gap-3 font-mono tabular-nums text-muted-foreground">
           {fb ? (
             <>
-              <span title="position (rad)">{fb.mech_pos_rad.toFixed(2)}</span>
+              <span title="position (°)">
+                {radToDeg(fb.mech_pos_rad).toFixed(2)}°
+              </span>
               <span
                 title="temperature"
                 className={cn(

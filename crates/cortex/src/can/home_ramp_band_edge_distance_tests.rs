@@ -1,7 +1,7 @@
 //! Pins the predictive band-edge velocity-cap helper. The integration
 //! behavior (motor that would otherwise overshoot now decelerates
 //! before the edge) is exercised end-to-end by
-//! `slow_ramp_real_can_stub_tests`; these unit tests focus on the
+//! `home_ramp_real_can_stub_tests`; these unit tests focus on the
 //! math.
 
 use super::band_edge_distance;
@@ -17,7 +17,7 @@ fn limits(min_rad: f32, max_rad: f32) -> TravelLimits {
 
 #[test]
 fn no_limits_returns_infinity() {
-    // Without travel_limits the cap is a no-op and the slow-ramp
+    // Without travel_limits the cap is a no-op and the home-ramp
     // falls back to the original `governing` taper. Encoded as
     // f32::INFINITY so the caller's `min(|governing|, _)` lands on
     // `|governing|` unchanged.
@@ -27,7 +27,7 @@ fn no_limits_returns_infinity() {
 
 #[test]
 fn zero_direction_returns_infinity() {
-    // Direction == 0 means the slow-ramp already commanded `vel = 0`
+    // Direction == 0 means the home-ramp already commanded `vel = 0`
     // (we're parked at the target); no edge to fear.
     let l = limits(-1.0, 1.0);
     let d = band_edge_distance(Some(&l), 0.5, 0.0);

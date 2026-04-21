@@ -286,6 +286,7 @@ mod tests {
                 boot_max_step_rad: 0.087,
                 step_size_rad: 0.004,
                 tick_interval_ms: 10,
+                homing_speed_rad_s: None,
                 tracking_error_max_rad: 0.05,
                 tracking_error_grace_ticks: 15,
                 tracking_freshness_max_age_ms: 100,

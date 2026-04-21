@@ -26,7 +26,7 @@ pub mod math;
 pub mod mock;
 /// Legacy path for angle math used across CAN and motion (`can::motion::wrap_to_pi`, …).
 pub use math as motion;
-pub mod slow_ramp;
+pub mod home_ramp;
 pub mod travel;
 
 use discovery::HardwareScanReport;

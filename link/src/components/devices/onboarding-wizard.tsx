@@ -22,6 +22,7 @@ import { Label } from "@/components/ui/label";
 import type { JointKind } from "@/lib/types/JointKind";
 import type { UnassignedDevice } from "@/lib/types/UnassignedDevice";
 import { cn } from "@/lib/utils";
+import { degToRad } from "@/lib/units";
 
 const JOINT_KINDS: JointKind[] = [
   "waist_rotation",
@@ -45,8 +46,8 @@ const JOINT_KINDS: JointKind[] = [
   "neck_yaw",
 ];
 
-/** ±30° in rad — conservative default band inside typical RS03 rail. */
-const DEFAULT_HALF_SPAN_RAD = (30 * Math.PI) / 180;
+/** ±30° — conservative default band inside typical RS03 rail. */
+const DEFAULT_HALF_SPAN_DEG = 30;
 
 function specLabelToModelId(label: string): string {
   return label.trim().toLowerCase();
@@ -84,9 +85,9 @@ export function OnboardingWizard({
   const [model, setModel] = useState<string>("rs03");
   const [limb, setLimb] = useState("left_arm");
   const [jointKind, setJointKind] = useState<JointKind>("shoulder_pitch");
-  const [travelMin, setTravelMin] = useState(String(-DEFAULT_HALF_SPAN_RAD));
-  const [travelMax, setTravelMax] = useState(String(DEFAULT_HALF_SPAN_RAD));
-  const [homeRad, setHomeRad] = useState("0");
+  const [travelMin, setTravelMin] = useState(String(-DEFAULT_HALF_SPAN_DEG));
+  const [travelMax, setTravelMax] = useState(String(DEFAULT_HALF_SPAN_DEG));
+  const [homeDeg, setHomeDeg] = useState("0");
   const [phase, setPhase] = useState<"form" | "after">("form");
   const [createdRole, setCreatedRole] = useState<string | null>(null);
 
@@ -112,9 +113,10 @@ export function OnboardingWizard({
         model: model as "rs01" | "rs02" | "rs03" | "rs04",
         limb,
         joint_kind: jointKind,
-        travel_min_rad: Number(travelMin),
-        travel_max_rad: Number(travelMax),
-        predefined_home_rad: homeRad === "" ? undefined : Number(homeRad),
+        travel_min_rad: degToRad(Number(travelMin)),
+        travel_max_rad: degToRad(Number(travelMax)),
+        predefined_home_rad:
+          homeDeg === "" ? undefined : degToRad(Number(homeDeg)),
       });
     },
     onSuccess: (data) => {
@@ -239,21 +241,21 @@ export function OnboardingWizard({
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
-                <Label htmlFor="onb-min">Travel min (rad)</Label>
+                <Label htmlFor="onb-min">Travel min (°)</Label>
                 <Input
                   id="onb-min"
                   type="number"
-                  step="0.01"
+                  step="1"
                   value={travelMin}
                   onChange={(e) => setTravelMin(e.target.value)}
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="onb-max">Travel max (rad)</Label>
+                <Label htmlFor="onb-max">Travel max (°)</Label>
                 <Input
                   id="onb-max"
                   type="number"
-                  step="0.01"
+                  step="1"
                   value={travelMax}
                   onChange={(e) => setTravelMax(e.target.value)}
                 />
@@ -261,13 +263,13 @@ export function OnboardingWizard({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="onb-home">Predefined home (rad)</Label>
+              <Label htmlFor="onb-home">Predefined home (°)</Label>
               <Input
                 id="onb-home"
                 type="number"
-                step="0.01"
-                value={homeRad}
-                onChange={(e) => setHomeRad(e.target.value)}
+                step="0.1"
+                value={homeDeg}
+                onChange={(e) => setHomeDeg(e.target.value)}
               />
             </div>
 

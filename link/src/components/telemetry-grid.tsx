@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { Settings2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { MotorChart } from "@/components/motor-chart";
+import { radToDeg } from "@/lib/units";
 import type { MotorSummary } from "@/lib/types/MotorSummary";
 
 export function TelemetryGrid({ motors }: { motors: MotorSummary[] }) {
@@ -57,8 +58,24 @@ function MotorCard({ motor }: { motor: MotorSummary }) {
         <MotorChart motor={motor} metric="pos" />
       </div>
       <dl className="grid grid-cols-4 gap-2 text-xs">
-        <Stat label="pos" value={latest?.mech_pos_rad} unit="rad" />
-        <Stat label="vel" value={latest?.mech_vel_rad_s} unit="rad/s" />
+        <Stat
+          label="pos"
+          value={
+            latest?.mech_pos_rad != null
+              ? radToDeg(latest.mech_pos_rad)
+              : undefined
+          }
+          unit="°"
+        />
+        <Stat
+          label="vel"
+          value={
+            latest?.mech_vel_rad_s != null
+              ? radToDeg(latest.mech_vel_rad_s)
+              : undefined
+          }
+          unit="°/s"
+        />
         <Stat label="vbus" value={latest?.vbus_v} unit="V" />
         <Stat label="temp" value={latest?.temp_c} unit="degC" />
       </dl>

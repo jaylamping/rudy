@@ -140,7 +140,7 @@ pub struct AppState {
     /// Per-power-cycle boot-time gate state for each motor (role -> state).
     /// Populated on first telemetry tick by `boot_state::classify`; consulted
     /// by every motion-producing endpoint to refuse commands until the
-    /// operator runs the slow-ramp homer (Layers 0/2/5 of the boot-time
+    /// operator runs the home-ramp homer (Layers 0/2/5 of the boot-time
     /// gate). NOT persisted across daemon restarts: a motor that was Homed
     /// yesterday is back to Unknown after a power cycle, by design.
     pub boot_state: RwLock<HashMap<String, BootState>>,
@@ -148,7 +148,7 @@ pub struct AppState {
     /// Set of motor roles currently believed to be `enabled` on the bus
     /// (i.e. driving — torque allowed). Inserted on a successful `enable`
     /// CAN frame; cleared on a successful `stop` (per-motor stop, e-stop,
-    /// jog watchdog, or slow-ramp / e-stop cleanup). Consulted by `rename` /
+    /// jog watchdog, or home-ramp / e-stop cleanup). Consulted by `rename` /
     /// `assign` so we refuse role mutations while the motor is live, but
     /// admit them as soon as the operator clicks STOP.
     ///
@@ -296,7 +296,7 @@ impl AppState {
 
     /// Clear a motor's enabled bit. Idempotent. Called from every code path
     /// that successfully sends a `stop` frame (per-motor stop, e-stop, jog
-    /// watchdog timeout, slow-ramp cleanup).
+    /// watchdog timeout, home-ramp cleanup).
     pub fn mark_stopped(&self, role: &str) {
         self.enabled.write().expect("enabled poisoned").remove(role);
     }

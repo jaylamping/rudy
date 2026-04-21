@@ -106,7 +106,7 @@ commission_readback_tolerance_rad = 1e-3
 # Master switch for the boot orchestrator's auto-home flow. With true
 # (the default), every commissioned motor whose first valid telemetry
 # lands InBand is automatically driven to its predefined_home_rad via
-# the slow-ramp homer — the operator never has to click Verify & Home
+# the home-ramp homer — the operator never has to click Verify & Home
 # on every boot for those motors. Uncommissioned motors continue to
 # require the manual Verify & Home flow regardless.
 #
@@ -116,15 +116,15 @@ commission_readback_tolerance_rad = 1e-3
 auto_home_on_boot = true
 
 # Number of consecutive fresh telemetry ticks (after
-# `tracking_error_grace_ticks`) with the slow-ramp homer's per-tick
+# `tracking_error_grace_ticks`) with the home-ramp homer's per-tick
 # `enforce_position_with_path` returning a band violation that must
 # elapse before the homer aborts with `path_violation`.
 #
-# The slow-ramp is a velocity-feedforward controller, not a position
+# The home-ramp is a velocity-feedforward controller, not a position
 # controller. On a gravity-loaded joint (shoulder_pitch, elbow_pitch)
 # whose `predefined_home_rad` sits within ~step_size_rad of a band
 # edge, the firmware velocity loop's deceleration carries the physical
-# position past the edge by ≪ step_size_rad before the slow-ramp's
+# position past the edge by ≪ step_size_rad before the home-ramp's
 # *reactive* `governing` flip — observed on the next telemetry tick —
 # can reverse the velocity command. With this debounce at 1 (the
 # legacy single-sample abort) that physically inevitable single-tick
@@ -136,7 +136,7 @@ auto_home_on_boot = true
 # homer absorbs the one-or-two tick excursion the velocity loop's
 # reaction takes to undo, while still aborting promptly on a motor
 # that genuinely keeps drifting outside the band. Combined with the
-# predictive band-edge velocity taper inside `slow_ramp` (which
+# predictive band-edge velocity taper inside `home_ramp` (which
 # pre-decelerates as `last_measured` approaches the band edge,
 # regardless of where the home target sits in the band), single-tick
 # overshoots now happen at ≪ step_size_rad and the debounce only

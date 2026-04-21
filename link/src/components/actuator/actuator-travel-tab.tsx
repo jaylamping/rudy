@@ -8,6 +8,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
+import { degToRad, formatAngularVelDeg, radToDeg } from "@/lib/units";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -28,8 +29,9 @@ import type { TravelLimits } from "@/lib/types/TravelLimits";
 // (matches the RS03 spec.protocol.position_min/max_rad, which is +/- 2 turns).
 const RAIL_DEG = 360;
 
-const RAD_TO_DEG = 180 / Math.PI;
-const DEG_TO_RAD = Math.PI / 180;
+/** Home-ramp speed UI range (matches cortex PUT /homing_speed). */
+const MIN_HOMING_DEG_S = 1;
+const MAX_HOMING_DEG_S = radToDeg(0.5);
 
 export function ActuatorTravelTab({ motor }: { motor: MotorSummary }) {
   const qc = useQueryClient();
@@ -55,32 +57,41 @@ export function ActuatorTravelTab({ motor }: { motor: MotorSummary }) {
   const endpointMissing = is404 && errCode !== "no_travel_limits" && errCode !== "unknown_motor";
 
   const baseline: TravelLimits | null = limitsQ.data ?? motor.travel_limits ?? null;
-  const [minDeg, setMinDeg] = useState<number>(toDeg(baseline?.min_rad ?? -Math.PI / 3));
-  const [maxDeg, setMaxDeg] = useState<number>(toDeg(baseline?.max_rad ?? Math.PI / 3));
+  const [minDeg, setMinDeg] = useState<number>(radToDeg(baseline?.min_rad ?? -Math.PI / 3));
+  const [maxDeg, setMaxDeg] = useState<number>(radToDeg(baseline?.max_rad ?? Math.PI / 3));
   const bandForHome =
     limitsQ.data ?? motor.travel_limits ?? null;
-  const baselineHomeDeg = toDeg(motor.predefined_home_rad ?? 0);
+  const baselineHomeDeg = radToDeg(motor.predefined_home_rad ?? 0);
   const [homeDeg, setHomeDeg] = useState<number>(baselineHomeDeg);
+  const [homingDegS, setHomingDegS] = useState<number>(
+    radToDeg(motor.homing_speed_rad_s ?? motor.default_homing_speed_rad_s),
+  );
   const [confirm, setConfirm] = useState(false);
 
   // Re-baseline when the server-side data swaps in (or motor changes).
   useEffect(() => {
     if (baseline) {
-      setMinDeg(toDeg(baseline.min_rad));
-      setMaxDeg(toDeg(baseline.max_rad));
+      setMinDeg(radToDeg(baseline.min_rad));
+      setMaxDeg(radToDeg(baseline.max_rad));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [motor.role, baseline?.min_rad, baseline?.max_rad]);
 
   useEffect(() => {
-    setHomeDeg(toDeg(motor.predefined_home_rad ?? 0));
+    setHomeDeg(radToDeg(motor.predefined_home_rad ?? 0));
   }, [motor.role, motor.predefined_home_rad]);
+
+  useEffect(() => {
+    setHomingDegS(
+      radToDeg(motor.homing_speed_rad_s ?? motor.default_homing_speed_rad_s),
+    );
+  }, [motor.role, motor.homing_speed_rad_s, motor.default_homing_speed_rad_s]);
 
   const save = useMutation({
     mutationFn: () =>
       api.setTravelLimits(motor.role, {
-        min_rad: minDeg * DEG_TO_RAD,
-        max_rad: maxDeg * DEG_TO_RAD,
+        min_rad: degToRad(minDeg),
+        max_rad: degToRad(maxDeg),
       }),
     onSuccess: () => {
       setConfirm(false);
@@ -92,8 +103,26 @@ export function ActuatorTravelTab({ motor }: { motor: MotorSummary }) {
   const saveHome = useMutation({
     mutationFn: () =>
       api.setPredefinedHome(motor.role, {
-        predefined_home_rad: homeDeg * DEG_TO_RAD,
+        predefined_home_rad: degToRad(homeDeg),
       }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["motors"] });
+    },
+  });
+
+  const saveHomingSpeed = useMutation({
+    mutationFn: () =>
+      api.setHomingSpeed(motor.role, {
+        homing_speed_rad_s: degToRad(clamp(homingDegS, MIN_HOMING_DEG_S, MAX_HOMING_DEG_S)),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["motors"] });
+    },
+  });
+
+  const clearHomingSpeed = useMutation({
+    mutationFn: () =>
+      api.setHomingSpeed(motor.role, { homing_speed_rad_s: null }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["motors"] });
     },
@@ -104,13 +133,13 @@ export function ActuatorTravelTab({ motor }: { motor: MotorSummary }) {
   }
 
   // Live position read for the current-position marker on the band display.
-  const liveDeg = motor.latest ? motor.latest.mech_pos_rad * RAD_TO_DEG : null;
+  const liveDeg = motor.latest ? radToDeg(motor.latest.mech_pos_rad) : null;
   const dirty =
     baseline == null ||
-    Math.abs(minDeg - toDeg(baseline.min_rad)) > 1e-6 ||
-    Math.abs(maxDeg - toDeg(baseline.max_rad)) > 1e-6;
+    Math.abs(minDeg - radToDeg(baseline.min_rad)) > 1e-6 ||
+    Math.abs(maxDeg - radToDeg(baseline.max_rad)) > 1e-6;
 
-  const homeRad = homeDeg * DEG_TO_RAD;
+  const homeRad = degToRad(homeDeg);
   const homeInBand =
     bandForHome != null &&
     homeRad >= bandForHome.min_rad &&
@@ -118,6 +147,12 @@ export function ActuatorTravelTab({ motor }: { motor: MotorSummary }) {
   const homeDirty =
     Math.abs(homeDeg - baselineHomeDeg) > 1e-6 ||
     (motor.predefined_home_rad == null && Math.abs(homeDeg) > 1e-6);
+
+  const homingBaselineDegS = radToDeg(
+    motor.homing_speed_rad_s ?? motor.default_homing_speed_rad_s,
+  );
+  const homingDirty = Math.abs(homingDegS - homingBaselineDegS) > 1e-3;
+  const homingHasOverride = motor.homing_speed_rad_s != null;
 
   return (
     <div className="space-y-4">
@@ -174,8 +209,8 @@ export function ActuatorTravelTab({ motor }: { motor: MotorSummary }) {
             <LimitRow
               label="Target at boot"
               valueDeg={homeDeg}
-              min={bandForHome ? toDeg(bandForHome.min_rad) : -RAIL_DEG}
-              max={bandForHome ? toDeg(bandForHome.max_rad) : RAIL_DEG}
+              min={bandForHome ? radToDeg(bandForHome.min_rad) : -RAIL_DEG}
+              max={bandForHome ? radToDeg(bandForHome.max_rad) : RAIL_DEG}
               onChange={setHomeDeg}
               disabled={
                 endpointMissing ||
@@ -186,8 +221,8 @@ export function ActuatorTravelTab({ motor }: { motor: MotorSummary }) {
             />
             {!homeInBand && bandForHome != null && (
               <p className="text-xs text-destructive">
-                Must be between {toDeg(bandForHome.min_rad).toFixed(1)}° and{" "}
-                {toDeg(bandForHome.max_rad).toFixed(1)}° (saved travel band).
+                Must be between {radToDeg(bandForHome.min_rad).toFixed(1)}° and{" "}
+                {radToDeg(bandForHome.max_rad).toFixed(1)}° (saved travel band).
               </p>
             )}
             {needsConfig && (
@@ -231,7 +266,90 @@ export function ActuatorTravelTab({ motor }: { motor: MotorSummary }) {
             )}
             {saveHome.isSuccess && (
               <p className="text-xs text-emerald-400">
-                Saved predefined home at {(saveHome.data.predefined_home_rad * RAD_TO_DEG).toFixed(2)}°.
+                Saved predefined home at {radToDeg(saveHome.data.predefined_home_rad).toFixed(2)}°.
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-1.5 rounded-md border border-border/60 bg-muted/20 p-3">
+            <div className="text-sm font-medium">Homing speed</div>
+            <p className="text-xs text-muted-foreground">
+              Nominal home-ramp speed (within cortex&apos;s hard cap).{" "}
+              <span className="text-foreground/90">
+                Effective now:{" "}
+                {formatAngularVelDeg(
+                  motor.homing_speed_rad_s ?? motor.default_homing_speed_rad_s,
+                )}
+              </span>
+              {homingHasOverride ? (
+                <span className="ml-1 text-amber-400">(override)</span>
+              ) : (
+                <span className="ml-1">
+                  (global default:{" "}
+                  {formatAngularVelDeg(motor.default_homing_speed_rad_s)})
+                </span>
+              )}
+            </p>
+            <HomingSpeedRow
+              valueDegS={homingDegS}
+              min={MIN_HOMING_DEG_S}
+              max={MAX_HOMING_DEG_S}
+              onChange={setHomingDegS}
+              disabled={endpointMissing || saveHomingSpeed.isPending || clearHomingSpeed.isPending}
+            />
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={
+                  endpointMissing ||
+                  !homingHasOverride ||
+                  clearHomingSpeed.isPending ||
+                  saveHomingSpeed.isPending
+                }
+                onClick={() => clearHomingSpeed.mutate()}
+              >
+                {clearHomingSpeed.isPending ? "Clearing…" : "Reset to global"}
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={
+                  endpointMissing ||
+                  !homingDirty ||
+                  saveHomingSpeed.isPending ||
+                  clearHomingSpeed.isPending
+                }
+                onClick={() => saveHomingSpeed.mutate()}
+              >
+                {saveHomingSpeed.isPending ? "Saving…" : "Save homing speed"}
+              </Button>
+            </div>
+            {saveHomingSpeed.isError && (
+              <p className="text-xs text-destructive">
+                {(saveHomingSpeed.error as ApiError).message}
+              </p>
+            )}
+            {clearHomingSpeed.isError && (
+              <p className="text-xs text-destructive">
+                {(clearHomingSpeed.error as ApiError).message}
+              </p>
+            )}
+            {saveHomingSpeed.isSuccess && (
+              <p className="text-xs text-emerald-400">
+                Saved homing speed{" "}
+                {saveHomingSpeed.data.homing_speed_rad_s != null
+                  ? formatAngularVelDeg(saveHomingSpeed.data.homing_speed_rad_s)
+                  : ""}
+                .
+              </p>
+            )}
+            {clearHomingSpeed.isSuccess && (
+              <p className="text-xs text-emerald-400">
+                Cleared override; following global{" "}
+                {formatAngularVelDeg(motor.default_homing_speed_rad_s)}.
               </p>
             )}
           </div>
@@ -262,8 +380,8 @@ export function ActuatorTravelTab({ motor }: { motor: MotorSummary }) {
               disabled={!dirty || save.isPending}
               onClick={() => {
                 if (baseline) {
-                  setMinDeg(toDeg(baseline.min_rad));
-                  setMaxDeg(toDeg(baseline.max_rad));
+                  setMinDeg(radToDeg(baseline.min_rad));
+                  setMaxDeg(radToDeg(baseline.max_rad));
                 }
               }}
             >
@@ -403,8 +521,54 @@ function BandStrip({
   );
 }
 
-function toDeg(rad: number) {
-  return rad * RAD_TO_DEG;
+function HomingSpeedRow({
+  valueDegS,
+  min,
+  max,
+  onChange,
+  disabled,
+}: {
+  valueDegS: number;
+  min: number;
+  max: number;
+  onChange: (n: number) => void;
+  disabled: boolean;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <Label className="text-sm">Target speed</Label>
+        <div className="flex items-center gap-1">
+          <Input
+            className="w-24 text-right font-mono"
+            type="number"
+            step={0.5}
+            min={min}
+            max={max}
+            value={Number.isFinite(valueDegS) ? valueDegS.toFixed(2) : ""}
+            onChange={(e) => {
+              const n = Number(e.target.value);
+              if (Number.isFinite(n)) onChange(clamp(n, min, max));
+            }}
+            disabled={disabled}
+          />
+          <span className="text-xs text-muted-foreground">°/s</span>
+        </div>
+      </div>
+      <Slider
+        value={[valueDegS]}
+        min={min}
+        max={max}
+        step={0.5}
+        onValueChange={([v]) => onChange(v)}
+        disabled={disabled}
+      />
+      <div className="flex justify-between text-[10px] text-muted-foreground">
+        <span>{min}°/s</span>
+        <span>{max.toFixed(1)}°/s</span>
+      </div>
+    </div>
+  );
 }
 
 function clamp(n: number, lo: number, hi: number) {
@@ -424,14 +588,14 @@ function errorCode(e: ApiError | undefined): string | undefined {
   return undefined;
 }
 
-// Verify & Home: the operator-initiated slow-ramp homing ritual. Disabled
+// Verify & Home: the operator-initiated home-ramp homing ritual. Disabled
 // unless boot_state is `in_band` AND a per-motor torque limit has been
 // written to flash (cortex refuses without `limits_written.limit_torque_nm`).
 function VerifyAndHomeCard({ motor }: { motor: MotorSummary }) {
   const qc = useQueryClient();
   const [target, setTarget] = useState<number>(0); // degrees
   const home = useMutation({
-    mutationFn: () => api.homeMotor(motor.role, target * DEG_TO_RAD),
+    mutationFn: () => api.homeMotor(motor.role, degToRad(target)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["motors"] });
     },
@@ -440,14 +604,14 @@ function VerifyAndHomeCard({ motor }: { motor: MotorSummary }) {
   const ready = bs.kind === "in_band";
   const orchestratorHoming = bs.kind === "auto_homing";
   const live =
-    motor.latest != null ? motor.latest.mech_pos_rad * RAD_TO_DEG : null;
+    motor.latest != null ? radToDeg(motor.latest.mech_pos_rad) : null;
 
   return (
     <Card>
       <CardHeader>
         <CardTitle className="text-base">Verify &amp; Home</CardTitle>
         <CardDescription>
-          Slow-ramp homing ritual (~22 deg/s, low torque/speed,
+          Home-ramp homing ritual (~22 deg/s, low torque/speed,
           aborts on stall). Required once per power-cycle before the
           enable button works (unless the boot orchestrator already
           auto-homed). While the orchestrator is driving auto-homing, wait
@@ -500,7 +664,7 @@ function VerifyAndHomeCard({ motor }: { motor: MotorSummary }) {
         )}
         {home.isSuccess && (
           <p className="text-xs text-emerald-400">
-            Homed at {(home.data.final_pos_rad * RAD_TO_DEG).toFixed(2)}° in {home.data.ticks} ticks.
+            Homed at {radToDeg(home.data.final_pos_rad).toFixed(2)}° in {home.data.ticks} ticks.
           </p>
         )}
       </CardContent>

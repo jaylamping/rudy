@@ -16,6 +16,7 @@ import { useEffect, useRef } from "react";
 import uPlot, { type Options } from "uplot";
 import "uplot/dist/uPlot.min.css";
 import type { MotorSummary } from "@/lib/types/MotorSummary";
+import { radToDeg } from "@/lib/units";
 
 /** One of the four metrics we routinely chart per motor. */
 export type MotorMetric = "pos" | "vel" | "torque" | "temp";
@@ -31,8 +32,8 @@ const META: Record<
   MotorMetric,
   { label: string; unit: string; stroke: string }
 > = {
-  pos: { label: "pos (rad)", unit: "rad", stroke: "#60a5fa" },
-  vel: { label: "vel (rad/s)", unit: "rad/s", stroke: "#f59e0b" },
+  pos: { label: "pos (°)", unit: "°", stroke: "#60a5fa" },
+  vel: { label: "vel (°/s)", unit: "°/s", stroke: "#f59e0b" },
   torque: { label: "torque (Nm)", unit: "Nm", stroke: "#a78bfa" },
   temp: { label: "temp (degC)", unit: "degC", stroke: "#f43f5e" },
 };
@@ -42,9 +43,9 @@ function pluck(motor: MotorSummary | null | undefined, metric: MotorMetric): num
   if (!fb) return null;
   switch (metric) {
     case "pos":
-      return fb.mech_pos_rad;
+      return radToDeg(fb.mech_pos_rad);
     case "vel":
-      return fb.mech_vel_rad_s;
+      return radToDeg(fb.mech_vel_rad_s);
     case "torque":
       return fb.torque_nm;
     case "temp":

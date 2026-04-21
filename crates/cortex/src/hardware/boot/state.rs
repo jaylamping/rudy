@@ -11,7 +11,7 @@
 //!
 //! The classifier runs from the telemetry loop on every successful
 //! `read_live_feedback`. `POST /enable` only allows `BootState::Homed`. The
-//! slow-ramp homer (`POST /home`, `slow_ramp::run`) is the operator path to
+//! home-ramp homer (`POST /home`, `home_ramp::run`) is the operator path to
 //! `Homed`; the boot orchestrator may also reach `Homed` when configured.
 //!
 //! Multi-turn / principal-angle rationale and the commissioned-zero model are
@@ -44,7 +44,7 @@ pub enum BootState {
     Unknown,
     /// Position read OK; motor sits outside its `travel_limits` band.
     /// Operator must physically move the joint into band (or use the
-    /// slow-ramp homer once in range).
+    /// home-ramp homer once in range).
     OutOfBand {
         mech_pos_rad: f32,
         min_rad: f32,
@@ -54,7 +54,7 @@ pub enum BootState {
     /// Verify & Home ritual yet. Enable is still refused; per-step ceiling
     /// still applies to any command that does land.
     InBand,
-    /// Operator clicked Verify & Home, the slow-ramp homer reached its
+    /// Operator clicked Verify & Home, the home-ramp homer reached its
     /// target without faulting. Full per-motor torque/speed limits restored.
     /// This is the only state in which `enable` is allowed.
     Homed,
@@ -68,8 +68,8 @@ pub enum BootState {
     /// to firmware and re-saves to flash).
     OffsetChanged { stored_rad: f32, current_rad: f32 },
     /// Boot orchestrator is currently driving the motor toward
-    /// `predefined_home_rad` via the slow-ramp homer
-    /// (`crate::can::slow_ramp::run`). Refuses operator-initiated motion
+    /// `predefined_home_rad` via the home-ramp homer
+    /// (`crate::can::home_ramp::run`). Refuses operator-initiated motion
     /// until the homer finishes (Homed) or aborts (HomeFailed).
     /// `progress_rad` is the orchestrator's tick-by-tick estimate so the
     /// SPA can render a progress bar without polling.
@@ -78,11 +78,11 @@ pub enum BootState {
         target_rad: f32,
         progress_rad: f32,
     },
-    /// Boot orchestrator's slow-ramp homer aborted (tracking error,
+    /// Boot orchestrator's home-ramp homer aborted (tracking error,
     /// fault, timeout, path violation). Operator must investigate and
     /// either retry via `POST /api/motors/:role/home` or re-position
     /// the joint manually. Carries the abort reason from
-    /// `slow_ramp::run` and the last position the homer saw.
+    /// `home_ramp::run` and the last position the homer saw.
     HomeFailed { reason: String, last_pos_rad: f32 },
 }
 
@@ -154,7 +154,7 @@ pub fn reset_to_unknown(state: &SharedState, role: &str) {
     force_set(state, role, BootState::Unknown);
 }
 
-/// Mark `role` as `Homed`. Called by the slow-ramp homer on successful
+/// Mark `role` as `Homed`. Called by the home-ramp homer on successful
 /// completion. Bypasses the "never demote Homed" rule (which only protects
 /// against telemetry-driven downgrades).
 pub fn mark_homed(state: &SharedState, role: &str) {

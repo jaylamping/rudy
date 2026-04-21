@@ -1,4 +1,4 @@
-//! POST /api/motors/:role/home — operator-initiated slow-ramp homing.
+//! POST /api/motors/:role/home — operator-initiated home-ramp homing.
 //!
 //! Validates that the motor is currently in `BootState::InBand`, that the
 //! requested target is inside the band, and then ramps the setpoint from
@@ -7,7 +7,7 @@
 //! transitions `BootState -> Homed` and (if `limits_written.limit_torque_nm`
 //! is set) RAM-restores the per-motor full torque/speed envelope.
 //!
-//! This is the operator-facing slow-ramp homer: it transitions to `Homed`
+//! This is the operator-facing home-ramp homer: it transitions to `Homed`
 //! on success and emits `SafetyEvent::Homed`. The boot orchestrator uses
 //! the same ramp internally but emits `SafetyEvent::AutoHomed` instead.
 
@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 use crate::api::error::err;
 use crate::audit::{AuditEntry, AuditResult};
 use crate::boot_state::{self, BootState};
-use crate::can::slow_ramp;
+use crate::can::home_ramp;
 use crate::can::travel::{enforce_position_with_path, BandCheck};
 use crate::state::SharedState;
 use crate::types::{ApiError, SafetyEvent};
@@ -195,10 +195,10 @@ pub async fn home(
         _ => {}
     }
 
-    // Long-running motion command — delegate to the shared slow-ramp
+    // Long-running motion command — delegate to the shared home-ramp
     // executor so the boot orchestrator (Phase C.5) can drive the same
     // loop without going through this HTTP handler.
-    let outcome = slow_ramp::run(state.clone(), motor.clone(), current_pos, target_rad).await;
+    let outcome = home_ramp::run(state.clone(), motor.clone(), current_pos, target_rad).await;
 
     match outcome {
         Ok((final_pos, ticks)) => {

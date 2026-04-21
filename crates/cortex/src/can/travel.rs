@@ -64,7 +64,7 @@ pub enum BandCheck {
     },
     /// Target endpoint is inside the band but the swept arc crosses the
     /// band boundary (current position is outside). Rejected by motion
-    /// endpoints; the slow-ramp homer refuses this shape as well.
+    /// endpoints; the home-ramp homer refuses this shape as well.
     PathViolation {
         min_rad: f32,
         max_rad: f32,

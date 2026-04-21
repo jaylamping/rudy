@@ -50,7 +50,7 @@ fn stale_tick_leaves_band_consec_unchanged() {
 #[test]
 fn mock_mode_skips_band_abort_in_gate() {
     // Note: the mock-mode immediate-abort path lives at the call site
-    // (we pin the slow_ramp loop's mock-mode short-circuit
+    // (we pin the home_ramp loop's mock-mode short-circuit
     // separately). The gate itself stays inert in mock mode so the
     // call site retains full control of the timing.
     let mut c = 0;

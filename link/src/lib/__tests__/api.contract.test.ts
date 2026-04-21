@@ -164,6 +164,15 @@ describe("REST contract — URL + method per call", () => {
       "PUT",
     ],
     [
+      "PUT /api/motors/:role/homing_speed",
+      () =>
+        api.setHomingSpeed("shoulder_actuator_a", {
+          homing_speed_rad_s: 0.25,
+        }),
+      "/api/motors/shoulder_actuator_a/homing_speed",
+      "PUT",
+    ],
+    [
       "POST /api/motors/:role/motion/sweep",
       () =>
         api.motion.sweep("shoulder_actuator_a", {

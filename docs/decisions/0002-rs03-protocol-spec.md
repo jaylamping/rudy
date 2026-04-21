@@ -252,7 +252,7 @@ intended to survive reboot.
 **Boot orchestration.** When `commissioned_zero_offset` is set and readback
 matches, and the wrapped position is inside `travel_limits`, and
 `safety.auto_home_on_boot` is true, `cortex` may drive the joint to
-`predefined_home_rad` (default `0.0`) via the same slow-ramp loop as manual
+`predefined_home_rad` (default `0.0`) via the same home-ramp loop as manual
 `POST /home`, then mark `BootState::Homed`. Motors with no commissioned baseline
 still require the manual **Verify & Home** ritual each boot.
 

@@ -75,6 +75,7 @@ pub fn migrate_v1_yaml_to_v2_inventory(yaml: &str) -> Result<Inventory> {
             commissioned_zero_offset: m.commissioned_zero_offset,
             active_report_persisted: m.active_report_persisted,
             predefined_home_rad: m.predefined_home_rad,
+            homing_speed_rad_s: None,
             limb: m.limb,
             joint_kind: m.joint_kind,
             notes_yaml,

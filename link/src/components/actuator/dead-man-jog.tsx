@@ -39,6 +39,7 @@ import { useWtConnected } from "@/lib/hooks/wtStatus";
 import { Tooltip } from "@/components/ui/tooltip";
 import type { ClientStreamHandle } from "@/lib/wt/clientStream";
 import type { MotorSummary } from "@/lib/types/MotorSummary";
+import { degToRad, radToDeg } from "@/lib/units";
 
 /**
  * Heartbeat cadence. Must be < `JOG_HEARTBEAT_TTL_MS` (250 ms) on the
@@ -54,11 +55,12 @@ const HEARTBEAT_INTERVAL_MS = 200;
  * silently clamps server-side.
  */
 const MAX_VEL_RAD_S = 0.5;
+const MAX_VEL_DEG_S = radToDeg(MAX_VEL_RAD_S);
 
 type Transport = "wt" | "rest" | "unavailable";
 
 export function DeadManJog({ motor }: { motor: MotorSummary }) {
-  const [vel, setVel] = useState<[number]>([0.5]);
+  const [vel, setVel] = useState<[number]>([MAX_VEL_DEG_S]);
   const [error, setError] = useState<string | null>(null);
   const [available, setAvailable] = useState(true);
   const wtConnected = useWtConnected();
@@ -159,7 +161,7 @@ export function DeadManJog({ motor }: { motor: MotorSummary }) {
       const sendOne = async (kind: "start" | "heartbeat") => {
         const d = directionRef.current;
         if (d === 0) return;
-        const velRadS = d * vel[0];
+        const velRadS = d * degToRad(vel[0]);
 
         if (transport === "wt" && stream) {
           // For WT we send `MotionJog` on every tick rather than
@@ -234,14 +236,14 @@ export function DeadManJog({ motor }: { motor: MotorSummary }) {
           <div className="flex items-baseline justify-between text-xs text-muted-foreground">
             <span>Target velocity</span>
             <span className="font-mono tabular-nums text-foreground">
-              {vel[0].toFixed(2)} rad/s
+              {vel[0].toFixed(1)} °/s
             </span>
           </div>
           <Slider
             value={vel}
             min={0}
-            max={MAX_VEL_RAD_S}
-            step={0.05}
+            max={MAX_VEL_DEG_S}
+            step={1}
             onValueChange={(v) => setVel(v)}
             disabled={!available}
           />

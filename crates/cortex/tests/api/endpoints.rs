@@ -32,6 +32,7 @@ fn endpoint_inventory_documented() {
         "GET    /api/motors/:role/travel_limits",
         "PUT    /api/motors/:role/travel_limits",
         "PUT    /api/motors/:role/predefined_home",
+        "PUT    /api/motors/:role/homing_speed",
         "POST   /api/motors/:role/jog",
         "GET    /api/motors/:role/motion",
         "POST   /api/motors/:role/motion/sweep",

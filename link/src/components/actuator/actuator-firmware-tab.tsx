@@ -11,6 +11,29 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ConfirmDialog, ParamRow } from "@/components/params";
 import type { ParamValue } from "@/lib/types/ParamValue";
+import {
+  formatAngleDeg,
+  formatAngularVelDeg,
+  isAngleUnit,
+  isAngularVelUnit,
+} from "@/lib/units";
+
+function observableValueCell(p: ParamValue): string {
+  const n =
+    typeof p.value === "number" && Number.isFinite(p.value) ? p.value : null;
+  if (n != null && (isAngleUnit(p.units) || isAngularVelUnit(p.units))) {
+    return isAngularVelUnit(p.units) && !isAngleUnit(p.units)
+      ? formatAngularVelDeg(n, 4)
+      : formatAngleDeg(n, 4);
+  }
+  return JSON.stringify(p.value);
+}
+
+function observableUnitCell(p: ParamValue): string {
+  if (isAngleUnit(p.units) && !isAngularVelUnit(p.units)) return "°";
+  if (isAngularVelUnit(p.units)) return "°/s";
+  return p.units ?? "";
+}
 
 export function ActuatorFirmwareTab({ role }: { role: string }) {
   const qc = useQueryClient();
@@ -125,10 +148,10 @@ export function ActuatorFirmwareTab({ role }: { role: string }) {
                     0x{p.index.toString(16).toUpperCase().padStart(4, "0")}
                   </td>
                   <td className="px-3 py-2 font-mono tabular-nums">
-                    {JSON.stringify(p.value)}
+                    {observableValueCell(p)}
                   </td>
                   <td className="px-3 py-2 text-muted-foreground">
-                    {p.units ?? ""}
+                    {observableUnitCell(p)}
                   </td>
                 </tr>
               ))}

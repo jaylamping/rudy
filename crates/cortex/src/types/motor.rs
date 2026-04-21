@@ -22,6 +22,12 @@ pub struct MotorSummary {
     /// when set, must stay within `travel_limits`.
     #[serde(default)]
     pub predefined_home_rad: Option<f32>,
+    /// Per-actuator override for home-ramp nominal speed (rad/s). `None`
+    /// follows [`default_homing_speed_rad_s`].
+    #[serde(default)]
+    pub homing_speed_rad_s: Option<f32>,
+    /// Global effective home-ramp speed (rad/s) from `cortex.toml` for SPA display.
+    pub default_homing_speed_rad_s: f32,
     pub latest: Option<MotorFeedback>,
     /// Per-power-cycle gate state. UI renders a colored badge driven off
     /// the variant; OutOfBand carries enough detail to display

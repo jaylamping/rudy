@@ -173,7 +173,18 @@ async function main() {
         const r = await http("GET", `/api/motors/${encodeURIComponent(firstRole)}`);
         try {
           if (r.status !== 200) throw new Error(`status=${r.status}`);
-          assertHas(r.body, ["role", "can_bus", "can_id", "verified"], "MotorSummary");
+          assertHas(
+            r.body,
+            [
+              "role",
+              "can_bus",
+              "can_id",
+              "verified",
+              "homing_speed_rad_s",
+              "default_homing_speed_rad_s",
+            ],
+            "MotorSummary",
+          );
           record(`GET /api/motors/${firstRole}`, true);
         } catch (e) {
           record(`GET /api/motors/${firstRole}`, false, e.message);

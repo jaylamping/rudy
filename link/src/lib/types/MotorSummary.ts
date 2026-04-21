@@ -16,7 +16,16 @@ enabled: boolean, travel_limits: TravelLimits | null,
  * Target angle (radians) for boot-time auto-home. `None` uses 0.0 rad;
  * when set, must stay within `travel_limits`.
  */
-predefined_home_rad: number | null, latest: MotorFeedback | null, 
+predefined_home_rad: number | null, 
+/**
+ * Per-actuator override for home-ramp nominal speed (rad/s). `None`
+ * follows [`default_homing_speed_rad_s`].
+ */
+homing_speed_rad_s: number | null, 
+/**
+ * Global effective home-ramp speed (rad/s) from `cortex.toml` for SPA display.
+ */
+default_homing_speed_rad_s: number, latest: MotorFeedback | null, 
 /**
  * Per-power-cycle gate state. UI renders a colored badge driven off
  * the variant; OutOfBand carries enough detail to display

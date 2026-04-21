@@ -6,7 +6,7 @@
 //! (macOS / Windows dev machines) `RealCanHandle` is the stub defined in
 //! `crates/cortex/src/can/mod.rs`, which `bail!`s on most methods. Exceptions:
 //! `read_add_offset` returns `Ok(0.0)`; `set_velocity_setpoint` and `stop`
-//! return `Ok(())` so `slow_ramp` can run with `real_can = Some` without a bus.
+//! return `Ok(())` so `home_ramp` can run with `real_can = Some` without a bus.
 //!
 //! These tests pin that stub contract. If a future change makes the stub
 //! `bail!` on `read_add_offset`, the contract tests landing in Phase B

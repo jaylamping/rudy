@@ -28,10 +28,9 @@ import { useLimbHealth } from "@/lib/hooks/useLimbHealth";
 import { DeadManJog } from "./dead-man-jog";
 import type { MotorSummary } from "@/lib/types/MotorSummary";
 import type { Motor } from "@/lib/types/Motor";
+import { RAD_TO_DEG } from "@/lib/units";
 
 type Action = "enable" | "stop" | "save";
-
-const RAD_TO_DEG = 180 / Math.PI;
 
 export function ActuatorControlsTab({ motor }: { motor: MotorSummary }) {
   const qc = useQueryClient();
@@ -484,5 +483,5 @@ function CommissionErrorBanner({ error }: { error: ApiError }) {
 }
 
 function formatRad(value: number): string {
-  return `${value.toFixed(4)} rad (${(value * RAD_TO_DEG).toFixed(2)}°)`;
+  return `${(value * RAD_TO_DEG).toFixed(2)}° (${value.toFixed(4)} rad)`;
 }

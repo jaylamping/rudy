@@ -13,24 +13,31 @@ pub struct SafetyConfig {
     #[serde(default = "default_boot_max_step_rad")]
     pub boot_max_step_rad: f32,
 
-    /// Per-tick step size for the slow-ramp homer. Default 0.004 rad ~= 0.23 deg.
+    /// Per-tick step size for the home-ramp homer. Default 0.004 rad ~= 0.23 deg.
     #[serde(default = "default_step_size_rad")]
     pub step_size_rad: f32,
 
-    /// Tick interval for the slow-ramp loops, in milliseconds. Default 10
+    /// Tick interval for the home-ramp loops, in milliseconds. Default 10
     /// ms; combined with `step_size_rad` keeps the same ~22 deg/s effective
     /// speed as the old 50 ms / 0.02 rad pairing.
     #[serde(default = "default_tick_interval_ms")]
     pub tick_interval_ms: u32,
 
-    /// Maximum allowed `|setpoint - measured|` during a slow-ramp move.
+    /// Optional global nominal home-ramp speed (rad/s). When `None`, speed
+    /// is derived from `step_size_rad / tick_interval_s`. Capped at **0.5**
+    /// rad/s (same hard ceiling as `can::home_ramp::MAX_HOMER_VEL_RAD_S`).
+    /// Per-actuator `inventory.homing_speed_rad_s` overrides this when set.
+    #[serde(default)]
+    pub homing_speed_rad_s: Option<f32>,
+
+    /// Maximum allowed `|setpoint - measured|` during a home-ramp move.
     /// Exceeding this aborts the move (motor is bound up, or external
     /// force fighting it). Default 0.05 rad ~= 2.9 deg.
     #[serde(default = "default_tracking_error_max_rad")]
     pub tracking_error_max_rad: f32,
 
     /// Number of leading ticks during which the tracking-error abort is
-    /// suppressed. The slow-ramp homer advances its setpoint by
+    /// suppressed. The home-ramp homer advances its setpoint by
     /// `step_size_rad` on every tick *before* sleeping, but the measured
     /// position lags by the firmware velocity-loop response time plus the
     /// type-2 telemetry pipeline (30-100 ms total on a cold motor that
@@ -44,7 +51,7 @@ pub struct SafetyConfig {
     #[serde(default = "default_tracking_error_grace_ticks")]
     pub tracking_error_grace_ticks: u32,
 
-    /// Maximum age of `state.latest[role].t_ms` for a slow-ramp tick to treat
+    /// Maximum age of `state.latest[role].t_ms` for a home-ramp tick to treat
     /// telemetry as fresh. When stale or missing, the homer **holds**
     /// `setpoint_unwrapped` for that tick (no phantom tracking error from a
     /// frozen `mech_pos_rad` while the setpoint kept marching) and skips the
@@ -66,13 +73,13 @@ pub struct SafetyConfig {
     pub tracking_error_debounce_ticks: u32,
 
     /// Number of **consecutive** fresh ticks (after `tracking_error_grace_ticks`)
-    /// with the slow-ramp's per-tick `enforce_position_with_path` returning
+    /// with the home-ramp's per-tick `enforce_position_with_path` returning
     /// `OutOfBand`/`PathViolation` required to abort with `path_violation`.
     /// A single transient overshoot of the band edge — observed once on the
     /// freshest telemetry tick and reversed by the next velocity command —
     /// no longer kills the whole home.
     ///
-    /// The slow-ramp is a velocity-feedforward controller, not a position
+    /// The home-ramp is a velocity-feedforward controller, not a position
     /// controller. It commands a tapered velocity setpoint each tick toward
     /// the home target, but the firmware's velocity loop on a gravity-loaded
     /// joint (e.g. shoulder_pitch homing into a low-stop) can carry the
@@ -89,7 +96,7 @@ pub struct SafetyConfig {
     /// the homer absorbs the one-or-two tick excursion that the velocity
     /// loop's reaction takes to undo, while still aborting promptly on a
     /// genuinely runaway motor. Combined with the band-edge velocity taper
-    /// in `slow_ramp` (which pre-decelerates as `last_measured` approaches
+    /// in `home_ramp` (which pre-decelerates as `last_measured` approaches
     /// `min_rad`/`max_rad`, irrespective of where the home target sits in
     /// the band), single-tick overshoots now happen at ≪ `step_size_rad` and
     /// the debounce only bites on actual sustained excursions.
@@ -132,7 +139,7 @@ pub struct SafetyConfig {
     #[serde(default = "default_target_tolerance_rad")]
     pub target_tolerance_rad: f32,
 
-    /// Hard timeout on the slow-ramp loops, in milliseconds. Default 30 s.
+    /// Hard timeout on the home-ramp loops, in milliseconds. Default 30 s.
     #[serde(default = "default_homer_timeout_ms")]
     pub homer_timeout_ms: u32,
 
@@ -172,7 +179,7 @@ pub struct SafetyConfig {
     /// Master switch for the boot orchestrator's auto-home flow.
     /// With `true` (the operator-confirmed default), every commissioned
     /// motor whose first valid telemetry lands `InBand` is automatically
-    /// driven to its `predefined_home_rad` via the slow-ramp homer; the
+    /// driven to its `predefined_home_rad` via the home-ramp homer; the
     /// operator never has to click "Verify & Home" on every boot.
     /// With `false` the orchestrator never spawns an auto-home —
     /// commissioned motors then need the manual `Verify & Home` flow,
@@ -186,6 +193,23 @@ pub struct SafetyConfig {
     /// Disable on noisy benches or when startup latency matters.
     #[serde(default = "default_true")]
     pub scan_on_boot: bool,
+}
+
+impl SafetyConfig {
+    /// Effective global home-ramp nominal speed (rad/s): explicit
+    /// [`homing_speed_rad_s`] when set and positive, otherwise
+    /// `step_size_rad / tick_interval_s`. Clamped to **0.5** rad/s (keep in
+    /// sync with `crate::can::home_ramp::MAX_HOMER_VEL_RAD_S`).
+    pub fn effective_homing_speed_rad_s(&self) -> f32 {
+        const CAP: f32 = 0.5;
+        let tick_secs = (self.tick_interval_ms.max(5) as f32) / 1000.0;
+        let derived = (self.step_size_rad / tick_secs).max(0.0);
+        let raw = self
+            .homing_speed_rad_s
+            .filter(|v| v.is_finite() && *v > 0.0)
+            .unwrap_or(derived);
+        raw.min(CAP)
+    }
 }
 
 fn default_true() -> bool {

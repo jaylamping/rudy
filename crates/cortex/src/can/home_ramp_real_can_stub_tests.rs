@@ -1,4 +1,4 @@
-//! End-to-end coverage of the slow-ramp loop with `real_can = Some`,
+//! End-to-end coverage of the home-ramp loop with `real_can = Some`,
 //! using the in-tree `RealCanHandle` stub (`set_velocity_setpoint` /
 //! `stop` are no-op `Ok`). Builds only on non-Linux CI hosts to match
 //! the sibling stub's `#[cfg]` gate.
@@ -14,7 +14,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use super::run_with_tracking_budget;
+use super::{resolve_homing_speed, run_with_tracking_budget, MAX_HOMER_VEL_RAD_S};
 use crate::audit::AuditLog;
 use crate::can;
 use crate::config::{
@@ -27,7 +27,9 @@ use crate::spec;
 use crate::state::AppState;
 use crate::types::MotorFeedback;
 
-fn state_with_real_can_stub() -> (crate::state::SharedState, crate::inventory::Actuator) {
+fn state_with_real_can_stub_inner(
+    safety_homing: Option<f32>,
+) -> (crate::state::SharedState, crate::inventory::Actuator) {
     let dir = tempfile::tempdir().unwrap();
     let spec_path = dir.path().join("robstride_rs03.yaml");
     std::fs::write(
@@ -69,6 +71,7 @@ fn state_with_real_can_stub() -> (crate::state::SharedState, crate::inventory::A
             boot_max_step_rad: 0.087,
             step_size_rad: 0.02,
             tick_interval_ms: 5,
+            homing_speed_rad_s: safety_homing,
             tracking_error_max_rad: 0.05,
             tracking_error_grace_ticks: 0,
             tracking_freshness_max_age_ms: 100,
@@ -95,6 +98,56 @@ fn state_with_real_can_stub() -> (crate::state::SharedState, crate::inventory::A
     let reminders = ReminderStore::open(dir.path().join("reminders.json")).unwrap();
     let state = Arc::new(AppState::new(cfg, specs, inv, audit, real_can, reminders));
     (state, motor)
+}
+
+fn state_with_real_can_stub() -> (crate::state::SharedState, crate::inventory::Actuator) {
+    state_with_real_can_stub_inner(None)
+}
+
+#[test]
+fn resolve_homing_speed_uses_actuator_override() {
+    let (state, mut motor) = state_with_real_can_stub();
+    motor.common.homing_speed_rad_s = Some(0.35);
+    let (v, src) = resolve_homing_speed(&state, &motor);
+    assert!((v - 0.35).abs() < 1e-5, "got {v}");
+    assert_eq!(src, "actuator_override");
+}
+
+#[test]
+fn resolve_homing_speed_clamps_high_override() {
+    let (state, mut motor) = state_with_real_can_stub();
+    motor.common.homing_speed_rad_s = Some(0.9);
+    let (v, src) = resolve_homing_speed(&state, &motor);
+    assert!((v - MAX_HOMER_VEL_RAD_S).abs() < 1e-5, "got {v}");
+    assert_eq!(src, "actuator_override");
+}
+
+#[test]
+fn resolve_homing_speed_derives_from_step_when_global_unset() {
+    let (state, mut motor) = state_with_real_can_stub();
+    motor.common.homing_speed_rad_s = None;
+    let (v, src) = resolve_homing_speed(&state, &motor);
+    // step_size_rad 0.02 / 0.005s = 4 rad/s -> clamped to 0.5
+    assert!((v - 0.5).abs() < 1e-5, "got {v}");
+    assert_eq!(src, "derived_step_tick");
+}
+
+#[test]
+fn resolve_homing_speed_uses_explicit_global() {
+    let (state, mut motor) = state_with_real_can_stub_inner(Some(0.25));
+    motor.common.homing_speed_rad_s = None;
+    let (v, src) = resolve_homing_speed(&state, &motor);
+    assert!((v - 0.25).abs() < 1e-5, "got {v}");
+    assert_eq!(src, "global_config");
+}
+
+#[test]
+fn resolve_homing_speed_non_positive_override_falls_back_to_global() {
+    let (state, mut motor) = state_with_real_can_stub_inner(Some(0.25));
+    motor.common.homing_speed_rad_s = Some(0.0);
+    let (v, src) = resolve_homing_speed(&state, &motor);
+    assert!((v - 0.25).abs() < 1e-5, "got {v}");
+    assert_eq!(src, "global_config");
 }
 
 #[tokio::test]
@@ -158,7 +211,7 @@ async fn sustained_out_of_band_aborts_with_path_violation_after_debounce() {
     //
     // We wedge `mech_pos_rad` at -1.1 (band is [-1.0, +1.0], from the
     // fixture YAML), which is a sustained OOB position. The homer is
-    // asked to drive to 0.0; the slow-ramp's velocity cap pulls vel
+    // asked to drive to 0.0; the home-ramp's velocity cap pulls vel
     // toward zero (because `dist_to_edge = 0` at this measured
     // position), the band-debounce counter increments every fresh
     // tick, and after three consecutive fresh ticks the abort fires.

@@ -192,6 +192,7 @@ pub async fn onboard_robstride(
                     commissioned_zero_offset: None,
                     active_report_persisted: false,
                     predefined_home_rad: Some(home_rad),
+                    homing_speed_rad_s: None,
                     limb: Some(body_clone.limb.clone()),
                     joint_kind: Some(body_clone.joint_kind),
                     notes_yaml: None,

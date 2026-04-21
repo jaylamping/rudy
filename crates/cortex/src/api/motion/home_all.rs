@@ -24,7 +24,7 @@ use tracing::warn;
 use crate::api::error::err;
 use crate::audit::{AuditEntry, AuditResult};
 use crate::boot_state::{self, BootState};
-use crate::can::slow_ramp;
+use crate::can::home_ramp;
 use crate::can::travel::{enforce_position_with_path, BandCheck};
 use crate::inventory::Actuator;
 use crate::limb::ordered_motors_per_limb_owned;
@@ -125,7 +125,7 @@ async fn drive_predefined_home(
         BandCheck::NoLimit | BandCheck::InBand { .. } => {}
     }
 
-    slow_ramp::run(state, motor, current_pos, target_rad).await
+    home_ramp::run(state, motor, current_pos, target_rad).await
 }
 
 fn apply_home_success(state: &SharedState, role: &str, final_pos: f32, ticks: u32) {

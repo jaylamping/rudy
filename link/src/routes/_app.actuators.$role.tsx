@@ -23,6 +23,7 @@ import { ActuatorControlsTab } from "@/components/actuator/actuator-controls-tab
 import { ActuatorTravelTab } from "@/components/actuator/actuator-travel-tab";
 import { ActuatorTestsTab } from "@/components/actuator/actuator-tests-tab";
 import { ActuatorInventoryTab } from "@/components/actuator/actuator-inventory-tab";
+import { radToDeg } from "@/lib/units";
 
 const STALE_MS = 3_000;
 const HOT_DEGC = 65;
@@ -192,8 +193,22 @@ function ActuatorHeader({ motor }: { motor: MotorSummary }) {
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
-        <Stat label="position" value={fb?.mech_pos_rad} unit="rad" />
-        <Stat label="velocity" value={fb?.mech_vel_rad_s} unit="rad/s" />
+        <Stat
+          label="position"
+          value={
+            fb?.mech_pos_rad != null ? radToDeg(fb.mech_pos_rad) : undefined
+          }
+          unit="°"
+        />
+        <Stat
+          label="velocity"
+          value={
+            fb?.mech_vel_rad_s != null
+              ? radToDeg(fb.mech_vel_rad_s)
+              : undefined
+          }
+          unit="°/s"
+        />
         <Stat label="vbus" value={fb?.vbus_v} unit="V" />
         <Stat
           label="temp"

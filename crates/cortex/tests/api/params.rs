@@ -1,4 +1,4 @@
-//! Params, travel limits, predefined home.
+//! Params, travel limits, predefined home, homing speed.
 //!
 #![allow(unused_imports)]
 
@@ -354,4 +354,122 @@ async fn put_predefined_home_rejects_outside_band() {
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     let err: ApiError = body_json(resp).await;
     assert_eq!(err.error, "outside_travel_band");
+}
+
+/// PUT homing_speed persists `homing_speed_rad_s` to inventory.yaml.
+#[tokio::test]
+async fn put_homing_speed_persists() {
+    let (state, dir) = common::make_state();
+    let app = cortex::build_app(state.clone());
+
+    let v = 0.3_f32;
+    let body = serde_json::to_vec(&json!({"homing_speed_rad_s": v})).unwrap();
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::PUT)
+                .uri("/api/motors/shoulder_actuator_a/homing_speed")
+                .header("content-type", "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let j: serde_json::Value = body_json(resp).await;
+    assert_eq!(j["ok"], json!(true));
+    assert!((j["homing_speed_rad_s"].as_f64().unwrap() - f64::from(v)).abs() < 1e-5);
+
+    let inv = cortex::inventory::Inventory::load(dir.path().join("inventory.yaml")).unwrap();
+    let m = inv.actuator_by_role("shoulder_actuator_a").unwrap();
+    assert_eq!(m.common.homing_speed_rad_s, Some(v));
+
+    let in_mem = state
+        .inventory
+        .read()
+        .expect("inventory poisoned")
+        .actuator_by_role("shoulder_actuator_a")
+        .cloned()
+        .unwrap();
+    assert_eq!(in_mem.common.homing_speed_rad_s, Some(v));
+}
+
+/// Values outside [~1 deg/s, 0.5 rad/s] are rejected.
+#[tokio::test]
+async fn put_homing_speed_rejects_out_of_range() {
+    let (state, _dir) = common::make_state();
+    let app = cortex::build_app(state);
+
+    let too_low = serde_json::to_vec(&json!({"homing_speed_rad_s": 0.001_f32})).unwrap();
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::PUT)
+                .uri("/api/motors/shoulder_actuator_a/homing_speed")
+                .header("content-type", "application/json")
+                .body(Body::from(too_low))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    let err: ApiError = body_json(resp).await;
+    assert_eq!(err.error, "out_of_range");
+
+    let too_high = serde_json::to_vec(&json!({"homing_speed_rad_s": 0.6_f32})).unwrap();
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::PUT)
+                .uri("/api/motors/shoulder_actuator_a/homing_speed")
+                .header("content-type", "application/json")
+                .body(Body::from(too_high))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    let err: ApiError = body_json(resp).await;
+    assert_eq!(err.error, "out_of_range");
+}
+
+/// `null` clears a per-actuator homing speed override.
+#[tokio::test]
+async fn put_homing_speed_null_clears_override() {
+    let (state, dir) = common::make_state();
+    let app = cortex::build_app(state.clone());
+
+    let body = serde_json::to_vec(&json!({"homing_speed_rad_s": 0.3_f32})).unwrap();
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::PUT)
+                .uri("/api/motors/shoulder_actuator_a/homing_speed")
+                .header("content-type", "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let clear = serde_json::to_vec(&json!({"homing_speed_rad_s": null})).unwrap();
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::PUT)
+                .uri("/api/motors/shoulder_actuator_a/homing_speed")
+                .header("content-type", "application/json")
+                .body(Body::from(clear))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let inv = cortex::inventory::Inventory::load(dir.path().join("inventory.yaml")).unwrap();
+    let m = inv.actuator_by_role("shoulder_actuator_a").unwrap();
+    assert!(m.common.homing_speed_rad_s.is_none());
 }

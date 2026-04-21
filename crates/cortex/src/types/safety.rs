@@ -76,7 +76,7 @@ pub enum SafetyEvent {
         stored_rad: f32,
         current_rad: f32,
     },
-    /// Boot orchestrator's slow-ramp homer aborted (tracking error,
+    /// Boot orchestrator's home-ramp homer aborted (tracking error,
     /// fault, timeout, path violation). `BootState::HomeFailed` will
     /// stick until the operator hits `POST /api/motors/:role/home` to
     /// retry. Distinct from a manual-homer abort (which audit-logs but
@@ -87,7 +87,7 @@ pub enum SafetyEvent {
         reason: String,
         last_pos_rad: f32,
     },
-    /// Boot orchestrator's slow-ramp homer reached its target without
+    /// Boot orchestrator's home-ramp homer reached its target without
     /// operator intervention. Distinct from `Homed` (which the manual
     /// homer endpoint emits) so dashboards can tell apart "operator
     /// clicked Verify & Home" from "boot orchestrator drove this on

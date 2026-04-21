@@ -91,7 +91,7 @@ async fn enable_unverified_motor_is_forbidden() {
 // ============================================================================
 
 /// Layer 5: enable refuses 409 `not_homed` when the motor is in band but
-/// the operator hasn't run the slow-ramp homer this power-cycle.
+/// the operator hasn't run the home-ramp homer this power-cycle.
 #[tokio::test]
 async fn enable_not_homed_is_forbidden() {
     let (state, _dir) = common::make_state();

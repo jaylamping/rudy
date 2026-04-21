@@ -15,6 +15,7 @@ import { MotorChart, type MotorMetric } from "@/components/motor-chart";
 import { Tooltip } from "@/components/ui/tooltip";
 import { UrdfViewer } from "@/components/viz/urdf-viewer";
 import { useLimbHealth } from "@/lib/hooks/useLimbHealth";
+import { formatAngleDeg, radToDeg } from "@/lib/units";
 import type { MotorSummary } from "@/lib/types/MotorSummary";
 
 const METRICS: { key: MotorMetric; title: string }[] = [
@@ -76,7 +77,7 @@ export function ActuatorOverviewTab({ motor }: { motor: MotorSummary }) {
 }
 
 // One-click "go to mechanical zero" for an already-Homed actuator. Reuses
-// the slow-ramp homer endpoint with target_rad=0; the API allows re-homing
+// the home-ramp homer endpoint with target_rad=0; the API allows re-homing
 // from BootState::Homed (see crates/cortex/src/api/home.rs). For non-Homed
 // states the button is disabled and we point the operator at the Travel
 // tab where the full Verify & Home ritual lives.
@@ -96,7 +97,7 @@ function GoHomeBar({ motor }: { motor: MotorSummary }) {
     homeBlocked && limb.blockReason ? limb.blockReason : "";
   const live =
     motor.latest != null
-      ? ((motor.latest.mech_pos_rad * 180) / Math.PI).toFixed(2)
+      ? radToDeg(motor.latest.mech_pos_rad).toFixed(2)
       : null;
   const autoHoming = bs.kind === "auto_homing";
 
@@ -115,8 +116,8 @@ function GoHomeBar({ motor }: { motor: MotorSummary }) {
                 progressRad={bs.progress_rad}
               />
               <span className="font-mono text-[0.7rem] text-foreground/80">
-                {(bs.progress_rad * (180 / Math.PI)).toFixed(1)}° → target{" "}
-                {(bs.target_rad * (180 / Math.PI)).toFixed(1)}°
+                {radToDeg(bs.progress_rad).toFixed(1)}° → target{" "}
+                {radToDeg(bs.target_rad).toFixed(1)}°
               </span>
             </div>
           </div>
@@ -127,7 +128,7 @@ function GoHomeBar({ motor }: { motor: MotorSummary }) {
             {autoHoming
               ? "Wait for auto-homing to finish, or use Travel tab to retry manually if it failed."
               : homed
-              ? "Slow-ramp to 0° using the verified home position."
+              ? "Home-ramp to 0° using the verified home position."
               : "Run Verify & Home from the Travel tab first."}
             {live != null && (
               <>
@@ -186,7 +187,8 @@ function GoHomeBar({ motor }: { motor: MotorSummary }) {
         )}
         {home.isSuccess && (
           <p className="basis-full text-xs text-emerald-400">
-            Homed at {((home.data.final_pos_rad * 180) / Math.PI).toFixed(2)}° in {home.data.ticks} ticks.
+            Homed at {formatAngleDeg(home.data.final_pos_rad)} in{" "}
+            {home.data.ticks} ticks.
           </p>
         )}
       </CardContent>

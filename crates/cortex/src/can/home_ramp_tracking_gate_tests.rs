@@ -1,8 +1,8 @@
 //! Pins the one-sided tracking-error abort gate. Each test exercises
 //! a single decision branch of `tracking_error_should_abort`; the
 //! end-to-end behavior (including the `err_rad` lag projection done by
-//! the slow-ramp loop *before* it calls this gate) is exercised by
-//! `slow_ramp_real_can_stub_tests`.
+//! the home-ramp loop *before* it calls this gate) is exercised by
+//! `home_ramp_real_can_stub_tests`.
 
 use super::tracking_error_should_abort;
 

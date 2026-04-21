@@ -1,4 +1,4 @@
-//! Slow-ramp closed loop that walks a motor from a current position to a
+//! Home-ramp closed loop that walks a motor from a current position to a
 //! principal-angle target via the shortest signed path.
 //!
 //! Extracted from `crate::api::home::run_homer` so the same loop body is
@@ -108,7 +108,7 @@ fn tracking_error_should_abort(
             consec_over = *consec_over,
             err_rad,
             budget_rad,
-            "slow_ramp: tracking error accumulating"
+            "home_ramp: tracking error accumulating"
         );
         *consec_over >= debounce_ticks
     } else {
@@ -123,7 +123,7 @@ fn tracking_error_should_abort(
 /// argument list, same gate semantics — so the loop body reads as two
 /// parallel one-line decisions rather than two different control
 /// shapes. The "why" is in `safety.band_violation_debounce_ticks`'s
-/// docstring; the short version is that the slow-ramp commands
+/// docstring; the short version is that the home-ramp commands
 /// velocity, not position, and a single-tick overshoot of the band
 /// edge under gravity load (shoulder_pitch into a low-stop, etc.) used
 /// to trip an instant abort even though the next velocity command was
@@ -161,7 +161,7 @@ fn band_violation_should_abort(
         debug!(
             role = %role,
             consec_over = *consec_over,
-            "slow_ramp: band violation accumulating"
+            "home_ramp: band violation accumulating"
         );
         *consec_over >= debounce_ticks
     } else {
@@ -173,7 +173,7 @@ fn band_violation_should_abort(
 /// Compute the additional velocity-magnitude cap that pre-decelerates
 /// the motor before it can run into a band edge.
 ///
-/// The slow-ramp's existing taper (`approach_scale = |governing| /
+/// The home-ramp's existing taper (`approach_scale = |governing| /
 /// step_size_rad`) decelerates as `last_measured` approaches the
 /// **target**. That works when the home target sits comfortably inside
 /// the band, but fails when the target is near (or coincident with) a
@@ -230,7 +230,7 @@ fn band_edge_distance(
     }
 }
 
-/// Slow-ramp closed loop. See module docstring for the full semantics.
+/// Home-ramp closed loop. See module docstring for the full semantics.
 ///
 /// `from_rad` is the operator-supplied (or telemetry-snapshotted)
 /// current position; `target_rad` is the principal-angle home target.
@@ -243,9 +243,11 @@ fn band_edge_distance(
 ///
 /// Convenience wrapper that uses the operator-driven tracking-error
 /// budget (`safety.tracking_error_max_rad`). Callers that need a
-/// different budget — currently just the boot orchestrator, which
-/// drives cold motors at boot and warrants more headroom — should
-/// call [`run_with_tracking_budget`] directly.
+/// different budget — e.g. the boot orchestrator with
+/// `safety.boot_tracking_error_max_rad` — should call
+/// [`run_with_tracking_budget`] or [`run_with_overrides`] directly.
+///
+/// Resolves nominal speed via [`resolve_homing_speed`] inside [`run_with_tracking_budget`].
 pub async fn run(
     state: SharedState,
     motor: Actuator,
@@ -256,27 +258,62 @@ pub async fn run(
     run_with_tracking_budget(state, motor, from_rad, target_rad, budget).await
 }
 
-/// Slow-ramp closed loop with a caller-supplied tracking-error budget.
+/// Resolve inventory override vs global `[safety].homing_speed_rad_s` vs
+/// `step_size_rad / tick_interval` (see [`crate::config::SafetyConfig::effective_homing_speed_rad_s`]).
+pub fn resolve_homing_speed(state: &SharedState, motor: &Actuator) -> (f32, &'static str) {
+    if let Some(v) = motor.common.homing_speed_rad_s {
+        if v.is_finite() && v > 0.0 {
+            return (v.min(MAX_HOMER_VEL_RAD_S), "actuator_override");
+        }
+    }
+    let g = state.cfg.safety.effective_homing_speed_rad_s();
+    let src = if state.cfg.safety.homing_speed_rad_s.is_some() {
+        "global_config"
+    } else {
+        "derived_step_tick"
+    };
+    (g, src)
+}
+
+/// Home-ramp with the operator-typical tracking-error budget and speed resolved
+/// from inventory / global config ([`resolve_homing_speed`] → [`run_with_overrides`]).
 ///
-/// The budget overrides `safety.tracking_error_max_rad` for the life of
-/// this run; it does NOT mutate config. All other knobs
-/// (`step_size_rad`, `tick_interval_ms`, `homer_timeout_ms`,
-/// `target_tolerance_rad`, `tracking_error_grace_ticks`,
-/// `tracking_freshness_max_age_ms`, `tracking_error_debounce_ticks`) come from
-/// `safety`.
-///
-/// Use this entry point when the caller has a principled reason to
-/// loosen (or tighten) the operator-driven default. Today the only
-/// caller is [`crate::boot_orchestrator::maybe_run`], which passes
-/// `safety.boot_tracking_error_max_rad` because the orchestrator runs
-/// unattended on cold motors at boot and a ~3Â° budget falsely aborts
-/// every time.
+/// The budget overrides `safety.tracking_error_max_rad` for the life of this
+/// run; other timing knobs come from `safety`.
 pub async fn run_with_tracking_budget(
     state: SharedState,
     motor: Actuator,
     from_rad: f32,
     target_rad: f32,
     tracking_error_max_rad: f32,
+) -> Result<(f32, u32), (String, f32)> {
+    let (homing_speed_rad_s, homing_speed_source) = resolve_homing_speed(&state, &motor);
+    run_with_overrides(
+        state,
+        motor,
+        from_rad,
+        target_rad,
+        tracking_error_max_rad,
+        homing_speed_rad_s,
+        homing_speed_source,
+    )
+    .await
+}
+
+/// Home-ramp with explicit resolved nominal speed and tracking-error budget.
+///
+/// `homing_speed_rad_s` is clamped to [`MAX_HOMER_VEL_RAD_S`]. Per-tick step
+/// size is `nominal_speed × tick_interval_s` (not `safety.step_size_rad` read
+/// directly). [`run_with_tracking_budget`] and the boot orchestrator normally
+/// pass the tuple from [`resolve_homing_speed`].
+pub async fn run_with_overrides(
+    state: SharedState,
+    motor: Actuator,
+    from_rad: f32,
+    target_rad: f32,
+    tracking_error_max_rad: f32,
+    homing_speed_rad_s: f32,
+    homing_speed_source: &'static str,
 ) -> Result<(f32, u32), (String, f32)> {
     let role = motor.common.role.clone();
     let cfg = state.cfg.safety.clone();
@@ -297,11 +334,9 @@ pub async fn run_with_tracking_budget(
     // homer drive past the live limits.
     let limits_snapshot = motor.common.travel_limits.clone();
 
-    // Effective top speed: one `step_size_rad` per `tick_interval_ms`,
-    // clamped to MAX_HOMER_VEL_RAD_S as a hard upper bound. With the
-    // defaults (0.004 rad / 10 ms) this works out to ~0.4 rad/s.
     let tick_secs = (cfg.tick_interval_ms.max(5) as f32) / 1000.0;
-    let nominal_speed = (cfg.step_size_rad / tick_secs).min(MAX_HOMER_VEL_RAD_S);
+    let nominal_speed = homing_speed_rad_s.min(MAX_HOMER_VEL_RAD_S);
+    let step_size_rad = nominal_speed * tick_secs;
 
     // Resolve the operator's target into the same unwrapped frame the
     // multi-turn encoder reports. The principal-angle delta is the
@@ -346,14 +381,15 @@ pub async fn run_with_tracking_budget(
         tracking_error_grace_ticks = grace_ticks,
         tracking_error_debounce_ticks = debounce_ticks,
         band_violation_debounce_ticks = band_debounce_ticks,
-        step_size_rad = cfg.step_size_rad,
+        step_size_rad,
         tick_interval_ms = cfg.tick_interval_ms,
+        homing_speed_source,
         nominal_speed_rad_s = nominal_speed,
         target_tolerance_rad = cfg.target_tolerance_rad,
         homer_timeout_ms = cfg.homer_timeout_ms,
         tracking_freshness_max_age_ms = cfg.tracking_freshness_max_age_ms,
         has_real_can = homer_has_real_can,
-        "slow_ramp: starting"
+        "home_ramp: starting"
     );
 
     // Periodic info-level progress log. Default tick is 50 ms, so
@@ -389,7 +425,7 @@ pub async fn run_with_tracking_budget(
                                 role = %role,
                                 tick = ticks,
                                 age_ms,
-                                "slow_ramp: telemetry fresh again"
+                                "home_ramp: telemetry fresh again"
                             );
                         }
                         stale_stretch_logged = false;
@@ -401,7 +437,7 @@ pub async fn run_with_tracking_budget(
                                 tick = ticks,
                                 age_ms,
                                 max_age_ms = freshness_ms,
-                                "slow_ramp: stale telemetry, holding setpoint"
+                                "home_ramp: stale telemetry, holding setpoint"
                             );
                             stale_stretch_logged = true;
                         }
@@ -413,7 +449,7 @@ pub async fn run_with_tracking_budget(
                         debug!(
                             role = %role,
                             tick = ticks,
-                            "slow_ramp: stale telemetry (missing), holding setpoint"
+                            "home_ramp: stale telemetry (missing), holding setpoint"
                         );
                         stale_stretch_logged = true;
                     }
@@ -429,7 +465,7 @@ pub async fn run_with_tracking_budget(
         // tracking error against a marching setpoint.
         if !homer_has_real_can || is_fresh {
             let remaining = unwrapped_target - setpoint_unwrapped;
-            let step = remaining.signum() * remaining.abs().min(cfg.step_size_rad);
+            let step = remaining.signum() * remaining.abs().min(step_size_rad);
             setpoint_unwrapped += step;
         }
 
@@ -551,9 +587,9 @@ pub async fn run_with_tracking_budget(
         // and the no-limits short-circuit.
         let dist_to_edge = band_edge_distance(limits_snapshot.as_ref(), last_measured, direction);
         let governing_capped = governing.abs().min(dist_to_edge);
-        let approach_scale = (governing_capped / cfg.step_size_rad.max(1e-6)).min(1.0);
+        let approach_scale = (governing_capped / step_size_rad.max(1e-6)).min(1.0);
         // Symmetric companion to `approach_scale`: when the motor is
-        // racing ahead of the slow-ramp trajectory (gravity assist on
+        // racing ahead of the home-ramp trajectory (gravity assist on
         // a payload-loaded joint), taper commanded velocity toward
         // zero so the firmware velocity loop brakes the motor back
         // into trajectory. At an overrun of one `step_size_rad` we
@@ -565,7 +601,7 @@ pub async fn run_with_tracking_budget(
         // low-gravity neutral pose) from either tripping a spurious
         // `tracking_error` abort OR running unboundedly past the
         // virtual setpoint into the band edge.
-        let lag_scale = (1.0 - overrun / cfg.step_size_rad.max(1e-6)).clamp(0.0, 1.0);
+        let lag_scale = (1.0 - overrun / step_size_rad.max(1e-6)).clamp(0.0, 1.0);
         let vel = direction * nominal_speed * approach_scale * lag_scale;
 
         // The band-edge cap is the most diagnostic single piece of
@@ -576,7 +612,7 @@ pub async fn run_with_tracking_budget(
         // operator can correlate this with the absence of
         // `path_violation` aborts. Logged at debug so it doesn't spam
         // operator logs in steady state, but available with
-        // `RUST_LOG=cortex::can::slow_ramp=debug` whenever a homing
+        // `RUST_LOG=cortex::can::home_ramp=debug` whenever a homing
         // anomaly needs investigating.
         let edge_capped = dist_to_edge.is_finite() && dist_to_edge < governing.abs();
         if edge_capped {
@@ -587,7 +623,7 @@ pub async fn run_with_tracking_budget(
                 governing_abs = governing.abs(),
                 vel,
                 last_measured,
-                "slow_ramp: velocity capped by band edge (not by target distance)"
+                "home_ramp: velocity capped by band edge (not by target distance)"
             );
         }
 
@@ -634,13 +670,13 @@ pub async fn run_with_tracking_budget(
             vel,
             consec_band_over,
             consec_tracking_over = consec_over,
-            "slow_ramp: tick"
+            "home_ramp: tick"
         );
 
         // Periodic info-level progress so operators following along
         // in the journal see the homer make headway without enabling
         // debug. One line per ~1 second of wall-clock; cheap because
-        // the slow-ramp itself is bounded by `homer_timeout_ms`.
+        // the home-ramp itself is bounded by `homer_timeout_ms`.
         if ticks.is_multiple_of(progress_every_ticks) {
             info!(
                 role = %role,
@@ -650,7 +686,7 @@ pub async fn run_with_tracking_budget(
                 distance_remaining = (unwrapped_target - last_measured).abs(),
                 vel,
                 edge_capped,
-                "slow_ramp: progress"
+                "home_ramp: progress"
             );
         }
 
@@ -728,7 +764,7 @@ pub async fn run_with_tracking_budget(
                 elapsed_ms,
                 consec_band_over_at_exit = consec_band_over,
                 consec_tracking_over_at_exit = consec_over,
-                "slow_ramp: completed"
+                "home_ramp: completed"
             );
         }
         Err((reason, last_pos)) => {
@@ -745,7 +781,7 @@ pub async fn run_with_tracking_budget(
                 elapsed_ms,
                 consec_band_over_at_exit = consec_band_over,
                 consec_tracking_over_at_exit = consec_over,
-                "slow_ramp: aborted"
+                "home_ramp: aborted"
             );
         }
     }
@@ -754,17 +790,17 @@ pub async fn run_with_tracking_budget(
 }
 
 #[cfg(test)]
-#[path = "slow_ramp_tracking_gate_tests.rs"]
+#[path = "home_ramp_tracking_gate_tests.rs"]
 mod tracking_gate_tests;
 
 #[cfg(test)]
-#[path = "slow_ramp_band_gate_tests.rs"]
+#[path = "home_ramp_band_gate_tests.rs"]
 mod band_gate_tests;
 
 #[cfg(test)]
-#[path = "slow_ramp_band_edge_distance_tests.rs"]
+#[path = "home_ramp_band_edge_distance_tests.rs"]
 mod band_edge_distance_tests;
 
 #[cfg(all(test, not(target_os = "linux")))]
-#[path = "slow_ramp_real_can_stub_tests.rs"]
+#[path = "home_ramp_real_can_stub_tests.rs"]
 mod real_can_stub_tests;

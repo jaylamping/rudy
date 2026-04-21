@@ -32,9 +32,11 @@ import { getBridgeWt } from "@/lib/hooks/wtBridgeHandle";
 import { Tooltip } from "@/components/ui/tooltip";
 import type { MotorSummary } from "@/lib/types/MotorSummary";
 import type { MotionStatus } from "@/lib/types/MotionStatus";
-
-const RAD_TO_DEG = 180 / Math.PI;
-const DEG_TO_RAD = Math.PI / 180;
+import {
+  degToRad,
+  formatAngularVelDeg,
+  radToDeg,
+} from "@/lib/units";
 
 // Daemon-side hard cap (see MAX_PATTERN_VEL_RAD_S in api/motion.rs).
 // Mirrored here so the slider can't request something that would clamp
@@ -56,7 +58,7 @@ type PatternId = "wave" | "sweep";
 
 /**
  * Last-seen status from the server-side controller. Carries the live
- * commanded velocity so the UI can show "running at +0.25 rad/s" without
+ * commanded velocity so the UI can show "running at +14.3°/s" without
  * re-deriving it from the pattern parameters.
  */
 interface LiveStatus {
@@ -70,8 +72,12 @@ interface LiveStatus {
 export function MotionTestsCard({ motor }: { motor: MotorSummary }) {
   const limb = useLimbHealth(motor.role);
   const [waveAmpDeg, setWaveAmpDeg] = useState<[number]>([15]);
-  const [waveSpeedRad, setWaveSpeedRad] = useState<[number]>([0.3]);
-  const [sweepSpeedRad, setSweepSpeedRad] = useState<[number]>([0.25]);
+  const [waveSpeedDeg, setWaveSpeedDeg] = useState<[number]>([
+    radToDeg(0.3),
+  ]);
+  const [sweepSpeedDeg, setSweepSpeedDeg] = useState<[number]>([
+    radToDeg(0.25),
+  ]);
   const [active, setActive] = useState<PatternId | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [available, setAvailable] = useState(true);
@@ -220,7 +226,7 @@ export function MotionTestsCard({ motor }: { motor: MotorSummary }) {
 
     try {
       if (id === "wave") {
-        const amplitudeRad = waveAmpDeg[0] * DEG_TO_RAD;
+        const amplitudeRad = degToRad(waveAmpDeg[0]);
         // Center the wave at the joint's current position; the daemon
         // clips against the band on every tick if the operator narrows
         // it mid-run.
@@ -239,7 +245,7 @@ export function MotionTestsCard({ motor }: { motor: MotorSummary }) {
         }
         const center = (lo + hi) / 2;
         const amp = (hi - lo) / 2;
-        const speed = Math.min(waveSpeedRad[0], MAX_VEL_RAD_S);
+        const speed = Math.min(degToRad(waveSpeedDeg[0]), MAX_VEL_RAD_S);
         const resp = await api.motion.wave(motor.role, {
           center_rad: center,
           amplitude_rad: amp,
@@ -248,7 +254,7 @@ export function MotionTestsCard({ motor }: { motor: MotorSummary }) {
         runIdRef.current = resp.run_id;
         setActive("wave");
       } else {
-        const speed = Math.min(sweepSpeedRad[0], MAX_VEL_RAD_S);
+        const speed = Math.min(degToRad(sweepSpeedDeg[0]), MAX_VEL_RAD_S);
         const resp = await api.motion.sweep(motor.role, {
           speed_rad_s: speed,
         });
@@ -270,7 +276,7 @@ export function MotionTestsCard({ motor }: { motor: MotorSummary }) {
 
   const limits = motor.travel_limits;
   const liveDeg =
-    motor.latest != null ? motor.latest.mech_pos_rad * RAD_TO_DEG : null;
+    motor.latest != null ? radToDeg(motor.latest.mech_pos_rad) : null;
   const bsKind = motor.boot_state.kind;
   const safetyReady =
     motor.verified &&
@@ -315,8 +321,7 @@ export function MotionTestsCard({ motor }: { motor: MotorSummary }) {
               <span className="text-muted-foreground">
                 cmd:{" "}
                 <span className="font-mono text-foreground">
-                  {liveStatus.vel_rad_s >= 0 ? "+" : ""}
-                  {liveStatus.vel_rad_s.toFixed(2)} rad/s
+                  {formatAngularVelDeg(liveStatus.vel_rad_s, 2)}
                 </span>
               </span>
             )}
@@ -361,14 +366,14 @@ export function MotionTestsCard({ motor }: { motor: MotorSummary }) {
               />
               <SliderRow
                 label="Speed"
-                unit="rad/s"
-                value={waveSpeedRad}
-                min={0.05}
-                max={MAX_VEL_RAD_S}
-                step={0.05}
-                onChange={setWaveSpeedRad}
+                unit="°/s"
+                value={waveSpeedDeg}
+                min={radToDeg(0.05)}
+                max={radToDeg(MAX_VEL_RAD_S)}
+                step={1}
+                onChange={setWaveSpeedDeg}
                 disabled={active === "wave"}
-                fmt={(n) => n.toFixed(2)}
+                fmt={(n) => n.toFixed(1)}
               />
             </div>
           }
@@ -379,7 +384,7 @@ export function MotionTestsCard({ motor }: { motor: MotorSummary }) {
           title="Sweep travel limits"
           subtitle={
             limits
-              ? `Continuously travels between min (${(limits.min_rad * RAD_TO_DEG).toFixed(1)}°) and max (${(limits.max_rad * RAD_TO_DEG).toFixed(1)}°), reversing ~${(sweepInsetRad(sweepSpeedRad[0]) * RAD_TO_DEG).toFixed(1)}° before each edge to absorb motor overshoot at this speed.`
+              ? `Continuously travels between min (${radToDeg(limits.min_rad).toFixed(1)}°) and max (${radToDeg(limits.max_rad).toFixed(1)}°), reversing ~${radToDeg(sweepInsetRad(degToRad(sweepSpeedDeg[0]))).toFixed(1)}° before each edge to absorb motor overshoot at this speed.`
               : "Configure soft travel limits above to enable this pattern."
           }
           running={active === "sweep"}
@@ -395,14 +400,14 @@ export function MotionTestsCard({ motor }: { motor: MotorSummary }) {
           controls={
             <SliderRow
               label="Speed"
-              unit="rad/s"
-              value={sweepSpeedRad}
-              min={0.05}
-              max={MAX_VEL_RAD_S}
-              step={0.05}
-              onChange={setSweepSpeedRad}
+              unit="°/s"
+              value={sweepSpeedDeg}
+              min={radToDeg(0.05)}
+              max={radToDeg(MAX_VEL_RAD_S)}
+              step={1}
+              onChange={setSweepSpeedDeg}
               disabled={active === "sweep"}
-              fmt={(n) => n.toFixed(2)}
+              fmt={(n) => n.toFixed(1)}
             />
           }
         />

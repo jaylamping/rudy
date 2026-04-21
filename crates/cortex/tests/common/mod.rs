@@ -78,6 +78,7 @@ pub fn make_state() -> (SharedState, tempfile::TempDir) {
             boot_max_step_rad: 0.087,
             step_size_rad: 0.02,
             tick_interval_ms: 5,
+            homing_speed_rad_s: None,
             tracking_error_max_rad: 0.05,
             // Tests exercise mock-CAN where measurement is simulated to
             // perfectly track the setpoint, so the cold-motor
@@ -174,6 +175,7 @@ pub fn make_state_commission_can_path_fails() -> (SharedState, tempfile::TempDir
             boot_max_step_rad: 0.087,
             step_size_rad: 0.02,
             tick_interval_ms: 5,
+            homing_speed_rad_s: None,
             tracking_error_max_rad: 0.05,
             tracking_error_grace_ticks: 0,
             tracking_freshness_max_age_ms: 100,
@@ -228,8 +230,8 @@ pub fn make_state_auto_home_on_boot(auto_home_on_boot: bool) -> (SharedState, te
 }
 
 /// Same as [`make_state`] but uses a slow homer tick and the minimum enforced
-/// homer wall-clock timeout (`slow_ramp` clamps to 1000 ms) so
-/// `slow_ramp::run` reliably hits `"timeout"` in mock-CAN tests without
+/// homer wall-clock timeout (`home_ramp` clamps to 1000 ms) so
+/// `home_ramp::run` reliably hits `"timeout"` in mock-CAN tests without
 /// relying on tracking-error or path violations.
 pub fn make_state_homer_times_out_quickly() -> (SharedState, tempfile::TempDir) {
     let (state, dir) = make_state();

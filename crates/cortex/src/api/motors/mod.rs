@@ -10,6 +10,7 @@ use crate::state::SharedState;
 mod bench;
 mod commission;
 mod control;
+mod homing_speed;
 mod params;
 mod predefined_home;
 mod restore_offset;
@@ -40,6 +41,10 @@ pub fn router() -> Router<SharedState> {
         .route(
             "/motors/:role/predefined_home",
             put(predefined_home::put_predefined_home),
+        )
+        .route(
+            "/motors/:role/homing_speed",
+            put(homing_speed::put_homing_speed),
         )
         .route("/motors/:role/tests/:name", post(bench::run_test))
 }

@@ -15,7 +15,7 @@
 //!
 //! Idempotent within one daemon lifetime per role: `state.boot_orchestrator_attempted`
 //! tracks which roles have already been processed so a stuttering
-//! telemetry stream doesn't double-spawn the slow-ramp homer. Roles
+//! telemetry stream doesn't double-spawn the home-ramp homer. Roles
 //! are removed from the set when leaving the orchestrator's "in-band"
 //! flight envelope (OutOfBand transition) so a future re-entry can
 //! retrigger.
@@ -40,27 +40,27 @@
 //! - wrap_to_pi(mech_pos_rad) outside `travel_limits` → no-op (the
 //!   classifier already set OutOfBand). Clear the attempted flag so a
 //!   future InBand transition retriggers.
-//! - all checks pass → force_set `AutoHoming`, call `slow_ramp::run`
+//! - all checks pass → force_set `AutoHoming`, call `home_ramp::run_with_overrides`
 //!   toward `predefined_home_rad.unwrap_or(0.0)`. On success
 //!   mark_homed + emit `SafetyEvent::AutoHomed`; on failure force_set
 //!   `HomeFailed { reason }` + emit `SafetyEvent::HomeFailed`.
 //!
 //! The orchestrator does NOT touch motors with no `commissioned_zero_offset`,
 //! does NOT touch the `present: false` motors, and does NOT bypass any
-//! of the existing safety gates inside `slow_ramp::run` (path-aware
+//! of the existing safety gates inside `home_ramp::run` (path-aware
 //! band check on every tick, tracking-error abort, `homer_timeout_ms`
 //! ceiling). It is a thin orchestrator above existing primitives.
 //!
-//! Note on `path_violation` failure mode: the slow-ramp is a
+//! Note on `path_violation` failure mode: the home-ramp is a
 //! velocity-feedforward controller, not a position controller. On a
 //! gravity-loaded joint (shoulder_pitch, elbow_pitch) whose
 //! `predefined_home_rad` sits near a `travel_limits` edge, the
 //! firmware velocity loop's deceleration can carry the physical
 //! position past the edge by ≪ `step_size_rad` for a single tick
-//! before the slow-ramp's reactive direction-flip observes the
+//! before the home-ramp's reactive direction-flip observes the
 //! overshoot and reverses the command. The debounce on
 //! `safety.band_violation_debounce_ticks` (default 3) absorbs that
-//! transient; the predictive band-edge velocity taper in `slow_ramp`
+//! transient; the predictive band-edge velocity taper in `home_ramp`
 //! (which decelerates as `last_measured` nears whichever boundary —
 //! home target OR band edge — it would hit first) keeps the residual
 //! overshoot small enough that the debounce window is genuinely
@@ -76,8 +76,8 @@ use tracing::{info, warn};
 
 use crate::audit::{AuditEntry, AuditResult};
 use crate::boot_state::{self, BootState, ClassifyOutcome};
+use crate::can::home_ramp;
 use crate::can::motion::wrap_to_pi;
-use crate::can::slow_ramp;
 use crate::state::SharedState;
 use crate::types::SafetyEvent;
 
@@ -129,7 +129,7 @@ pub fn spawn_if_orchestrator_qualifies(
 /// internally via `state.boot_orchestrator_attempted`.
 ///
 /// Spawning convention: callers MUST `tokio::spawn` this — the
-/// orchestrator runs the slow-ramp homer (potentially seconds long)
+/// orchestrator runs the home-ramp homer (potentially seconds long)
 /// and we never want a telemetry tick blocked on it.
 pub async fn maybe_run(state: SharedState, role: String) {
     // Step 1: master switch.
@@ -269,7 +269,7 @@ pub async fn maybe_run(state: SharedState, role: String) {
         }
     }
 
-    // Step 8: transition to AutoHoming and run the slow ramp.
+    // Step 8: transition to AutoHoming and run the home ramp.
     let predefined_home_rad = motor.common.predefined_home_rad;
     let target_rad = predefined_home_rad.unwrap_or(0.0);
     boot_state::force_set_auto_homing(&state, &role, mech_pos_rad, target_rad);
@@ -279,10 +279,10 @@ pub async fn maybe_run(state: SharedState, role: String) {
     // can tell at a glance whether the homer was using the configured
     // home or the 0.0 fallback, and whether the band was tight enough
     // around the target for `path_violation` to be plausible without
-    // drilling into the inventory file. The `slow_ramp: starting`
-    // info line emitted by the slow-ramp itself one millisecond later
+    // drilling into the inventory file. The `home_ramp: starting`
+    // info line emitted by the home-ramp itself one millisecond later
     // also has these fields, so post-mortems that only have the
-    // slow-ramp line still have everything they need; we duplicate
+    // home-ramp line still have everything they need; we duplicate
     // the most-useful subset here so the boot-orchestrator chronology
     // is self-contained when filtering by `boot_orchestrator:` only.
     let (limits_min, limits_max) = motor
@@ -304,7 +304,7 @@ pub async fn maybe_run(state: SharedState, role: String) {
 
     // Spawn a background progress-tracker that polls latest and feeds
     // `update_auto_homing_progress`. This is best-effort — the actual
-    // tracking-error and timeout safety lives inside slow_ramp::run.
+    // tracking-error and timeout safety lives inside home_ramp::run.
     let progress_state = state.clone();
     let progress_role = role.clone();
     let progress_handle = tokio::spawn(async move {
@@ -328,7 +328,7 @@ pub async fn maybe_run(state: SharedState, role: String) {
         }
     });
 
-    // Step 9: drive the slow-ramp homer to the predefined target.
+    // Step 9: drive the home-ramp homer to the predefined target.
     // Use the boot-specific tracking-error budget
     // (`safety.boot_tracking_error_max_rad`, default ~11.5°) instead
     // of the operator-driven default (~3°). The orchestrator runs
@@ -341,12 +341,15 @@ pub async fn maybe_run(state: SharedState, role: String) {
     // under those conditions; the boot budget absorbs the sustained
     // gravity lag while still aborting promptly on a genuinely
     // bound-up joint via the 3-tick debounce.
-    let outcome = slow_ramp::run_with_tracking_budget(
+    let (homing_speed_rad_s, homing_speed_source) = home_ramp::resolve_homing_speed(&state, &motor);
+    let outcome = home_ramp::run_with_overrides(
         state.clone(),
         motor.clone(),
         mech_pos_rad,
         target_rad,
         state.cfg.safety.boot_tracking_error_max_rad,
+        homing_speed_rad_s,
+        homing_speed_source,
     )
     .await;
     progress_handle.abort();
