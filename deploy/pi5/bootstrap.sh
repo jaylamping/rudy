@@ -7,7 +7,7 @@
 #   1. Installs minimal runtime deps (no Rust/Node toolchains).
 #   2. Ensures CAN HAT overlays are in /boot/firmware/config.txt.
 #   3. Installs robot-can.service so can0/can1 come up at boot.
-#   4. Installs the rudy-update updater + 1-minute systemd timer.
+#   4. Installs the cortex-update updater + 1-minute systemd timer.
 #   5. Installs the cortex health watchdog timer.
 #   6. Configures `tailscale serve` to front cortex at https://<host>/.
 #   7. Triggers an immediate update so the daemon comes up now.
@@ -124,16 +124,39 @@ pin_can_irqs() {
 
 pin_can_irqs
 
-install -m 0755 "${SCRIPT_DIR}/rudy-update.sh" /usr/local/bin/rudy-update.sh
-install -m 0755 "${SCRIPT_DIR}/rudy-watchdog.sh" /usr/local/bin/rudy-watchdog.sh
-install -m 0644 "${SCRIPT_DIR}/rudy-update.service" /etc/systemd/system/rudy-update.service
-install -m 0644 "${SCRIPT_DIR}/rudy-update.timer" /etc/systemd/system/rudy-update.timer
-install -m 0644 "${SCRIPT_DIR}/rudy-watchdog.service" /etc/systemd/system/rudy-watchdog.service
-install -m 0644 "${SCRIPT_DIR}/rudy-watchdog.timer" /etc/systemd/system/rudy-watchdog.timer
+# One-shot migration from legacy rudy-watchdog.* + rudy-update.* (renamed to
+# cortex-watchdog.* / cortex-update.*). Idempotent — safe on fresh installs.
+# Stop+disable+remove BEFORE installing the new units so a single
+# daemon-reload picks up the rename cleanly.
+#
+# Unlike apply-release.sh's version of this migration, bootstrap.sh is NOT
+# invoked from inside rudy-update.service, so it's safe to stop the .service
+# units here too.
+for legacy in rudy-watchdog rudy-update; do
+  if systemctl list-unit-files 2>/dev/null | grep -q "^${legacy}\.timer"; then
+    systemctl stop "${legacy}.timer" 2>/dev/null || true
+    systemctl disable "${legacy}.timer" 2>/dev/null || true
+  fi
+  if systemctl list-unit-files 2>/dev/null | grep -q "^${legacy}\.service"; then
+    systemctl stop "${legacy}.service" 2>/dev/null || true
+    systemctl disable "${legacy}.service" 2>/dev/null || true
+  fi
+  rm -f \
+    "/etc/systemd/system/${legacy}.timer" \
+    "/etc/systemd/system/${legacy}.service" \
+    "/usr/local/bin/${legacy}.sh"
+done
+
+install -m 0755 "${SCRIPT_DIR}/cortex-update.sh" /usr/local/bin/cortex-update.sh
+install -m 0755 "${SCRIPT_DIR}/cortex-watchdog.sh" /usr/local/bin/cortex-watchdog.sh
+install -m 0644 "${SCRIPT_DIR}/cortex-update.service" /etc/systemd/system/cortex-update.service
+install -m 0644 "${SCRIPT_DIR}/cortex-update.timer" /etc/systemd/system/cortex-update.timer
+install -m 0644 "${SCRIPT_DIR}/cortex-watchdog.service" /etc/systemd/system/cortex-watchdog.service
+install -m 0644 "${SCRIPT_DIR}/cortex-watchdog.timer" /etc/systemd/system/cortex-watchdog.timer
 
 systemctl daemon-reload
-systemctl enable --now rudy-update.timer
-systemctl enable --now rudy-watchdog.timer
+systemctl enable --now cortex-update.timer
+systemctl enable --now cortex-watchdog.timer
 
 # Wire `tailscale serve` to terminate TLS at the tailnet IP and proxy to the
 # cortex plaintext loopback listener. `tailscale serve` config is persistent
@@ -151,7 +174,7 @@ fi
 
 echo
 echo "Triggering first update (this builds nothing locally; just downloads the latest release):"
-systemctl start rudy-update.service || true
+systemctl start cortex-update.service || true
 
 HOST_SHORT="$(hostname -s)"
 TAILNET_URL="https://${HOST_SHORT}/"
@@ -162,8 +185,8 @@ echo
 echo "Next steps:"
 echo "  - Verify daemon:    systemctl status cortex --no-pager"
 echo "  - Tail logs:        journalctl -u cortex -f"
-echo "  - Tail updater:     journalctl -u rudy-update -f"
-echo "  - Tail watchdog:    journalctl -t rudy-watchdog -f"
+echo "  - Tail updater:     journalctl -u cortex-update -f"
+echo "  - Tail watchdog:    journalctl -t cortex-watchdog -f"
 echo "  - Inspect serve:    tailscale serve status"
 echo "  - Open UI at:       ${TAILNET_URL}"
 echo "                      (from any device on this tailnet — MagicDNS"

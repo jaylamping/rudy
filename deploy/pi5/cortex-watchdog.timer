@@ -6,7 +6,7 @@ Documentation=file:///etc/rudy/docs/runbooks/operator-console.md
 OnBootSec=60s
 OnUnitActiveSec=15s
 AccuracySec=2s
-Unit=rudy-watchdog.service
+Unit=cortex-watchdog.service
 Persistent=true
 
 [Install]

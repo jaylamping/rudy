@@ -1,5 +1,5 @@
 [Unit]
-Description=Poll GitHub for new Rudy Pi releases (every minute)
+Description=Poll GitHub for new Cortex Pi releases (every minute)
 Documentation=file:///etc/rudy/docs/runbooks/operator-console.md
 
 [Timer]
@@ -7,7 +7,7 @@ Documentation=file:///etc/rudy/docs/runbooks/operator-console.md
 OnBootSec=30s
 OnUnitActiveSec=60s
 AccuracySec=5s
-Unit=rudy-update.service
+Unit=cortex-update.service
 Persistent=true
 
 [Install]

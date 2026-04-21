@@ -45,7 +45,7 @@ git clone https://github.com/jaylamping/rudy ~/rudy
 sudo bash ~/rudy/deploy/pi5/bootstrap.sh
 ```
 
-That installs `rudy-update.timer`, which polls the latest GitHub Release.
+That installs `cortex-update.timer`, which polls the latest GitHub Release.
 On every push to `main`, [`.github/workflows/release.yaml`](../../.github/workflows/release.yaml)
 cross-builds `cortex` for `aarch64-unknown-linux-gnu`, bundles the SPA,
 and publishes the tarball + `latest.json` manifest. Within ~60s of a green
@@ -55,10 +55,10 @@ build, the Pi downloads it (sha256-verified) and restarts `cortex`.
 
 ```bash
 # Force an immediate update check
-sudo systemctl start rudy-update
+sudo systemctl start cortex-update
 
 # Watch deploys land
-journalctl -u rudy-update -f
+journalctl -u cortex-update -f
 journalctl -u cortex -f
 
 # What commit is running?

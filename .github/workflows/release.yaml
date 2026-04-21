@@ -110,9 +110,12 @@ jobs:
 
           cp -r config/. "${STAGE}/config/"
           cp deploy/pi5/cortex.service "${STAGE}/deploy/pi5/cortex.service"
-          cp deploy/pi5/rudy-watchdog.sh "${STAGE}/deploy/pi5/rudy-watchdog.sh"
-          cp deploy/pi5/rudy-watchdog.service "${STAGE}/deploy/pi5/rudy-watchdog.service"
-          cp deploy/pi5/rudy-watchdog.timer "${STAGE}/deploy/pi5/rudy-watchdog.timer"
+          cp deploy/pi5/cortex-watchdog.sh "${STAGE}/deploy/pi5/cortex-watchdog.sh"
+          cp deploy/pi5/cortex-watchdog.service "${STAGE}/deploy/pi5/cortex-watchdog.service"
+          cp deploy/pi5/cortex-watchdog.timer "${STAGE}/deploy/pi5/cortex-watchdog.timer"
+          cp deploy/pi5/cortex-update.sh "${STAGE}/deploy/pi5/cortex-update.sh"
+          cp deploy/pi5/cortex-update.service "${STAGE}/deploy/pi5/cortex-update.service"
+          cp deploy/pi5/cortex-update.timer "${STAGE}/deploy/pi5/cortex-update.timer"
           cp deploy/pi5/render-cortex-toml.sh "${STAGE}/deploy/pi5/render-cortex-toml.sh"
           cp deploy/pi5/apply-release.sh "${STAGE}/deploy/pi5/apply-release.sh"
           cp docs/runbooks/operator-console.md "${STAGE}/docs/runbooks/operator-console.md"
@@ -120,9 +123,10 @@ jobs:
           # The shell scripts in the tarball must be executable. Git on
           # Windows checkouts (and GitHub Actions checkouts of repos whose
           # files were initially committed without +x) store them as 0644,
-          # which trips `[[ -x ... ]]` in rudy-update.sh on the Pi.
+          # which trips `[[ -x ... ]]` in cortex-update.sh on the Pi.
           chmod 0755 \
-            "${STAGE}/deploy/pi5/rudy-watchdog.sh" \
+            "${STAGE}/deploy/pi5/cortex-watchdog.sh" \
+            "${STAGE}/deploy/pi5/cortex-update.sh" \
             "${STAGE}/deploy/pi5/render-cortex-toml.sh" \
             "${STAGE}/deploy/pi5/apply-release.sh"
 

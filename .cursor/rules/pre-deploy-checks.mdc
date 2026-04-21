@@ -45,7 +45,7 @@ If a commit touches both Rust and TypeScript (common for changes that affect wir
 
 ## What "deploy" means here
 
-- **commit + push to `main`** counts (we deploy from `main` via `deploy/pi5/rudy-update.sh`).
+- **commit + push to `main`** counts (we deploy from `main` via `deploy/pi5/cortex-update.sh`).
 - Manual `scp` / `rsync` to the Pi counts.
 - Anything that touches `config/cortex.toml` or `deploy/pi5/*.service` definitely counts — config drift is the most common Pi outage cause.
 

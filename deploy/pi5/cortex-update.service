@@ -1,12 +1,12 @@
 [Unit]
-Description=Rudy Pi auto-updater (poll latest GitHub release)
+Description=Cortex Pi auto-updater (poll latest GitHub release)
 Documentation=file:///etc/rudy/docs/runbooks/operator-console.md
 After=network-online.target tailscaled.service
 Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/bin/rudy-update.sh
+ExecStart=/usr/local/bin/cortex-update.sh
 Nice=10
 IOSchedulingClass=idle
 TimeoutStartSec=300

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Pi-side updater. Runs from systemd timer rudy-update.timer.
+# Pi-side updater. Runs from systemd timer cortex-update.timer.
 #
 # Polls the GitHub repo's latest release manifest (latest.json), and if its
 # commit_sha differs from /opt/rudy/current.sha, downloads the tarball,
@@ -11,13 +11,13 @@ set -euo pipefail
 REPO="${RUDY_REPO:-jaylamping/rudy}"
 STATE_DIR="/var/lib/rudy"
 SHA_FILE="/opt/rudy/current.sha"
-WORK_DIR="$(mktemp -d /tmp/rudy-update.XXXXXX)"
+WORK_DIR="$(mktemp -d /tmp/cortex-update.XXXXXX)"
 trap 'rm -rf "${WORK_DIR}"' EXIT
 
 MANIFEST_URL="https://github.com/${REPO}/releases/latest/download/latest.json"
 MANIFEST="${WORK_DIR}/latest.json"
 
-log() { echo "rudy-update: $*"; }
+log() { echo "cortex-update: $*"; }
 
 if ! curl -fsSL --retry 3 --connect-timeout 5 -o "${MANIFEST}" "${MANIFEST_URL}"; then
   log "could not fetch ${MANIFEST_URL} (no network or no release yet); skipping"

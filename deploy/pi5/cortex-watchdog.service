@@ -1,12 +1,12 @@
 [Unit]
-Description=Rudy daemon health watchdog probe
+Description=Cortex daemon health watchdog probe
 Documentation=file:///etc/rudy/docs/runbooks/operator-console.md
 After=network-online.target cortex.service
 Wants=network-online.target cortex.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/bin/rudy-watchdog.sh
+ExecStart=/usr/local/bin/cortex-watchdog.sh
 User=root
 Group=root
 
