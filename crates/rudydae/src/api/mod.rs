@@ -16,6 +16,7 @@ mod control;
 mod devices;
 mod estop;
 mod hardware;
+mod health;
 mod home;
 mod home_all;
 mod inventory_route;
@@ -36,6 +37,7 @@ mod travel;
 pub fn router(state: SharedState) -> Router<SharedState> {
     Router::new()
         .route("/config", get(config_route::get_config))
+        .route("/health", get(health::get_health))
         .route("/system", get(system::get_system))
         .route("/devices", get(devices::list_devices))
         .route("/hardware/unassigned", get(hardware::list_unassigned))

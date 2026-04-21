@@ -1,0 +1,14 @@
+[Unit]
+Description=Rudy daemon health watchdog probe
+Documentation=file:///etc/rudy/docs/runbooks/operator-console.md
+After=network-online.target rudyd.service
+Wants=network-online.target rudyd.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/rudy-watchdog.sh
+User=root
+Group=root
+
+[Install]
+WantedBy=multi-user.target

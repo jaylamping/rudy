@@ -214,8 +214,16 @@ async fn main() -> Result<()> {
     telemetry::spawn(app_state.clone());
     system::spawn(app_state.clone());
 
-    let mut http_handle = tokio::spawn(server::run(app_state.clone()));
+    let (http_ready_tx, http_ready_rx) = tokio::sync::oneshot::channel();
+    let mut http_handle = tokio::spawn(server::run(app_state.clone(), Some(http_ready_tx)));
     let mut wt_handle = tokio::spawn(wt::run(app_state.clone()));
+
+    match tokio::time::timeout(Duration::from_secs(5), http_ready_rx).await {
+        Ok(Ok(())) => notify_systemd_ready(),
+        Ok(Err(_)) => tracing::warn!("http ready signal dropped before startup"),
+        Err(_) => tracing::warn!("timed out waiting for http startup ready signal"),
+    }
+    spawn_systemd_watchdog_task();
 
     info!("rudydae is up");
 
@@ -256,6 +264,44 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn notify_systemd_ready() {
+    if let Err(e) = sd_notify::notify(false, &[sd_notify::NotifyState::Ready]) {
+        tracing::warn!(error = %e, "failed to send systemd READY notification");
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn notify_systemd_ready() {}
+
+#[cfg(target_os = "linux")]
+fn spawn_systemd_watchdog_task() {
+    let Some(interval) = watchdog_interval_from_env() else {
+        return;
+    };
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(interval).await;
+            if let Err(e) = sd_notify::notify(false, &[sd_notify::NotifyState::Watchdog]) {
+                tracing::warn!(error = %e, "failed to send systemd watchdog ping");
+                break;
+            }
+        }
+    });
+}
+
+#[cfg(not(target_os = "linux"))]
+fn spawn_systemd_watchdog_task() {}
+
+#[cfg(target_os = "linux")]
+fn watchdog_interval_from_env() -> Option<Duration> {
+    let usec = std::env::var("WATCHDOG_USEC").ok()?.parse::<u64>().ok()?;
+    if usec == 0 {
+        return None;
+    }
+    Some(Duration::from_micros((usec / 2).max(1)))
 }
 
 /// Read the operator's last accepted log filter directive from

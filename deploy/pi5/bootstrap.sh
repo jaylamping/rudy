@@ -8,8 +8,9 @@
 #   2. Ensures CAN HAT overlays are in /boot/firmware/config.txt.
 #   3. Installs robot-can.service so can0/can1 come up at boot.
 #   4. Installs the rudy-update updater + 1-minute systemd timer.
-#   5. Configures `tailscale serve` to front rudyd at https://<host>/.
-#   6. Triggers an immediate update so the daemon comes up now.
+#   5. Installs the rudyd health watchdog timer.
+#   6. Configures `tailscale serve` to front rudyd at https://<host>/.
+#   7. Triggers an immediate update so the daemon comes up now.
 #
 # After this, the Pi will auto-update on every push to main:
 #   git push -> CI builds aarch64 release -> Pi pulls within ~60s.
@@ -124,11 +125,15 @@ pin_can_irqs() {
 pin_can_irqs
 
 install -m 0755 "${SCRIPT_DIR}/rudy-update.sh" /usr/local/bin/rudy-update.sh
+install -m 0755 "${SCRIPT_DIR}/rudy-watchdog.sh" /usr/local/bin/rudy-watchdog.sh
 install -m 0644 "${SCRIPT_DIR}/rudy-update.service" /etc/systemd/system/rudy-update.service
 install -m 0644 "${SCRIPT_DIR}/rudy-update.timer" /etc/systemd/system/rudy-update.timer
+install -m 0644 "${SCRIPT_DIR}/rudy-watchdog.service" /etc/systemd/system/rudy-watchdog.service
+install -m 0644 "${SCRIPT_DIR}/rudy-watchdog.timer" /etc/systemd/system/rudy-watchdog.timer
 
 systemctl daemon-reload
 systemctl enable --now rudy-update.timer
+systemctl enable --now rudy-watchdog.timer
 
 # Wire `tailscale serve` to terminate TLS at the tailnet IP and proxy to the
 # rudyd plaintext loopback listener. `tailscale serve` config is persistent
@@ -158,6 +163,7 @@ echo "Next steps:"
 echo "  - Verify daemon:    systemctl status rudyd --no-pager"
 echo "  - Tail logs:        journalctl -u rudyd -f"
 echo "  - Tail updater:     journalctl -u rudy-update -f"
+echo "  - Tail watchdog:    journalctl -t rudy-watchdog -f"
 echo "  - Inspect serve:    tailscale serve status"
 echo "  - Open UI at:       ${TAILNET_URL}"
 echo "                      (from any device on this tailnet — MagicDNS"

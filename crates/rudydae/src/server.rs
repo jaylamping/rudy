@@ -34,12 +34,17 @@ use tracing::info;
 
 use crate::api;
 use crate::state::SharedState;
+use tokio::sync::oneshot;
 
 #[derive(RustEmbed)]
 #[folder = "static/"]
 struct Assets;
 
-pub async fn run(state: SharedState) -> Result<()> {
+pub(crate) fn spa_present() -> bool {
+    Assets::get("index.html").is_some()
+}
+
+pub async fn run(state: SharedState, ready_tx: Option<oneshot::Sender<()>>) -> Result<()> {
     let bind: SocketAddr = state
         .cfg
         .http
@@ -57,6 +62,9 @@ pub async fn run(state: SharedState) -> Result<()> {
         .layer(TraceLayer::new_for_http());
 
     info!(%bind, "rudydae http listener up (plaintext; TLS terminated upstream by `tailscale serve` on the Pi)");
+    if let Some(tx) = ready_tx {
+        let _ = tx.send(());
+    }
     axum_server::bind(bind)
         .serve(app.into_make_service())
         .await

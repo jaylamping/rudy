@@ -96,6 +96,7 @@ driver = { path = "../../ros/src/driver" }
 # silent no-op on dev hosts. See `crates/rudydae/src/can/bus_worker.rs`.
 [target.'cfg(target_os = "linux")'.dependencies]
 core_affinity = "0.8"
+sd-notify = "0.4"
 
 [build-dependencies]
 walkdir = "2"

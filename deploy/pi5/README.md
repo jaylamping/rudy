@@ -2,7 +2,7 @@
 
 Scripts in this directory target **Ubuntu LTS (aarch64)** on a Raspberry Pi 5 with the **Waveshare 2-CH CAN HAT** (MCP2515).
 
-**Onboard today:** `rudydae` + SocketCAN + systemd (`robot-can`, `rudyd`, `rudy-update`). **ROS 2 on the Pi is not installed** by these scripts; it will return when `driver_node` / `ros2_control` integration is implemented (desktop `ros/` workspace unchanged).
+**Onboard today:** `rudydae` + SocketCAN + systemd (`robot-can`, `rudyd`, `rudy-update`, `rudy-watchdog`). **ROS 2 on the Pi is not installed** by these scripts; it will return when `driver_node` / `ros2_control` integration is implemented (desktop `ros/` workspace unchanged).
 
 ## How deployment works now
 
@@ -71,7 +71,8 @@ sudo bash ~/rudy/deploy/pi5/bootstrap.sh
 2. Append the MCP2515 device-tree overlays to `/boot/firmware/config.txt` if missing (and ask you to reboot if it had to add them).
 3. Install the `robot-can` service so `can0`/`can1` come up at boot.
 4. Install `rudy-update.timer` and trigger the first update.
-5. Configure `tailscale serve` to front `rudyd` on `https://<host>/`.
+5. Install `rudy-watchdog.timer` so unhealthy daemon/UI states auto-restart.
+6. Configure `tailscale serve` to front `rudyd` on `https://<host>/`.
 
 After it finishes, `journalctl -u rudy-update -f` will show the Pi pull the latest GitHub Release and start `rudyd`. Open `https://rudy-pi/` from any device on the same tailnet.
 
@@ -120,9 +121,15 @@ ssh jaylamping@rudy-pi "cat /opt/rudy/current.sha"
 # Watch the next deploy land (push from desktop, then on Pi)
 journalctl -u rudy-update -f
 journalctl -u rudyd -f
+journalctl -u rudy-watchdog.service -f
+journalctl -t rudy-watchdog -f
 
 # Force an immediate update check (instead of waiting up to 60s)
 sudo systemctl start rudy-update
+
+# Verify watchdog + health endpoint manually
+systemctl status rudy-watchdog.timer --no-pager
+curl -sS http://127.0.0.1:8443/api/health | jq
 ```
 
 ## Files
@@ -134,6 +141,9 @@ sudo systemctl start rudy-update
 | `apply-release.sh`         | Installs a staged tarball into `/opt/rudy` and restarts `rudyd`.     |
 | `rudy-update.service`      | systemd unit for the updater (oneshot).                              |
 | `rudy-update.timer`        | systemd timer; polls every 60s.                                      |
+| `rudy-watchdog.sh`         | Health probe script; restarts `rudyd` after repeated failures.       |
+| `rudy-watchdog.service`    | systemd oneshot unit that runs the watchdog probe.                   |
+| `rudy-watchdog.timer`      | systemd timer; runs watchdog probe every 15s.                        |
 | `render-rudyd-toml.sh`     | Renders `/etc/rudy/rudyd.toml` from live system state.               |
 | `rudyd.service`            | systemd unit for the daemon itself.                                  |
 | `robot-can.service`        | systemd unit that brings `can0`/`can1` up at 1 Mbps.                 |

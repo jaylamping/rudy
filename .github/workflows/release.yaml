@@ -110,6 +110,9 @@ jobs:
 
           cp -r config/. "${STAGE}/config/"
           cp deploy/pi5/rudyd.service "${STAGE}/deploy/pi5/rudyd.service"
+          cp deploy/pi5/rudy-watchdog.sh "${STAGE}/deploy/pi5/rudy-watchdog.sh"
+          cp deploy/pi5/rudy-watchdog.service "${STAGE}/deploy/pi5/rudy-watchdog.service"
+          cp deploy/pi5/rudy-watchdog.timer "${STAGE}/deploy/pi5/rudy-watchdog.timer"
           cp deploy/pi5/render-rudyd-toml.sh "${STAGE}/deploy/pi5/render-rudyd-toml.sh"
           cp deploy/pi5/apply-release.sh "${STAGE}/deploy/pi5/apply-release.sh"
           cp docs/runbooks/operator-console.md "${STAGE}/docs/runbooks/operator-console.md"
@@ -119,6 +122,7 @@ jobs:
           # files were initially committed without +x) store them as 0644,
           # which trips `[[ -x ... ]]` in rudy-update.sh on the Pi.
           chmod 0755 \
+            "${STAGE}/deploy/pi5/rudy-watchdog.sh" \
             "${STAGE}/deploy/pi5/render-rudyd-toml.sh" \
             "${STAGE}/deploy/pi5/apply-release.sh"
 

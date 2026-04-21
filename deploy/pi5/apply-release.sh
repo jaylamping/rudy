@@ -6,6 +6,9 @@
 #   bin/rudydae                       (SPA embedded inside the binary)
 #   config/...
 #   deploy/pi5/rudyd.service
+#   deploy/pi5/rudy-watchdog.sh
+#   deploy/pi5/rudy-watchdog.service
+#   deploy/pi5/rudy-watchdog.timer
 #   deploy/pi5/render-rudyd-toml.sh
 #   docs/runbooks/operator-console.md
 set -euo pipefail
@@ -33,6 +36,9 @@ rsync -a --delete "${STAGE}/config/" /opt/rudy/config/
 
 install -m 0644 "${STAGE}/docs/runbooks/operator-console.md" /etc/rudy/docs/runbooks/operator-console.md
 install -m 0644 "${STAGE}/deploy/pi5/rudyd.service" /etc/systemd/system/rudyd.service
+install -m 0755 "${STAGE}/deploy/pi5/rudy-watchdog.sh" /usr/local/bin/rudy-watchdog.sh
+install -m 0644 "${STAGE}/deploy/pi5/rudy-watchdog.service" /etc/systemd/system/rudy-watchdog.service
+install -m 0644 "${STAGE}/deploy/pi5/rudy-watchdog.timer" /etc/systemd/system/rudy-watchdog.timer
 
 # Always re-render rudyd.toml so config-schema changes ship in releases land
 # on the Pi. A timestamped backup of the previous file is kept alongside.
@@ -59,23 +65,36 @@ fi
 
 systemctl daemon-reload
 systemctl enable rudyd.service >/dev/null
+systemctl enable rudy-watchdog.timer >/dev/null
 systemctl restart rudyd.service
+systemctl restart rudy-watchdog.timer
 
-# Smoke-check the restart. Without this, a release that crashes on startup
-# (e.g. the logs commit's SQLite store landing on a read-only path) gets
-# silently absorbed: rudy-update.sh records the new SHA, the systemd unit
-# enters its restart loop, and `tailscale serve` returns 502s for hours
-# before anyone notices the console is down. Failing here makes
-# rudy-update.sh skip the SHA write so the next minute's poll re-attempts
-# the apply, and a human checking `journalctl -u rudy-update` sees the
-# concrete reason instead of "the page just stopped loading".
-sleep 3
-if ! systemctl is-active --quiet rudyd.service; then
-  echo "apply-release: rudyd FAILED to come up after restart" >&2
+# Smoke-check startup health before accepting the release. This catches
+# "process is running but API/UI is not serving" failures that `is-active`
+# alone can't detect.
+health_ok=0
+for _ in {1..10}; do
+  if systemctl is-active --quiet rudyd.service; then
+    if health_json="$(curl -fsS --max-time 5 http://127.0.0.1:8443/api/health)"; then
+      if grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"' <<< "${health_json}"; then
+        health_ok=1
+        break
+      fi
+    fi
+  fi
+  sleep 2
+done
+
+if [[ "${health_ok}" -ne 1 ]]; then
+  echo "apply-release: rudyd FAILED health checks after restart" >&2
   systemctl status rudyd.service --no-pager -n 5 >&2 || true
+  echo "--- watchdog status ---" >&2
+  systemctl status rudy-watchdog.timer --no-pager -n 5 >&2 || true
   echo "--- last 30 journal lines ---" >&2
   journalctl -u rudyd.service -n 30 --no-pager >&2 || true
+  echo "--- last 20 watchdog journal lines ---" >&2
+  journalctl -u rudy-watchdog.service -n 20 --no-pager >&2 || true
   exit 1
 fi
 
-echo "apply-release: rudyd restarted"
+echo "apply-release: rudyd restarted and healthy"
