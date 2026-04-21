@@ -135,6 +135,34 @@ pub struct SafetyConfig {
     #[serde(default = "default_tracking_error_max_rad")]
     pub tracking_error_max_rad: f32,
 
+    /// Number of leading ticks during which the tracking-error abort is
+    /// suppressed. The slow-ramp homer advances its setpoint by
+    /// `step_size_rad` on every tick *before* sleeping, but the measured
+    /// position lags by the firmware velocity-loop response time plus the
+    /// type-2 telemetry pipeline (30-100 ms total on a cold motor that
+    /// has just been re-armed by the bus_worker's RUN_MODE + cmd_enable
+    /// sequence). Without this grace window, the homer aborts on tick 2
+    /// or 3 every time it's asked to move a motor that hasn't been
+    /// jogged yet this power-cycle — which is exactly the scenario the
+    /// boot orchestrator runs in. Default 3 ticks (150 ms with default
+    /// `tick_interval_ms`); the `homer_timeout_ms` ceiling still
+    /// backstops a motor that genuinely refuses to move.
+    #[serde(default = "default_tracking_error_grace_ticks")]
+    pub tracking_error_grace_ticks: u32,
+
+    /// Boot-orchestrator-specific override for `tracking_error_max_rad`.
+    /// The orchestrator runs unattended on cold motors at boot, so a
+    /// looser budget than the operator-driven `POST /home` is
+    /// appropriate: the operator path generally fires after the motor
+    /// has been jogged in this session and the firmware loop is warm,
+    /// while the boot path always starts from a dead stop. Default 0.10
+    /// rad ~= 5.7 deg — twice the operator-path budget but still tight
+    /// enough that a genuinely bound-up joint aborts within a handful of
+    /// ticks. Operator-driven homes (`POST /api/motors/:role/home`,
+    /// `POST /api/home_all`) continue to use `tracking_error_max_rad`.
+    #[serde(default = "default_boot_tracking_error_max_rad")]
+    pub boot_tracking_error_max_rad: f32,
+
     /// Tolerance for "we have arrived at the target." Default 0.005 rad
     /// ~= 0.3 deg.
     #[serde(default = "default_target_tolerance_rad")]
@@ -218,6 +246,14 @@ fn default_tick_interval_ms() -> u32 {
 
 fn default_tracking_error_max_rad() -> f32 {
     0.05
+}
+
+fn default_tracking_error_grace_ticks() -> u32 {
+    3
+}
+
+fn default_boot_tracking_error_max_rad() -> f32 {
+    0.10
 }
 
 fn default_target_tolerance_rad() -> f32 {
@@ -400,6 +436,8 @@ mod tests {
                 step_size_rad: default_step_size_rad(),
                 tick_interval_ms: default_tick_interval_ms(),
                 tracking_error_max_rad: default_tracking_error_max_rad(),
+                tracking_error_grace_ticks: default_tracking_error_grace_ticks(),
+                boot_tracking_error_max_rad: default_boot_tracking_error_max_rad(),
                 target_tolerance_rad: default_target_tolerance_rad(),
                 homer_timeout_ms: default_homer_timeout_ms(),
                 max_feedback_age_ms: default_max_feedback_age_ms(),

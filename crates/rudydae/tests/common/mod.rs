@@ -118,6 +118,15 @@ pub fn make_state() -> (SharedState, tempfile::TempDir) {
             step_size_rad: 0.02,
             tick_interval_ms: 5,
             tracking_error_max_rad: 0.05,
+            // Tests exercise mock-CAN where measurement is simulated to
+            // perfectly track the setpoint, so the cold-motor
+            // grace-window doesn't matter — keep it at 0 to preserve
+            // pre-existing tracking-error abort timing.
+            tracking_error_grace_ticks: 0,
+            // Match the operator-driven budget so boot-orchestrator
+            // tests that exercise abort paths continue to fire on the
+            // same thresholds they always have.
+            boot_tracking_error_max_rad: 0.05,
             target_tolerance_rad: 0.005,
             homer_timeout_ms: 5_000,
             max_feedback_age_ms: 100,
@@ -202,6 +211,8 @@ pub fn make_state_commission_can_path_fails() -> (SharedState, tempfile::TempDir
             step_size_rad: 0.02,
             tick_interval_ms: 5,
             tracking_error_max_rad: 0.05,
+            tracking_error_grace_ticks: 0,
+            boot_tracking_error_max_rad: 0.05,
             target_tolerance_rad: 0.005,
             homer_timeout_ms: 5_000,
             max_feedback_age_ms: 100,

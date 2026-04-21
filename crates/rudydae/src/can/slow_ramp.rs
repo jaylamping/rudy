@@ -56,16 +56,48 @@ pub const MAX_HOMER_VEL_RAD_S: f32 = 0.5;
 /// transition `BootState` itself, audit-log the outcome, or emit any
 /// `SafetyEvent` — those are domain concerns the caller owns so the
 /// orchestrator can route them through its own state machine.
+///
+/// Convenience wrapper that uses the operator-driven tracking-error
+/// budget (`safety.tracking_error_max_rad`). Callers that need a
+/// different budget — currently just the boot orchestrator, which
+/// drives cold motors at boot and warrants more headroom — should
+/// call [`run_with_tracking_budget`] directly.
 pub async fn run(
     state: SharedState,
     motor: Motor,
     from_rad: f32,
     target_rad: f32,
 ) -> Result<(f32, u32), (String, f32)> {
+    let budget = state.cfg.safety.tracking_error_max_rad;
+    run_with_tracking_budget(state, motor, from_rad, target_rad, budget).await
+}
+
+/// Slow-ramp closed loop with a caller-supplied tracking-error budget.
+///
+/// The budget overrides `safety.tracking_error_max_rad` for the life of
+/// this run; it does NOT mutate config. All other knobs
+/// (`step_size_rad`, `tick_interval_ms`, `homer_timeout_ms`,
+/// `target_tolerance_rad`, `tracking_error_grace_ticks`) come from
+/// `safety`.
+///
+/// Use this entry point when the caller has a principled reason to
+/// loosen (or tighten) the operator-driven default. Today the only
+/// caller is [`crate::boot_orchestrator::maybe_run`], which passes
+/// `safety.boot_tracking_error_max_rad` because the orchestrator runs
+/// unattended on cold motors at boot and a ~3° budget falsely aborts
+/// every time.
+pub async fn run_with_tracking_budget(
+    state: SharedState,
+    motor: Motor,
+    from_rad: f32,
+    target_rad: f32,
+    tracking_error_max_rad: f32,
+) -> Result<(f32, u32), (String, f32)> {
     let role = motor.common.role.clone();
     let cfg = state.cfg.safety.clone();
     let tick = Duration::from_millis(cfg.tick_interval_ms.max(5) as u64);
     let timeout = Duration::from_millis(cfg.homer_timeout_ms.max(1_000) as u64);
+    let grace_ticks = cfg.tracking_error_grace_ticks;
 
     // Effective top speed: one `step_size_rad` per `tick_interval_ms`,
     // clamped to MAX_HOMER_VEL_RAD_S as a hard upper bound. With the
@@ -160,7 +192,20 @@ pub async fn run(
         // Tracking-error check: compare the current ramp setpoint to
         // the freshly-measured position via shortest signed delta so
         // an N-turn unwrapped reading doesn't trip a false abort.
-        if shortest_signed_delta(setpoint_unwrapped, measured).abs() > cfg.tracking_error_max_rad {
+        //
+        // Suppressed for the first `grace_ticks` ticks so a cold motor
+        // (one that has just been re-armed by the bus_worker's
+        // RUN_MODE + cmd_enable sequence and hasn't received a single
+        // type-2 frame yet under the new velocity command) gets a
+        // chance to start moving before the abort kicks in. Without
+        // the grace window, the homer aborts on tick 2-3 every time —
+        // the setpoint advances by `step_size_rad` per tick, but the
+        // measurement lags by one full step until the firmware loop
+        // and telemetry pipeline catch up. The `homer_timeout_ms`
+        // ceiling still backstops a motor that genuinely refuses.
+        if ticks > grace_ticks
+            && shortest_signed_delta(setpoint_unwrapped, measured).abs() > tracking_error_max_rad
+        {
             break Err(("tracking_error".into(), measured));
         }
 
