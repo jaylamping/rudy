@@ -55,7 +55,7 @@ const MAX_JOG_VEL_RAD_S: f32 = 0.5;
 /// failure shapes so SPA error-handling code is identical.
 fn preflight_to_http(role: &str, e: PreflightFailure) -> (StatusCode, Json<ApiError>) {
     let status = match &e {
-        PreflightFailure::UnknownMotor => StatusCode::NOT_FOUND,
+        PreflightFailure::UnknownActuator => StatusCode::NOT_FOUND,
         PreflightFailure::Absent => StatusCode::CONFLICT,
         PreflightFailure::NotVerified => StatusCode::FORBIDDEN,
         PreflightFailure::BootNotReady { .. }

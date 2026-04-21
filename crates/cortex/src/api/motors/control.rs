@@ -67,7 +67,7 @@ fn require_present(
     state: &SharedState,
     action: &str,
     role: &str,
-) -> Result<crate::inventory::Motor, (StatusCode, Json<ApiError>)> {
+) -> Result<crate::inventory::Actuator, (StatusCode, Json<ApiError>)> {
     let motor = state
         .inventory
         .read()

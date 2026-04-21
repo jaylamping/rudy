@@ -49,7 +49,7 @@ pub async fn get_motor(
 /// out so list / get stay 1:1 (the SPA destructures the same shape from both).
 fn summary_for(
     state: &SharedState,
-    m: &crate::inventory::Motor,
+    m: &crate::inventory::Actuator,
     latest: Option<MotorFeedback>,
 ) -> MotorSummary {
     MotorSummary {

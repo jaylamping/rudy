@@ -6,7 +6,23 @@
 
 #![allow(dead_code)] // helpers are imported per-test, some only by some tests
 
+mod fixtures;
+
 use std::io::Write;
+
+use axum::response::Response;
+use http_body_util::BodyExt;
+
+pub use fixtures::{INVENTORY_YAML, SPEC_YAML};
+
+/// Deserialize axum integration-test responses (shared by `tests/api/*.rs`).
+pub async fn body_json<T: serde::de::DeserializeOwned>(resp: Response) -> T {
+    let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+    serde_json::from_slice::<T>(&bytes).unwrap_or_else(|e| {
+        let s = std::str::from_utf8(&bytes).unwrap_or("<binary>");
+        panic!("deserialise failed: {e}; body was: {s}");
+    })
+}
 use std::sync::Arc;
 
 use cortex::audit::AuditLog;
@@ -19,61 +35,6 @@ use cortex::inventory::{Actuator, Device, Inventory};
 use cortex::reminders::ReminderStore;
 use cortex::spec;
 use cortex::state::{AppState, SharedState};
-
-const SPEC_YAML: &str = r#"
-schema_version: 2
-actuator_model: RS03
-
-firmware_limits:
-  limit_torque:
-    index: 0x700B
-    type: float
-    units: nm
-    hardware_range: [0.0, 60.0]
-  limit_spd:
-    index: 0x7017
-    type: float
-    units: rad_per_s
-    hardware_range: [0.0, 20.0]
-  run_mode:
-    index: 0x7005
-    type: uint8
-
-observables:
-  mech_pos:
-    index: 0x7019                       # type-17 shadow of 0x3016
-    type: float
-    units: rad
-  vbus:
-    index: 0x701C                       # type-17 shadow of 0x300C
-    type: float
-    units: volts
-"#;
-
-const INVENTORY_YAML: &str = r#"
-schema_version: 2
-devices:
-  - kind: actuator
-    role: shoulder_actuator_a
-    can_bus: can1
-    can_id: 0x08
-    firmware_version: "1.2.3"
-    verified: true
-    present: true
-    family:
-      kind: robstride
-      model: rs03
-  - kind: actuator
-    role: shoulder_actuator_b
-    can_bus: can1
-    can_id: 0x09
-    firmware_version: "1.2.3"
-    verified: false
-    present: true
-    family:
-      kind: robstride
-      model: rs03
-"#;
 
 /// Build a temp-rooted SharedState with mock CAN, no TLS, no WT (so we don't
 /// need cert files). The audit log goes to the per-test `tempdir`.

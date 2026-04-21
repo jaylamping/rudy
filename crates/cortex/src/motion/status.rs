@@ -89,38 +89,3 @@ impl MotionStopReason {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn motion_state_serializes_snake_case() {
-        let s = serde_json::to_string(&MotionState::Running).unwrap();
-        assert_eq!(s, r#""running""#);
-        let s = serde_json::to_string(&MotionState::Stopped).unwrap();
-        assert_eq!(s, r#""stopped""#);
-    }
-
-    #[test]
-    fn stop_reason_label_matches_audit_contract() {
-        assert_eq!(MotionStopReason::Operator.label(), "operator");
-        assert_eq!(
-            MotionStopReason::HeartbeatLapsed.label(),
-            "heartbeat_lapsed"
-        );
-        assert_eq!(MotionStopReason::Superseded.label(), "superseded");
-        assert_eq!(
-            MotionStopReason::BusError("nope".into()).label(),
-            "bus_error"
-        );
-    }
-
-    #[test]
-    fn stop_reason_detail_carries_inner_error() {
-        let r = MotionStopReason::BusError("ENOBUFS".into());
-        assert_eq!(r.detail(), "ENOBUFS");
-        let r = MotionStopReason::Operator;
-        assert_eq!(r.detail(), "operator");
-    }
-}

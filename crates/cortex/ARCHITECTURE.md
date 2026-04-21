@@ -15,4 +15,4 @@ Single crate (`cortex`) for the operator-console daemon. Top-level modules are d
 - **`types/`** — `ts-rs` DTOs and wire enums (meta, motor, system, logs, WT, …).
 - **`webtransport/`** — QUIC listener, per-session router, client frame codec.
 
-Integration tests live under `crates/cortex/tests/`; they build `cortex::build_app` and exercise the REST surface without binding ports when possible.
+Integration tests live under `crates/cortex/tests/`; they build `cortex::build_app` and exercise the REST surface without binding ports when possible. Large REST contract suites live under `tests/api/` (`meta.rs`, `inventory.rs`, `params.rs`, `control.rs`, `motion.rs`, `ops.rs`, `endpoints.rs`), each registered in `Cargo.toml` as `[[test]]` because Cargo only auto-discovers `tests/*.rs`. Mock-CAN / stub checks live under `tests/can/` (`stub.rs`, `feedback_broadcast.rs`), also via `[[test]]`. Fine-grained CAN behavior (`backoff`, `math`, `discovery`, travel, …) is covered by **unit tests** next to the library modules (`src/can/*_tests.rs`), not as separate integration binaries. Shared helpers are in `tests/common/` (`fixtures.rs` + `mod.rs`).

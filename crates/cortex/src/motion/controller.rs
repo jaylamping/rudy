@@ -34,7 +34,7 @@ use tracing::{debug, warn};
 
 use crate::audit::{AuditEntry, AuditResult};
 use crate::boot_state;
-use crate::inventory::Motor;
+use crate::inventory::Actuator;
 use crate::motion::intent::MotionIntent;
 use crate::motion::preflight::{PreflightChecks, PreflightFailure};
 use crate::motion::status::{MotionState, MotionStatus, MotionStopReason};
@@ -62,7 +62,7 @@ pub const JOG_HEARTBEAT_TTL_MS: u64 = 250;
 /// registry; the controller takes ownership.
 pub struct ControllerTask {
     pub state: SharedState,
-    pub motor: Motor,
+    pub motor: Actuator,
     pub run_id: String,
     pub intent_rx: watch::Receiver<MotionIntent>,
     pub stop: Arc<Notify>,
@@ -277,7 +277,7 @@ fn stop_reason_from_preflight(e: &PreflightFailure) -> MotionStopReason {
         | PreflightFailure::StepTooLarge { .. } => MotionStopReason::TravelLimitViolation,
         PreflightFailure::BootOutOfBand { .. }
         | PreflightFailure::BootNotReady { .. }
-        | PreflightFailure::UnknownMotor
+        | PreflightFailure::UnknownActuator
         | PreflightFailure::Absent
         | PreflightFailure::NotVerified => MotionStopReason::BootStateLost,
         PreflightFailure::LimbQuarantined { .. } => MotionStopReason::BootStateLost,
@@ -285,7 +285,7 @@ fn stop_reason_from_preflight(e: &PreflightFailure) -> MotionStopReason {
     }
 }
 
-async fn drive_velocity(state: &SharedState, motor: &Motor, vel: f32) -> Result<(), String> {
+async fn drive_velocity(state: &SharedState, motor: &Actuator, vel: f32) -> Result<(), String> {
     let Some(core) = state.real_can.clone() else {
         return Ok(());
     };
@@ -296,7 +296,7 @@ async fn drive_velocity(state: &SharedState, motor: &Motor, vel: f32) -> Result<
         .map_err(|e| format!("{e:#}"))
 }
 
-async fn drive_stop(state: &SharedState, motor: &Motor) -> Result<(), String> {
+async fn drive_stop(state: &SharedState, motor: &Actuator) -> Result<(), String> {
     let Some(core) = state.real_can.clone() else {
         return Ok(());
     };

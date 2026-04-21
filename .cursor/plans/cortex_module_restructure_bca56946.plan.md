@@ -40,13 +40,13 @@ todos:
     status: completed
   - id: p11-inline-tests
     content: Phase 11 - move every cfg(test) mod-tests block out of source into sibling _tests.rs files using cfg(test) path-include; combine related blocks per the plan
-    status: in_progress
+    status: completed
   - id: p12-tests-split
     content: Phase 12 - split tests/api_contract.rs (2859 LOC) into per-resource integration test files (api_meta, api_inventory, api_params, api_control, api_motion, api_ops, api_endpoints); split tests/common/mod.rs into tests/common/ submodules (mod, fixtures, inventory, spec); confirm test count is at least pre-split
-    status: pending
+    status: completed
   - id: p13-cleanup
     content: Phase 13 - remove back-compat aliases from lib.rs (including Motor=Actuator); downgrade pub to pub(crate) where not needed; update any external script/tool that referenced the old paths
-    status: pending
+    status: completed
   - id: p14-lint-docs
     content: Phase 14 - run cargo clippy --all-targets -D warnings; add crates/cortex/ARCHITECTURE.md with the new tree; update ADR-0004 paragraph D8 addendum if drifted
     status: completed

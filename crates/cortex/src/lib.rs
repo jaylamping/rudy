@@ -3,7 +3,7 @@
 //! The crate ships a binary (`src/main.rs`) and a library. The library exists
 //! so integration tests under `tests/` can build the same `axum::Router` and
 //! `AppState` the binary uses, without having to spawn a real OS process or
-//! TLS listener. See `tests/api_contract.rs` for the canonical consumer.
+//! TLS listener. See `tests/api/*.rs` and `tests/can/*.rs` (registered in `Cargo.toml` as `[[test]]`) for integration suites.
 //!
 //! Modules are re-exported as-is for tests; nothing here is part of a stable
 //! public API — downstream code should still treat cortex as a binary.

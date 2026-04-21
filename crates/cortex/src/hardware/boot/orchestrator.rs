@@ -362,7 +362,7 @@ pub async fn maybe_run(state: SharedState, role: String) {
 /// `None` means both attempts failed.
 async fn read_add_offset_with_retry(
     state: &SharedState,
-    motor: &crate::inventory::Motor,
+    motor: &crate::inventory::Actuator,
 ) -> Option<f32> {
     // Mock-CAN (`real_can = None`): mirror `commission` / `restore_offset` —
     // no frames; readback matches the documented stub contract (0.0 rad).

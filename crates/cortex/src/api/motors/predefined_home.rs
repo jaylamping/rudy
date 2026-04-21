@@ -1,6 +1,6 @@
 //! PUT /api/motors/:role/predefined_home — boot orchestrator neutral target.
 //!
-//! Persists `Motor.predefined_home_rad` in `inventory.yaml` via
+//! Persists the actuator row's `predefined_home_rad` in `inventory.yaml` via
 //! [`inventory::write_atomic`]. The value must lie within the motor's
 //! configured [`TravelLimits`] band (inclusive). Motors without a travel
 //! band must configure one first (`PUT .../travel_limits`).

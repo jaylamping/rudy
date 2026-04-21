@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use anyhow::{anyhow, bail, Context, Result};
 
 use crate::can::worker::WriteValue;
-use crate::inventory::Motor;
+use crate::inventory::Actuator;
 use crate::spec::ParamDescriptor;
 use crate::state::SharedState;
 use crate::types::{ParamSnapshot, ParamValue};
@@ -13,7 +13,7 @@ use super::{LinuxCanCore, PARAM_TIMEOUT};
 impl LinuxCanCore {
     pub fn write_param(
         &self,
-        motor: &Motor,
+        motor: &Actuator,
         desc: &ParamDescriptor,
         value: &serde_json::Value,
         save_after: bool,
@@ -83,7 +83,7 @@ impl LinuxCanCore {
     }
 
     pub fn refresh_all_params(&self, state: &SharedState) -> Result<()> {
-        let motors: Vec<Motor> = state
+        let motors: Vec<Actuator> = state
             .inventory
             .read()
             .expect("inventory poisoned")
@@ -112,7 +112,7 @@ impl LinuxCanCore {
         Ok(())
     }
 
-    fn read_full_snapshot(&self, state: &SharedState, motor: &Motor) -> Result<ParamSnapshot> {
+    fn read_full_snapshot(&self, state: &SharedState, motor: &Actuator) -> Result<ParamSnapshot> {
         let spec = state.spec_for(motor.robstride_model());
         let mut values = BTreeMap::new();
         for (name, desc) in spec.catalog() {
@@ -138,7 +138,7 @@ impl LinuxCanCore {
     pub(crate) fn read_named_f32(
         &self,
         state: &SharedState,
-        motor: &Motor,
+        motor: &Actuator,
         name: &str,
     ) -> Result<Option<f32>> {
         let spec = state.spec_for(motor.robstride_model());
@@ -155,7 +155,7 @@ impl LinuxCanCore {
     pub(crate) fn read_named_u32(
         &self,
         state: &SharedState,
-        motor: &Motor,
+        motor: &Actuator,
         name: &str,
     ) -> Result<Option<u32>> {
         let spec = state.spec_for(motor.robstride_model());
@@ -171,7 +171,7 @@ impl LinuxCanCore {
 
     fn read_param_value(
         &self,
-        motor: &Motor,
+        motor: &Actuator,
         name: &str,
         desc: &ParamDescriptor,
     ) -> Result<serde_json::Value> {

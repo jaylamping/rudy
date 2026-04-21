@@ -45,17 +45,5 @@ fn build_health_response(spa_embedded: bool, can_mock: bool, can_ready: bool) ->
 }
 
 #[cfg(test)]
-mod tests {
-    use super::build_health_response;
-
-    #[test]
-    fn status_tracks_spa_embed_presence() {
-        let ok = build_health_response(true, false, true);
-        assert!(ok.healthy);
-        assert_eq!(ok.status, "ok");
-
-        let degraded = build_health_response(false, false, true);
-        assert!(!degraded.healthy);
-        assert_eq!(degraded.status, "degraded");
-    }
-}
+#[path = "health_tests.rs"]
+mod tests;

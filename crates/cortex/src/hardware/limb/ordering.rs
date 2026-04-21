@@ -2,12 +2,12 @@
 
 use std::collections::BTreeMap;
 
-use crate::inventory::{Inventory, Motor};
+use crate::inventory::{Actuator, Inventory};
 
 /// Group present actuators by `limb`, returning each limb's actuators sorted in
 /// proximal-to-distal home order. Actuators without `limb` are excluded.
-pub fn ordered_motors_per_limb(inv: &Inventory) -> BTreeMap<String, Vec<&Motor>> {
-    let mut by_limb: BTreeMap<String, Vec<&Motor>> = BTreeMap::new();
+pub fn ordered_motors_per_limb(inv: &Inventory) -> BTreeMap<String, Vec<&Actuator>> {
+    let mut by_limb: BTreeMap<String, Vec<&Actuator>> = BTreeMap::new();
     for m in inv.actuators() {
         if !m.common.present {
             continue;
@@ -23,10 +23,10 @@ pub fn ordered_motors_per_limb(inv: &Inventory) -> BTreeMap<String, Vec<&Motor>>
     by_limb
 }
 
-/// Like [`ordered_motors_per_limb`] but clones each [`Motor`] so callers can
+/// Like [`ordered_motors_per_limb`] but clones each [`Actuator`] so callers can
 /// `tokio::spawn` without holding a borrow of [`Inventory`].
-pub fn ordered_motors_per_limb_owned(inv: &Inventory) -> BTreeMap<String, Vec<Motor>> {
-    let mut by_limb: BTreeMap<String, Vec<Motor>> = BTreeMap::new();
+pub fn ordered_motors_per_limb_owned(inv: &Inventory) -> BTreeMap<String, Vec<Actuator>> {
+    let mut by_limb: BTreeMap<String, Vec<Actuator>> = BTreeMap::new();
     for m in inv.actuators() {
         if !m.common.present {
             continue;

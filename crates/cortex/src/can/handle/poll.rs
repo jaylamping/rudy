@@ -2,7 +2,7 @@ use anyhow::Result;
 use chrono::Utc;
 
 use crate::boot_state;
-use crate::inventory::Motor;
+use crate::inventory::Actuator;
 use crate::state::SharedState;
 use crate::types::{MotorFeedback, ParamValue};
 
@@ -19,7 +19,7 @@ struct AuxObservables {
 
 impl LinuxCanCore {
     pub fn poll_once(&self, state: &SharedState) -> Result<()> {
-        let motors: Vec<Motor> = state
+        let motors: Vec<Actuator> = state
             .inventory
             .read()
             .expect("inventory poisoned")
@@ -45,7 +45,11 @@ impl LinuxCanCore {
         Ok(())
     }
 
-    fn read_aux_observables(&self, state: &SharedState, motor: &Motor) -> Result<AuxObservables> {
+    fn read_aux_observables(
+        &self,
+        state: &SharedState,
+        motor: &Actuator,
+    ) -> Result<AuxObservables> {
         let mech_pos = self.read_named_f32(state, motor, "mech_pos")?;
         let mech_vel = self.read_named_f32(state, motor, "mech_vel")?;
         let vbus = self.read_named_f32(state, motor, "vbus")?;
@@ -74,7 +78,7 @@ impl LinuxCanCore {
     fn merge_aux_into_latest(
         &self,
         state: &SharedState,
-        motor: &Motor,
+        motor: &Actuator,
         poll_started_ms: i64,
         aux: AuxObservables,
     ) {

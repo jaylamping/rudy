@@ -43,3 +43,7 @@ pub use patterns::{sweep, wave};
 pub use preflight::{PreflightChecks, PreflightFailure, PreflightOk};
 pub use registry::{MotionRegistry, MotionSnapshot};
 pub use status::{MotionState, MotionStatus, MotionStopReason};
+
+#[cfg(test)]
+#[path = "motion_tests.rs"]
+mod motion_tests;

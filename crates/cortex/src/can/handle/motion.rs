@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use crate::inventory::Motor;
+use crate::inventory::Actuator;
 use crate::spec::ParamDescriptor;
 use crate::state::SharedState;
 
@@ -17,7 +17,7 @@ impl LinuxCanCore {
     /// Velocity is *clamped* to the firmware-level `limit_spd`
     /// envelope before forwarding so a misbehaving caller can't bypass
     /// the firmware guard via the REST layer.
-    pub fn set_velocity_setpoint(&self, motor: &Motor, vel_rad_s: f32) -> Result<()> {
+    pub fn set_velocity_setpoint(&self, motor: &Actuator, vel_rad_s: f32) -> Result<()> {
         let handle = self.handle_for(&motor.common.can_bus)?;
         handle.set_velocity(
             self.host_id,
@@ -30,7 +30,7 @@ impl LinuxCanCore {
 
     /// RAM-write low torque AND speed limits for every present motor.
     pub fn seed_boot_low_limits(&self, state: &SharedState) {
-        let motors: Vec<Motor> = state
+        let motors: Vec<Actuator> = state
             .inventory
             .read()
             .expect("inventory poisoned")

@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::api::error::err;
 use crate::audit::{AuditEntry, AuditResult};
-use crate::inventory::{self, validate_canonical_role, Motor};
+use crate::inventory::{self, validate_canonical_role, Actuator};
 use crate::limb::JointKind;
 use crate::state::SharedState;
 use crate::types::{ApiError, SafetyEvent};
@@ -211,7 +211,7 @@ async fn do_rename(
 
     let new_inv = tokio::task::spawn_blocking(move || {
         inventory::write_atomic(&inv_path, |inv| {
-            let m: &mut Motor = inv
+            let m: &mut Actuator = inv
                 .devices
                 .iter_mut()
                 .find_map(|d| match d {

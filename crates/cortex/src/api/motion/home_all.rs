@@ -26,7 +26,7 @@ use crate::audit::{AuditEntry, AuditResult};
 use crate::boot_state::{self, BootState};
 use crate::can::slow_ramp;
 use crate::can::travel::{enforce_position_with_path, BandCheck};
-use crate::inventory::Motor;
+use crate::inventory::Actuator;
 use crate::limb::ordered_motors_per_limb_owned;
 use crate::limb_health;
 use crate::state::SharedState;
@@ -58,13 +58,13 @@ fn last_measured(state: &SharedState, role: &str, fallback: f32) -> f32 {
         .unwrap_or(fallback)
 }
 
-/// Slow-ramp to [`Motor::predefined_home_rad`] (or 0.0). Caller must skip
+/// Slow-ramp to `predefined_home_rad` on the actuator row (or 0.0). Caller must skip
 /// motors already [`BootState::Homed`]. On success does **not** transition
 /// boot state — the orchestrator emits [`SafetyEvent::Homed`] and calls
 /// [`boot_state::mark_homed`].
 async fn drive_predefined_home(
     state: SharedState,
-    motor: Motor,
+    motor: Actuator,
 ) -> Result<(f32, u32), (String, f32)> {
     let role = motor.common.role.clone();
     let bs = boot_state::current(&state, &role);
@@ -283,7 +283,7 @@ pub async fn home_all(
         let state = state.clone();
         joinset.spawn(async move {
             let all = motors;
-            let drive_queue: Vec<Motor> = all
+            let drive_queue: Vec<Actuator> = all
                 .iter()
                 .filter(|m| !m.common.joint_kind.map(|jk| jk.is_torso()).unwrap_or(false))
                 .cloned()

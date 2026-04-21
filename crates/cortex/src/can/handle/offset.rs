@@ -1,12 +1,12 @@
 use anyhow::{anyhow, Result};
 
-use crate::inventory::Motor;
+use crate::inventory::Actuator;
 use crate::state::SharedState;
 
 use super::{LinuxCanCore, PARAM_TIMEOUT};
 
 impl LinuxCanCore {
-    pub fn read_add_offset(&self, state: &SharedState, motor: &Motor) -> Result<f32> {
+    pub fn read_add_offset(&self, state: &SharedState, motor: &Actuator) -> Result<f32> {
         let spec = state.spec_for(motor.robstride_model());
         let desc = spec
             .firmware_limits
@@ -31,7 +31,7 @@ impl LinuxCanCore {
     pub fn write_add_offset_persisted(
         &self,
         state: &SharedState,
-        motor: &Motor,
+        motor: &Actuator,
         value_rad: f32,
     ) -> Result<()> {
         let spec = state.spec_for(motor.robstride_model());

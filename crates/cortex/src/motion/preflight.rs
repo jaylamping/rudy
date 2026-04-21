@@ -29,7 +29,7 @@ use chrono::Utc;
 use crate::boot_state::{self, BootState};
 use crate::can::motion::shortest_signed_delta;
 use crate::can::travel::{enforce_position_with_path, BandCheck};
-use crate::inventory::Motor;
+use crate::inventory::Actuator;
 use crate::state::SharedState;
 use crate::types::{LimbQuarantineMotor, MotorFeedback};
 
@@ -38,7 +38,7 @@ use crate::types::{LimbQuarantineMotor, MotorFeedback};
 /// [`crate::motion::status::MotionStopReason`].
 #[derive(Debug, Clone)]
 pub enum PreflightFailure {
-    UnknownMotor,
+    UnknownActuator,
     Absent,
     NotVerified,
     BootNotReady {
@@ -84,7 +84,7 @@ impl PreflightFailure {
     /// each failure shape. The SPA matches on these strings already.
     pub fn code(&self) -> &'static str {
         match self {
-            PreflightFailure::UnknownMotor => "unknown_motor",
+            PreflightFailure::UnknownActuator => "unknown_motor",
             PreflightFailure::Absent => "motor_absent",
             PreflightFailure::NotVerified => "not_verified",
             PreflightFailure::BootNotReady { .. } => "not_ready",
@@ -102,7 +102,7 @@ impl PreflightFailure {
     /// Human-readable detail for the error envelope and audit log.
     pub fn detail(&self, role: &str) -> String {
         match self {
-            PreflightFailure::UnknownMotor => format!("no motor with role={role}"),
+            PreflightFailure::UnknownActuator => format!("no motor with role={role}"),
             PreflightFailure::Absent => {
                 format!("inventory entry for {role} has present=false")
             }
@@ -167,7 +167,7 @@ impl PreflightFailure {
 /// tick doesn't have to re-read.
 #[derive(Debug, Clone)]
 pub struct PreflightOk {
-    pub motor: Motor,
+    pub motor: Actuator,
     pub feedback: MotorFeedback,
     pub boot_state: BootState,
 }
@@ -197,7 +197,7 @@ impl PreflightChecks<'_> {
             let inv = self.state.inventory.read().expect("inventory poisoned");
             inv.actuator_by_role(self.role).cloned()
         };
-        let motor = motor.ok_or(PreflightFailure::UnknownMotor)?;
+        let motor = motor.ok_or(PreflightFailure::UnknownActuator)?;
 
         if !motor.common.present {
             return Err(PreflightFailure::Absent);

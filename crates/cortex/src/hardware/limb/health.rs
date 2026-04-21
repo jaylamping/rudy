@@ -14,7 +14,7 @@ use axum::http::StatusCode;
 use axum::Json;
 
 use crate::boot_state::{self, BootState};
-use crate::inventory::Motor;
+use crate::inventory::Actuator;
 use crate::state::SharedState;
 use crate::types::{ApiError, LimbQuarantineMotor};
 
@@ -27,7 +27,7 @@ pub enum LimbStatus {
 }
 
 /// Limb grouping key: configured `limb` or the motor's own `role` when unset.
-pub fn effective_limb_id(motor: &Motor) -> String {
+pub fn effective_limb_id(motor: &Actuator) -> String {
     motor
         .common
         .limb

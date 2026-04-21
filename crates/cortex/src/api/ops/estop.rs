@@ -10,7 +10,7 @@ use chrono::Utc;
 use serde::Serialize;
 
 use crate::audit::{AuditEntry, AuditResult};
-use crate::inventory::Motor;
+use crate::inventory::Actuator;
 use crate::state::SharedState;
 use crate::types::{ApiError, SafetyEvent};
 use crate::util::session_from_headers;
@@ -26,7 +26,7 @@ pub async fn estop(
     headers: axum::http::HeaderMap,
 ) -> Result<Json<EstopResp>, (StatusCode, Json<ApiError>)> {
     let session = session_from_headers(&headers);
-    let motors: Vec<Motor> = state
+    let motors: Vec<Actuator> = state
         .inventory
         .read()
         .expect("inventory poisoned")

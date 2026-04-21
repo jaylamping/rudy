@@ -7,9 +7,6 @@ use crate::limb::JointKind;
 
 use super::travel_limits::TravelLimits;
 
-/// Backwards-compatible name for [`Actuator`] used in CAN/driver call sites during migration.
-pub type Motor = Actuator;
-
 fn default_true() -> bool {
     true
 }

@@ -37,7 +37,7 @@ use std::time::{Duration, Instant};
 
 use crate::can::motion::shortest_signed_delta;
 use crate::can::travel::{enforce_position_with_path, BandCheck};
-use crate::inventory::Motor;
+use crate::inventory::Actuator;
 use crate::state::SharedState;
 
 /// Hard cap on the velocity the homer will issue. Matches the jog endpoint's
@@ -64,7 +64,7 @@ pub const MAX_HOMER_VEL_RAD_S: f32 = 0.5;
 /// call [`run_with_tracking_budget`] directly.
 pub async fn run(
     state: SharedState,
-    motor: Motor,
+    motor: Actuator,
     from_rad: f32,
     target_rad: f32,
 ) -> Result<(f32, u32), (String, f32)> {
@@ -88,7 +88,7 @@ pub async fn run(
 /// every time.
 pub async fn run_with_tracking_budget(
     state: SharedState,
-    motor: Motor,
+    motor: Actuator,
     from_rad: f32,
     target_rad: f32,
     tracking_error_max_rad: f32,

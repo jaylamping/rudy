@@ -17,6 +17,38 @@ path = "src/main.rs"
 name = "migrate_inventory"
 path = "src/bin/migrate_inventory.rs"
 
+# REST contract suites under `tests/api/`. Cargo only auto-discovers `tests/*.rs`, so each
+# file needs an explicit `[[test]]` root (see The Cargo Book: integration tests).
+[[test]]
+name = "api_control"
+path = "tests/api/control.rs"
+[[test]]
+name = "api_endpoints"
+path = "tests/api/endpoints.rs"
+[[test]]
+name = "api_inventory"
+path = "tests/api/inventory.rs"
+[[test]]
+name = "api_meta"
+path = "tests/api/meta.rs"
+[[test]]
+name = "api_motion"
+path = "tests/api/motion.rs"
+[[test]]
+name = "api_ops"
+path = "tests/api/ops.rs"
+[[test]]
+name = "api_params"
+path = "tests/api/params.rs"
+
+# CAN-layer integration tests under `tests/can/` (mock spawn, non-Linux stub).
+[[test]]
+name = "can_stub"
+path = "tests/can/stub.rs"
+[[test]]
+name = "feedback_broadcast"
+path = "tests/can/feedback_broadcast.rs"
+
 [dependencies]
 # Core async + error plumbing
 tokio = { workspace = true }

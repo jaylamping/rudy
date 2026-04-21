@@ -18,7 +18,7 @@
 #![cfg(not(target_os = "linux"))]
 
 use cortex::can::RealCanHandle;
-use cortex::inventory::Motor;
+use cortex::inventory::Actuator;
 
 mod common;
 
@@ -28,7 +28,7 @@ mod common;
 #[tokio::test]
 async fn non_linux_read_add_offset_returns_zero() {
     let (state, _dir) = common::make_state();
-    let motor: Motor = state
+    let motor: Actuator = state
         .inventory
         .read()
         .expect("inventory poisoned")

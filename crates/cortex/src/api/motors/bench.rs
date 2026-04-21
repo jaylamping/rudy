@@ -129,7 +129,7 @@ fn spawn_runner(
     role: String,
     run_id: String,
     body: TestsBody,
-    motor: crate::inventory::Motor,
+    motor: crate::inventory::Actuator,
 ) {
     tokio::spawn(async move {
         let seq = std::sync::Arc::new(AtomicU64::new(0));
@@ -181,7 +181,7 @@ fn spawn_runner(
 async fn run_real(
     state: SharedState,
     test: TestName,
-    motor: crate::inventory::Motor,
+    motor: crate::inventory::Actuator,
     body: TestsBody,
     run_id: &str,
     role: &str,
@@ -328,7 +328,7 @@ async fn run_real(
 async fn run_real(
     state: SharedState,
     _test: TestName,
-    _motor: crate::inventory::Motor,
+    _motor: crate::inventory::Actuator,
     _body: TestsBody,
     run_id: &str,
     role: &str,
