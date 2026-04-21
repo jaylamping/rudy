@@ -48,7 +48,7 @@ impl LinuxCanCore {
             if !motor.common.desired_params.is_empty() {
                 for (name, val) in &motor.common.desired_params {
                     if let Some(desc) = spec.firmware_limits.get(name) {
-                        if let Err(e) = self.write_param(motor, desc, val, true) {
+                        if let Err(e) = self.write_param(&motor, desc, val, true) {
                             tracing::warn!(
                                 role = %motor.common.role,
                                 param = %name,

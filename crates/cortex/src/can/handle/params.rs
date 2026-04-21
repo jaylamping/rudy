@@ -328,7 +328,7 @@ impl LinuxCanCore {
     fn read_param_value(
         &self,
         motor: &Actuator,
-        name: &str,
+        _name: &str,
         desc: &ParamDescriptor,
     ) -> Result<serde_json::Value> {
         let handle = self.handle_for(&motor.common.can_bus)?;
