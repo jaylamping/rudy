@@ -291,15 +291,17 @@ pub async fn maybe_run(state: SharedState, role: String) {
 
     // Step 9: drive the slow-ramp homer to the predefined target.
     // Use the boot-specific tracking-error budget
-    // (`safety.boot_tracking_error_max_rad`) instead of the
-    // operator-driven default. The orchestrator runs unattended on
-    // cold motors at boot — the firmware velocity loop has just been
-    // re-armed by the bus_worker's RUN_MODE + cmd_enable sequence and
-    // the type-2 stream hasn't seen a single frame under the new
-    // command — so the operator-path budget (~3°) falsely aborts on
-    // tick 2-3 every time. The boot budget is roughly twice as loose
-    // (~6°) which absorbs the cold-start lag while still aborting
-    // promptly on a genuinely bound-up joint.
+    // (`safety.boot_tracking_error_max_rad`, default ~11.5°) instead
+    // of the operator-driven default (~3°). The orchestrator runs
+    // unattended on cold motors at boot — the firmware velocity loop
+    // has just been re-armed by the bus_worker's RUN_MODE +
+    // cmd_enable sequence and is dragging gravity-loaded joints
+    // (shoulder_pitch, elbow_pitch) from arbitrary starting poses
+    // through their mid-travel where the moment arm is largest. The
+    // operator-path budget falsely aborts on tick 2-3 every time
+    // under those conditions; the boot budget absorbs the sustained
+    // gravity lag while still aborting promptly on a genuinely
+    // bound-up joint via the 3-tick debounce.
     let outcome = slow_ramp::run_with_tracking_budget(
         state.clone(),
         motor.clone(),

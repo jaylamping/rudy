@@ -69,11 +69,23 @@ pub struct SafetyConfig {
     /// looser budget than the operator-driven `POST /home` is
     /// appropriate: the operator path generally fires after the motor
     /// has been jogged in this session and the firmware loop is warm,
-    /// while the boot path always starts from a dead stop. Default 0.10
-    /// rad ~= 5.7 deg — twice the operator-path budget but still tight
-    /// enough that a genuinely bound-up joint aborts within a handful of
-    /// ticks. Operator-driven homes (`POST /api/motors/:role/home`,
-    /// `POST /api/home_all`) continue to use `tracking_error_max_rad`.
+    /// while the boot path always starts from a dead stop AND has to
+    /// drag gravity-loaded joints (shoulder_pitch, elbow_pitch, etc.)
+    /// from arbitrary starting poses to the predefined home. The arm's
+    /// moment about a pitch axis can demand several Nm of static torque
+    /// the whole way, and the firmware velocity loop trades that off
+    /// against the configured current limit by lagging the commanded
+    /// velocity — which the homer sees as a growing tracking gap even
+    /// though the motor is doing the best it can. Default 0.20 rad
+    /// ~= 11.5 deg — four times the operator-path budget and roughly
+    /// the worst-case sustained lag observed on a fully-extended arm
+    /// homing through its mid-travel against gravity. A genuinely
+    /// bound-up joint will still trip the 3-tick debounce in well
+    /// under a second; the `homer_timeout_ms` ceiling backstops
+    /// anything that converges arbitrarily slowly. Operator-driven
+    /// homes (`POST /api/motors/:role/home`, `POST /api/home_all`)
+    /// continue to use the tighter `tracking_error_max_rad` because
+    /// the operator is at the keyboard and the motor is warm.
     #[serde(default = "default_boot_tracking_error_max_rad")]
     pub boot_tracking_error_max_rad: f32,
 
@@ -175,7 +187,7 @@ pub(crate) fn default_tracking_error_debounce_ticks() -> u32 {
 }
 
 pub(crate) fn default_boot_tracking_error_max_rad() -> f32 {
-    0.10
+    0.20
 }
 
 pub(crate) fn default_target_tolerance_rad() -> f32 {
