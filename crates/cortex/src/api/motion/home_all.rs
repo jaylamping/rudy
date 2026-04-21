@@ -21,6 +21,7 @@ use serde::Serialize;
 use tokio::task::JoinSet;
 use tracing::warn;
 
+use crate::api::error::err;
 use crate::audit::{AuditEntry, AuditResult};
 use crate::boot_state::{self, BootState};
 use crate::can::slow_ramp;
@@ -44,17 +45,6 @@ pub struct LimbResult {
     pub homed: Vec<String>,
     pub failed_at: Option<String>,
     pub failure_reason: Option<String>,
-}
-
-fn err(status: StatusCode, error: &str, detail: Option<String>) -> (StatusCode, Json<ApiError>) {
-    (
-        status,
-        Json(ApiError {
-            error: error.into(),
-            detail,
-            ..Default::default()
-        }),
-    )
 }
 
 fn last_measured(state: &SharedState, role: &str, fallback: f32) -> f32 {

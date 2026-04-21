@@ -19,7 +19,7 @@
 use std::time::Duration;
 
 use cortex::inventory::TravelLimits;
-use cortex::motion::intent::{MotionIntent, MotionState};
+use cortex::motion::{MotionIntent, MotionState};
 use cortex::state::SharedState;
 
 mod common;

@@ -5,10 +5,9 @@ Single crate (`cortex`) for the operator-console daemon. Top-level modules are d
 ## Module map
 
 - **`app/`** — `AppState`, daemon `bootstrap` (`run` from argv).
-- **`api/`** — Axum REST handlers (flat files today; grouped refactor planned).
-- **`can/`** — SocketCAN workers, Linux core, motion math, travel limits, mocks.
+- **`api/`** — Axum REST: `meta/` (config, health, system, logs), `inventory/`, `motors/` (incl. bench tests), `motion/`, `ops/`, plus `error.rs` / `lock_gate.rs`.
+- **`can/`** — `worker/` (per-bus SocketCAN thread), `handle/` (`LinuxCanCore`), math, travel, discovery, mocks.
 - **`config/`** — TOML config (`Config::load`), split by HTTP / WT / CAN / safety / logs / telemetry.
-- **`discovery/`** — Active hardware scan probe registry.
 - **`hardware/`** — Inventory YAML, actuator specs, boot state / orchestrator, limbs.
 - **`http/`** — Plaintext HTTP server, SPA static bundle, session header helpers.
 - **`motion/`** — Intents, controller, sweep/wave patterns, registry.

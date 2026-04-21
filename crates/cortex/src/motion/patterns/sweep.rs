@@ -6,7 +6,7 @@
 //! tokio runtime, a CAN bus, or even an `AppState`. The
 //! [`crate::motion::controller`] is the only consumer; it pipes
 //! `state.latest[role].mech_pos_rad` in on every tick and drops the
-//! returned velocity onto the bus_worker.
+//! returned velocity onto the bus worker.
 
 use crate::inventory::TravelLimits;
 
@@ -51,10 +51,6 @@ pub fn step(
     let upper = (limits.max_rad - turnaround).max(limits.min_rad);
     let lower = (limits.min_rad + turnaround).min(limits.max_rad);
 
-    // Flip when we've crossed (or are at) the inset on the side we're
-    // currently heading toward. The check uses position only, never time,
-    // so a frozen telemetry row can't fool the controller into thinking
-    // it has reached the edge when it hasn't.
     let mut direction = state.direction;
     if direction > 0.0 && pos_rad >= upper {
         direction = -1.0;
@@ -62,9 +58,6 @@ pub fn step(
         direction = 1.0;
     }
 
-    // Defensive: if the band collapsed to a point (lower >= upper after
-    // turnaround inset), command zero so we don't oscillate at full
-    // speed inside a 1 mm window.
     let vel = if upper <= lower {
         0.0
     } else {
@@ -88,12 +81,8 @@ mod tests {
     #[test]
     fn initial_direction_from_band_midpoint() {
         let l = limits(-1.0, 1.0);
-        // At the lower half of the band → move toward max.
         assert_eq!(SweepState::from_position(-0.5, &l).direction, 1.0);
-        // At the upper half → move toward min.
         assert_eq!(SweepState::from_position(0.5, &l).direction, -1.0);
-        // Exactly at the midpoint: deterministic ("toward max" wins so
-        // the test doesn't care which way; we just pin the convention).
         assert_eq!(SweepState::from_position(0.0, &l).direction, 1.0);
     }
 
@@ -101,11 +90,9 @@ mod tests {
     fn step_flips_direction_at_inset() {
         let l = limits(-1.0, 1.0);
         let s = SweepState { direction: 1.0 };
-        // Just inside the turnaround inset → keep going.
         let (v, ns) = step(0.5, s, &l, 0.1, 0.05);
         assert!(v > 0.0);
         assert_eq!(ns.direction, 1.0);
-        // Past the inset on the upper side → flip and head down.
         let (v, ns) = step(0.96, s, &l, 0.1, 0.05);
         assert!(v < 0.0);
         assert_eq!(ns.direction, -1.0);
@@ -130,8 +117,6 @@ mod tests {
 
     #[test]
     fn step_collapsed_band_returns_zero_velocity() {
-        // Turnaround inset wider than half the band → controller refuses
-        // to move rather than oscillating in a tiny window.
         let l = limits(-0.05, 0.05);
         let s = SweepState { direction: 1.0 };
         let (v, _) = step(0.0, s, &l, 0.1, 0.5);
@@ -140,9 +125,6 @@ mod tests {
 
     #[test]
     fn step_negative_speed_treated_as_magnitude() {
-        // Caller passes magnitude; sign always comes from `direction`.
-        // A negative `speed_rad_s` must NOT silently reverse direction
-        // (that would smuggle direction control out of the controller).
         let l = limits(-1.0, 1.0);
         let s = SweepState { direction: 1.0 };
         let (v, _) = step(0.0, s, &l, -0.3, 0.05);

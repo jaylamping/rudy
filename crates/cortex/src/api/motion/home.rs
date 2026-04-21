@@ -19,6 +19,7 @@ use axum::{
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
+use crate::api::error::err;
 use crate::audit::{AuditEntry, AuditResult};
 use crate::boot_state::{self, BootState};
 use crate::can::slow_ramp;
@@ -40,17 +41,6 @@ pub struct HomeResp {
     pub ok: bool,
     pub final_pos_rad: f32,
     pub ticks: u32,
-}
-
-fn err(status: StatusCode, error: &str, detail: Option<String>) -> (StatusCode, Json<ApiError>) {
-    (
-        status,
-        Json(ApiError {
-            error: error.into(),
-            detail,
-            ..Default::default()
-        }),
-    )
 }
 
 pub async fn home(

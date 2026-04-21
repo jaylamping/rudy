@@ -6,12 +6,6 @@ import type { MotionState } from "./MotionState";
  * on `state.motion_status_tx` after every successful tick (so the SPA
  * can render the live "running: sweep" badge without polling) and a
  * final time on every exit path with `state = Stopped`.
- *
- * `t_ms` is wallclock at emission so subscribers can detect a stalled
- * controller by comparing to `Date.now()`. `vel_rad_s` is whatever the
- * controller most recently *commanded* (post-clamp), not what the motor
- * reports — pair with `MotorFeedback::mech_vel_rad_s` for the measured
- * value.
  */
 export type MotionStatus = { run_id: string, role: string, 
 /**

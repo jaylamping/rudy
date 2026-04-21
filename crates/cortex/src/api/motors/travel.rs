@@ -13,6 +13,7 @@ use axum::{
 use chrono::Utc;
 use serde::Deserialize;
 
+use crate::api::error::err;
 use crate::audit::{AuditEntry, AuditResult};
 use crate::can::travel::validate_band;
 use crate::inventory::{self, Device, TravelLimits};
@@ -24,17 +25,6 @@ use crate::util::session_from_headers;
 pub struct TravelLimitsBody {
     pub min_rad: f32,
     pub max_rad: f32,
-}
-
-fn err(status: StatusCode, error: &str, detail: Option<String>) -> (StatusCode, Json<ApiError>) {
-    (
-        status,
-        Json(ApiError {
-            error: error.into(),
-            detail,
-            ..Default::default()
-        }),
-    )
 }
 
 pub async fn get_travel_limits(

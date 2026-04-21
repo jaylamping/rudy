@@ -21,7 +21,7 @@
 //!
 //! Returns a [`PreflightFailure`] enum so the REST layer can map to its
 //! existing 4xx codes and the controller can map to a
-//! [`crate::motion::intent::MotionStopReason`] without re-classifying
+//! [`crate::motion::status::MotionStopReason`] without re-classifying
 //! strings.
 
 use chrono::Utc;
@@ -35,7 +35,7 @@ use crate::types::{LimbQuarantineMotor, MotorFeedback};
 
 /// Why a motion request was refused. Each variant maps to a distinct
 /// REST status code and a distinct
-/// [`crate::motion::intent::MotionStopReason`].
+/// [`crate::motion::status::MotionStopReason`].
 #[derive(Debug, Clone)]
 pub enum PreflightFailure {
     UnknownMotor,

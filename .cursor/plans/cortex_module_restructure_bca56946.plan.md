@@ -31,16 +31,16 @@ todos:
     status: completed
   - id: p08-can
     content: Phase 8 - split can/bus_worker.rs into can/worker/ submodules (command, handle, thread, pin) and can/linux.rs into can/handle/ submodules (mod, lifecycle, params, motion, offset, poll, scan); move discovery.rs under can/; rename can/motion.rs to can/math.rs and add a pub-use shim under the old path; run scripts/check-cortex-linux-docker.sh
-    status: in_progress
+    status: completed
   - id: p09-motion
     content: Phase 9 - split motion/intent.rs into intent.rs + status.rs; move motion/sweep.rs + wave.rs under motion/patterns/
-    status: pending
+    status: completed
   - id: p10-api
     content: Phase 10 - reorganize api/ into resource subfolders (meta, inventory, motors, motion, ops), each exporting a partial Router; rename api/tests.rs (bench-routine handler) to api/motors/bench.rs to avoid the Phase 11 collision; extract api/error.rs and api/lock_gate.rs to remove the duplicated err helper and 423-Locked ceremony
-    status: pending
+    status: completed
   - id: p11-inline-tests
     content: Phase 11 - move every cfg(test) mod-tests block out of source into sibling _tests.rs files using cfg(test) path-include; combine related blocks per the plan
-    status: pending
+    status: in_progress
   - id: p12-tests-split
     content: Phase 12 - split tests/api_contract.rs (2859 LOC) into per-resource integration test files (api_meta, api_inventory, api_params, api_control, api_motion, api_ops, api_endpoints); split tests/common/mod.rs into tests/common/ submodules (mod, fixtures, inventory, spec); confirm test count is at least pre-split
     status: pending

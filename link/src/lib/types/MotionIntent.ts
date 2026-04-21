@@ -3,35 +3,7 @@
 /**
  * Closed-loop motion pattern the operator asked for. Carried in the
  * `MotionRegistry` for the lifetime of one run; the per-pattern step
- * function in [`crate::motion::sweep`] / [`crate::motion::wave`] /
- * [`crate::motion::jog`] reads it on every tick.
- *
- * The variants are intentionally minimal: if a pattern needs derived
- * state (turnaround direction, the band-edge midpoint, etc.) the
- * controller computes it once at start and stashes it inline. Keeping
- * `MotionIntent` parameter-only makes "operator updated the slider
- * mid-run" a single `swap` on a `watch::Sender` rather than a
- * destructive restart.
+ * function in [`crate::motion::patterns::sweep`] /
+ * [`crate::motion::patterns::wave`] reads it on every tick.
  */
-export type MotionIntent = { "kind": "sweep", 
-/**
- * Magnitude of the velocity setpoint, in rad/s. Always positive
- * here; the controller alternates the sign at each band edge.
- */
-speed_rad_s: number, 
-/**
- * Inset from each band edge at which the controller flips
- * direction. When the REST handler omits it, the daemon picks
- * `SWEEP_BASE_INSET_RAD + speed_rad_s * OVERSHOOT_S` so the
- * buffer scales with the motor's brake distance — a 0.5 rad/s
- * sweep gets ~10° of headroom, a 0.05 rad/s sweep ~3.6°. See
- * [`default_turnaround_rad`]. Larger values trade range for a
- * softer turnaround.
- */
-turnaround_rad: number, } | { "kind": "wave", center_rad: number, amplitude_rad: number, speed_rad_s: number, 
-/**
- * Same role as `Sweep::turnaround_rad`; defaults to
- * `WAVE_BASE_INSET_RAD + speed_rad_s * OVERSHOOT_S` when
- * omitted. See [`default_turnaround_rad`].
- */
-turnaround_rad: number, } | { "kind": "jog", vel_rad_s: number, };
+export type MotionIntent = { "kind": "sweep", speed_rad_s: number, turnaround_rad: number, } | { "kind": "wave", center_rad: number, amplitude_rad: number, speed_rad_s: number, turnaround_rad: number, } | { "kind": "jog", vel_rad_s: number, };

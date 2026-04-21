@@ -18,6 +18,7 @@ use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 use uuid::Uuid;
 
+use crate::api::error::err;
 use crate::audit::{AuditEntry, AuditResult};
 use crate::state::SharedState;
 use crate::types::{ApiError, TestLevel, TestName, TestProgress};
@@ -39,17 +40,6 @@ pub struct TestsBody {
 #[derive(Debug, Serialize)]
 pub struct TestsResp {
     pub run_id: String,
-}
-
-fn err(status: StatusCode, error: &str, detail: Option<String>) -> (StatusCode, Json<ApiError>) {
-    (
-        status,
-        Json(ApiError {
-            error: error.into(),
-            detail,
-            ..Default::default()
-        }),
-    )
 }
 
 pub async fn run_test(

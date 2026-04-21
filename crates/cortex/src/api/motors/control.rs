@@ -19,6 +19,7 @@ use axum::{
 use chrono::Utc;
 use serde::Deserialize;
 
+use crate::api::error::err;
 use crate::audit::{AuditEntry, AuditResult};
 use crate::boot_state::{self, BootState};
 use crate::can::travel::{enforce_position_with_path, BandCheck};
@@ -37,17 +38,6 @@ pub struct SetZeroBody {
     pub confirm_advanced: bool,
 }
 
-fn err(status: StatusCode, error: &str, detail: Option<String>) -> (StatusCode, Json<ApiError>) {
-    (
-        status,
-        Json(ApiError {
-            error: error.into(),
-            detail,
-            ..Default::default()
-        }),
-    )
-}
-
 fn audit(state: &SharedState, action: &str, role: &str, result: AuditResult) {
     state.audit.write(AuditEntry {
         timestamp: Utc::now(),
@@ -60,11 +50,11 @@ fn audit(state: &SharedState, action: &str, role: &str, result: AuditResult) {
     });
 }
 
-fn can_err(action: &str, role: &str, error: &anyhow::Error) -> (StatusCode, Json<ApiError>) {
+fn can_err(action: &str, role: &str, e: &anyhow::Error) -> (StatusCode, Json<ApiError>) {
     err(
         StatusCode::BAD_GATEWAY,
         "can_command_failed",
-        Some(format!("{action} failed for {role}: {error:#}")),
+        Some(format!("{action} failed for {role}: {e:#}")),
     )
 }
 

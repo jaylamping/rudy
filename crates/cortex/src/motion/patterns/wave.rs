@@ -1,14 +1,10 @@
 //! Wave pattern: symmetric oscillation around a fixed center.
 //!
-//! Mechanically identical to [`crate::motion::sweep`] except the
+//! Mechanically identical to [`super::sweep`] except the
 //! turnaround thresholds are `center ± amplitude` instead of the band
 //! edges. Sharing the same shape lets the controller treat both
 //! patterns through the same per-tick branch — only the
 //! `MotionIntent` variant the controller pulls parameters from changes.
-//!
-//! The center is captured at start and clipped against the live travel
-//! band on every tick so a mid-run band shrink can't push the
-//! oscillation outside.
 
 use crate::inventory::TravelLimits;
 
@@ -32,11 +28,6 @@ impl WaveState {
 /// Compute the velocity setpoint for the next tick of a wave. Pure
 /// function; the controller pipes the live `mech_pos_rad` in and threads
 /// the returned `WaveState` for the next call.
-///
-/// `center_rad` and `amplitude_rad` define the oscillation window;
-/// both are clipped to the live `TravelLimits` band so a mid-run band
-/// edit (operator narrows the band while the wave is running) doesn't
-/// push the oscillation outside.
 pub fn step(
     pos_rad: f32,
     state: WaveState,
@@ -50,8 +41,6 @@ pub fn step(
     let amp = amplitude_rad.abs();
     let turnaround = turnaround_rad.max(0.0);
 
-    // Clip the oscillation window to the live band first; the
-    // turnaround inset is then applied inside the clipped window.
     let center = center_rad.clamp(limits.min_rad, limits.max_rad);
     let raw_upper = (center + amp).min(limits.max_rad);
     let raw_lower = (center - amp).max(limits.min_rad);
@@ -90,11 +79,9 @@ mod tests {
     fn wave_oscillates_around_center() {
         let l = limits(-1.0, 1.0);
         let s = WaveState { direction: 1.0 };
-        // Below center+amplitude → keep going up.
         let (v, ns) = step(0.0, s, &l, 0.0, 0.5, 0.1, 0.0);
         assert!(v > 0.0);
         assert_eq!(ns.direction, 1.0);
-        // At/above center+amplitude → flip.
         let (v, ns) = step(0.55, s, &l, 0.0, 0.5, 0.1, 0.0);
         assert!(v < 0.0);
         assert_eq!(ns.direction, -1.0);
@@ -102,11 +89,8 @@ mod tests {
 
     #[test]
     fn wave_clips_to_band() {
-        // Band narrower than requested amplitude → wave collapses to
-        // the band itself (and turnaround inset still applies inside).
         let l = limits(-0.3, 0.3);
         let s = WaveState { direction: 1.0 };
-        // At max of clipped band, must flip.
         let (v, ns) = step(0.31, s, &l, 0.0, 1.0, 0.1, 0.0);
         assert!(v < 0.0);
         assert_eq!(ns.direction, -1.0);
@@ -130,15 +114,10 @@ mod tests {
 
     #[test]
     fn wave_clips_center_to_band() {
-        // Operator asks for a center outside the band → controller
-        // clips and oscillates around the nearest band edge.
         let l = limits(-1.0, 1.0);
         let s = WaveState { direction: 1.0 };
-        // Center clipped to +1.0; amplitude 0.5 fits inside band so
-        // window is [+0.5, +1.0].
         let (v, ns) = step(0.6, s, &l, 1.5, 0.5, 0.1, 0.0);
         assert!(v > 0.0);
-        // Past upper.
         let (v, _ns) = step(1.0, ns, &l, 1.5, 0.5, 0.1, 0.0);
         assert!(v < 0.0);
     }

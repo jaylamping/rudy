@@ -9,22 +9,12 @@ use axum::{
 use chrono::Utc;
 use serde::Deserialize;
 
+use crate::api::error::err;
 use crate::audit::{AuditEntry, AuditResult};
 use crate::inventory::{self, Device};
 use crate::state::SharedState;
 use crate::types::ApiError;
 use crate::util::session_from_headers;
-
-fn err(status: StatusCode, error: &str, detail: Option<String>) -> (StatusCode, Json<ApiError>) {
-    (
-        status,
-        Json(ApiError {
-            error: error.into(),
-            detail,
-            ..Default::default()
-        }),
-    )
-}
 
 /// Full per-motor record (typed scalars + free-form `extra` map). Returned
 /// as a JSON object; the SPA renders it in a key/value table on the

@@ -10,6 +10,7 @@ use axum::{
 use chrono::Utc;
 use serde::Serialize;
 
+use crate::api::error::err;
 use crate::audit::{AuditEntry, AuditResult};
 use crate::inventory::{self, Device};
 use crate::state::SharedState;
@@ -25,17 +26,6 @@ pub async fn list_devices(State(state): State<SharedState>) -> Json<Vec<Device>>
 pub struct RemoveDeviceResp {
     pub ok: bool,
     pub role: String,
-}
-
-fn err(status: StatusCode, error: &str, detail: Option<String>) -> (StatusCode, Json<ApiError>) {
-    (
-        status,
-        Json(ApiError {
-            error: error.into(),
-            detail,
-            ..Default::default()
-        }),
-    )
 }
 
 pub async fn remove_device(

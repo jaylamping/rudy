@@ -18,10 +18,6 @@ use tracing::warn;
 
 use crate::config::Config;
 use crate::inventory::Inventory;
-#[cfg(not(target_os = "linux"))]
-use crate::inventory::Motor;
-#[cfg(not(target_os = "linux"))]
-use crate::spec::ParamDescriptor;
 use crate::state::SharedState;
 
 pub mod backoff;
@@ -36,83 +32,23 @@ pub mod travel;
 use discovery::HardwareScanReport;
 
 #[cfg(target_os = "linux")]
-pub mod bus_worker;
+pub mod worker;
+#[cfg(target_os = "linux")]
+pub use worker as bus_worker;
 
 #[cfg(target_os = "linux")]
-pub mod linux;
+pub mod handle;
+#[cfg(target_os = "linux")]
+pub use handle as linux;
 
 #[cfg(target_os = "linux")]
-pub use linux::LinuxCanCore as RealCanHandle;
+pub use handle::LinuxCanCore as RealCanHandle;
 
 #[cfg(not(target_os = "linux"))]
-#[derive(Debug)]
-pub struct RealCanHandle;
+mod stub;
 
 #[cfg(not(target_os = "linux"))]
-#[allow(dead_code)]
-impl RealCanHandle {
-    pub fn write_param(
-        &self,
-        _motor: &Motor,
-        _desc: &ParamDescriptor,
-        _value: &serde_json::Value,
-        _save_after: bool,
-    ) -> Result<serde_json::Value> {
-        anyhow::bail!("real CAN is only available on Linux targets")
-    }
-
-    pub fn enable(&self, _motor: &Motor) -> Result<()> {
-        anyhow::bail!("real CAN is only available on Linux targets")
-    }
-
-    pub fn stop(&self, _motor: &Motor) -> Result<()> {
-        anyhow::bail!("real CAN is only available on Linux targets")
-    }
-
-    pub fn save_to_flash(&self, _motor: &Motor) -> Result<()> {
-        anyhow::bail!("real CAN is only available on Linux targets")
-    }
-
-    pub fn set_zero(&self, _motor: &Motor) -> Result<()> {
-        anyhow::bail!("real CAN is only available on Linux targets")
-    }
-
-    /// Mock-CAN equivalent of [`linux::LinuxCanCore::read_add_offset`].
-    ///
-    /// Per the commissioned-zero plan, the mock equivalent returns
-    /// `Ok(0.0)` so contract tests that exercise the commission
-    /// endpoint and boot orchestrator on non-Linux dev hosts (mac /
-    /// Windows) don't need a real CAN bus. This is *only* useful for
-    /// macOS-style developer tests that hold a `RealCanHandle` directly
-    /// — the production daemon path uses `state.real_can = None` for
-    /// mock mode, and call sites short-circuit before reaching this
-    /// stub. See `crates/cortex/src/can/mod.rs` `non_linux_stub_tests`
-    /// for the test that pins this behavior.
-    pub fn read_add_offset(&self, _state: &SharedState, _motor: &Motor) -> Result<f32> {
-        Ok(0.0)
-    }
-
-    pub fn write_add_offset_persisted(
-        &self,
-        _state: &SharedState,
-        _motor: &Motor,
-        _value_rad: f32,
-    ) -> Result<()> {
-        anyhow::bail!("real CAN is only available on Linux targets")
-    }
-
-    pub fn set_velocity_setpoint(&self, _motor: &Motor, _vel_rad_s: f32) -> Result<()> {
-        anyhow::bail!("real CAN is only available on Linux targets")
-    }
-
-    pub fn refresh_all_params(&self, _state: &SharedState) -> Result<()> {
-        anyhow::bail!("real CAN is only available on Linux targets")
-    }
-
-    pub fn poll_once(&self, _state: &SharedState) -> Result<()> {
-        anyhow::bail!("real CAN is only available on Linux targets")
-    }
-}
+pub use stub::RealCanHandle;
 
 // `inventory` is only consumed by the linux branch below; keep the parameter
 // name for non-linux dev builds so the docs read naturally.

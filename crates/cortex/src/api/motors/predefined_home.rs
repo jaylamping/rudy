@@ -14,6 +14,7 @@ use chrono::Utc;
 use serde::Deserialize;
 use serde::Serialize;
 
+use crate::api::error::err;
 use crate::audit::{AuditEntry, AuditResult};
 use crate::inventory;
 use crate::state::SharedState;
@@ -30,17 +31,6 @@ pub struct PredefinedHomeResp {
     pub ok: bool,
     pub role: String,
     pub predefined_home_rad: f32,
-}
-
-fn err(status: StatusCode, error: &str, detail: Option<String>) -> (StatusCode, Json<ApiError>) {
-    (
-        status,
-        Json(ApiError {
-            error: error.into(),
-            detail,
-            ..Default::default()
-        }),
-    )
 }
 
 pub async fn put_predefined_home(

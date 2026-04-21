@@ -2569,7 +2569,7 @@ async fn motion_sweep_without_travel_limits_self_terminates() {
         if frame.run_id != run_id {
             continue;
         }
-        if matches!(frame.state, cortex::motion::intent::MotionState::Stopped) {
+        if matches!(frame.state, cortex::motion::MotionState::Stopped) {
             assert_eq!(frame.reason.as_deref(), Some("travel_limit_violation"));
             saw_violation = true;
         }

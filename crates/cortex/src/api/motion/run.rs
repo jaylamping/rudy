@@ -27,6 +27,7 @@ use chrono::Utc;
 use http::HeaderMap;
 use serde::{Deserialize, Serialize};
 
+use crate::api::error::err;
 use crate::audit::{AuditEntry, AuditResult};
 use crate::motion::intent::default_turnaround_rad;
 use crate::motion::{MotionIntent, PreflightFailure};
@@ -48,17 +49,6 @@ const MAX_PATTERN_VEL_RAD_S: f32 = 2.0;
 /// operator's dead-man heartbeat plus the band check, and 0.5 rad/s is
 /// a comfortable maximum for a finger-held control.
 const MAX_JOG_VEL_RAD_S: f32 = 0.5;
-
-fn err(status: StatusCode, error: &str, detail: Option<String>) -> (StatusCode, Json<ApiError>) {
-    (
-        status,
-        Json(ApiError {
-            error: error.into(),
-            detail,
-            ..Default::default()
-        }),
-    )
-}
 
 /// Map a [`PreflightFailure`] to an HTTP error envelope. Mirrors the
 /// status codes the existing `/jog` handler returns for the equivalent

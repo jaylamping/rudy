@@ -9,6 +9,7 @@ use axum::{extract::State, http::StatusCode, Json};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
+use crate::api::error::err;
 use crate::audit::{AuditEntry, AuditResult};
 use crate::can::travel::validate_band;
 use crate::inventory::{
@@ -36,17 +37,6 @@ pub struct OnboardRobstrideBody {
 pub struct OnboardRobstrideResp {
     pub ok: bool,
     pub role: String,
-}
-
-fn err(status: StatusCode, error: &str, detail: Option<String>) -> (StatusCode, Json<ApiError>) {
-    (
-        status,
-        Json(ApiError {
-            error: error.into(),
-            detail,
-            ..Default::default()
-        }),
-    )
 }
 
 fn validate_limb_segment(limb: &str) -> Result<(), String> {

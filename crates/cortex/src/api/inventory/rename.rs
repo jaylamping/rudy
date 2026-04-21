@@ -23,6 +23,7 @@ use axum::{
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
+use crate::api::error::err;
 use crate::audit::{AuditEntry, AuditResult};
 use crate::inventory::{self, validate_canonical_role, Motor};
 use crate::limb::JointKind;
@@ -64,17 +65,6 @@ pub struct RenameResp {
     /// re-enable failed: <reason>" in one banner.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub auto_reenable_error: Option<String>,
-}
-
-fn err(status: StatusCode, error: &str, detail: Option<String>) -> (StatusCode, Json<ApiError>) {
-    (
-        status,
-        Json(ApiError {
-            error: error.into(),
-            detail,
-            ..Default::default()
-        }),
-    )
 }
 
 pub async fn rename(

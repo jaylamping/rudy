@@ -28,6 +28,8 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use tokio::time::Instant;
 
+use crate::api::error::err;
+use crate::api::lock_gate;
 use crate::audit::{AuditEntry, AuditResult};
 use crate::boot_state::{self, BootState};
 use crate::can::motion::shortest_signed_delta;
@@ -58,32 +60,14 @@ pub struct JogResp {
     pub clamped_vel_rad_s: f32,
 }
 
-fn err(status: StatusCode, error: &str, detail: Option<String>) -> (StatusCode, Json<ApiError>) {
-    (
-        status,
-        Json(ApiError {
-            error: error.into(),
-            detail,
-            ..Default::default()
-        }),
-    )
-}
-
 pub async fn jog(
     State(state): State<SharedState>,
     headers: axum::http::HeaderMap,
     Path(role): Path<String>,
     Json(body): Json<JogBody>,
 ) -> Result<Json<JogResp>, (StatusCode, Json<ApiError>)> {
+    lock_gate::require_control(&state, &headers)?;
     let session = session_from_headers(&headers);
-
-    if let Err(holder) = state.ensure_control(session.as_deref().unwrap_or("")) {
-        return Err(err(
-            StatusCode::from_u16(423).unwrap(),
-            "lock_held",
-            Some(format!("control lock is held by session {holder}")),
-        ));
-    }
 
     let motor = {
         let inv = state.inventory.read().expect("inventory poisoned");
