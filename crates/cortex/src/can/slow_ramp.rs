@@ -22,14 +22,14 @@
 //!   3. Re-runs the path-aware band check on the current measured position
 //!      vs. the next setpoint.
 //!   4. Issues a velocity setpoint sized so the motor advances by
-//!      ~`step_size_rad` per `tick_interval_ms` (default ~0.4 rad/s â‰ˆ
+//!      ~`step_size_rad` per `tick_interval_ms` (default ~0.4 rad/s ≈
 //!      23 deg/s), in the direction of the remaining signed delta.
 //!   5. Aborts on tracking error after `tracking_error_debounce_ticks`
 //!      consecutive **fresh** over-budget samples (post grace), on
 //!      band/path violation after `band_violation_debounce_ticks`
-//!      consecutive fresh out-of-band samples (post grace) â€” the
+//!      consecutive fresh out-of-band samples (post grace) — the
 //!      debounce keeps a single-tick gravity-driven overshoot of a
-//!      home target near the band edge from killing the whole run â€”
+//!      home target near the band edge from killing the whole run —
 //!      or on `homer_timeout_ms`.
 //!
 //! Velocity profile: the per-tick velocity command is tapered by the
@@ -51,7 +51,7 @@
 //! gravity-loaded joints from false-aborting on the very approach
 //! they're supposed to be making.
 //!
-//! On EVERY exit path â€” success, abort, or timeout â€” the motor is
+//! On EVERY exit path — success, abort, or timeout — the motor is
 //! commanded to stop (type-4) and `state.enabled` is cleared. Mock-mode
 //! (`state.real_can.is_none()`) skips the I/O and simulates instant
 //! tracking so contract tests can pin the success path without
@@ -119,8 +119,8 @@ fn tracking_error_should_abort(
 
 /// Returns `true` when the homer should abort with `path_violation`.
 ///
-/// Mirrors [`tracking_error_should_abort`] in shape â€” same flat
-/// argument list, same gate semantics â€” so the loop body reads as two
+/// Mirrors [`tracking_error_should_abort`] in shape — same flat
+/// argument list, same gate semantics — so the loop body reads as two
 /// parallel one-line decisions rather than two different control
 /// shapes. The "why" is in `safety.band_violation_debounce_ticks`'s
 /// docstring; the short version is that the slow-ramp commands
@@ -132,7 +132,7 @@ fn tracking_error_should_abort(
 /// `is_violation` is `true` when this tick's
 /// `enforce_position_with_path` returned `OutOfBand` or
 /// `PathViolation` against `last_measured` (or, in the OutOfBand case,
-/// `setpoint_unwrapped` â€” both feed the same gate because the
+/// `setpoint_unwrapped` — both feed the same gate because the
 /// caller-visible reason string is the same and the recovery is the
 /// same).
 ///
@@ -178,7 +178,7 @@ fn band_violation_should_abort(
 /// **target**. That works when the home target sits comfortably inside
 /// the band, but fails when the target is near (or coincident with) a
 /// band edge: the motor reaches its tapered final-approach velocity
-/// *and* gravity / inertia carry it past the target by â‰ª step_size_rad,
+/// *and* gravity / inertia carry it past the target by ≪ step_size_rad,
 /// which lands it outside the band before the reactive
 /// direction-flip logic in `governing` can reverse the velocity command.
 ///
@@ -194,7 +194,7 @@ fn band_violation_should_abort(
 /// ```
 ///
 /// so the motor's commanded velocity smoothly approaches zero as it
-/// nears whichever boundary it would hit first â€” the home target OR
+/// nears whichever boundary it would hit first — the home target OR
 /// the band edge. Importantly this is a **predictive** cap (computed
 /// from the current `last_measured`, before the next velocity command
 /// goes out), where the existing reactive flip via `governing` only
@@ -208,7 +208,7 @@ fn band_violation_should_abort(
 /// `vel = 0`).
 ///
 /// Uses principal angles (`wrap_to_pi`) on `last_measured` because the
-/// stored `travel_limits` are likewise principal-angle bounds â€”
+/// stored `travel_limits` are likewise principal-angle bounds —
 /// matches the convention `enforce_position_with_path` uses for the
 /// abort check.
 fn band_edge_distance(
@@ -234,17 +234,17 @@ fn band_edge_distance(
 ///
 /// `from_rad` is the operator-supplied (or telemetry-snapshotted)
 /// current position; `target_rad` is the principal-angle home target.
-/// Both pre-conditions â€” control-lock, BootState gate, band check â€”
+/// Both pre-conditions — control-lock, BootState gate, band check —
 /// are the caller's responsibility. This function is safe to call from
 /// either an HTTP handler or the boot orchestrator; it does NOT
 /// transition `BootState` itself, audit-log the outcome, or emit any
-/// `SafetyEvent` â€” those are domain concerns the caller owns so the
+/// `SafetyEvent` — those are domain concerns the caller owns so the
 /// orchestrator can route them through its own state machine.
 ///
 /// Convenience wrapper that uses the operator-driven tracking-error
 /// budget (`safety.tracking_error_max_rad`). Callers that need a
-/// different budget â€” currently just the boot orchestrator, which
-/// drives cold motors at boot and warrants more headroom â€” should
+/// different budget — currently just the boot orchestrator, which
+/// drives cold motors at boot and warrants more headroom — should
 /// call [`run_with_tracking_budget`] directly.
 pub async fn run(
     state: SharedState,
@@ -289,7 +289,7 @@ pub async fn run_with_tracking_budget(
     // The per-tick band check below still re-reads the live inventory
     // via `enforce_position_with_path` so a config change mid-ramp
     // (`PUT /api/motors/:role/limits`) still aborts cleanly. The cap is
-    // an opportunistic safety net â€” being one config-version stale on
+    // an opportunistic safety net — being one config-version stale on
     // it can at worst either mildly under-protect (limits widened, motor
     // decelerates more aggressively than necessary) or mildly over-cap
     // (limits tightened, but the live `enforce_position_with_path`
@@ -359,12 +359,12 @@ pub async fn run_with_tracking_budget(
     // Periodic info-level progress log. Default tick is 50 ms, so
     // `progress_every_ticks = 20` emits one progress line per second.
     // Cheap enough to leave on at info during real homes (the longest
-    // ones are bounded by `homer_timeout_ms`, default 30 s â†’ ~30
+    // ones are bounded by `homer_timeout_ms`, default 30 s → ~30
     // lines), expensive enough to skip in the noisy unit-test flood.
     // Tests use a 5 ms tick + 5 s timeout, which would produce 200
     // periodic lines per stuck-motor test if we kept the same
     // interval, so we floor at "every 1 s of wall-clock if possible,
-    // else every 200 ticks" â€” same idea, no per-test spam.
+    // else every 200 ticks" — same idea, no per-test spam.
     let progress_every_ticks = (1_000 / cfg.tick_interval_ms.max(1)).max(20);
 
     let outcome = loop {
@@ -439,7 +439,7 @@ pub async fn run_with_tracking_budget(
         // mid-ramp (or the motor drifting out of band under us)
         // aborts cleanly. Note: this check uses **live** inventory
         // (re-read every tick) so a `PUT /api/motors/:role/limits`
-        // tightens the band on the very next iteration â€” the
+        // tightens the band on the very next iteration — the
         // `limits_snapshot` taken at entry is only consulted by the
         // predictive band-edge velocity cap below.
         let check =
@@ -487,7 +487,7 @@ pub async fn run_with_tracking_budget(
         //
         // Using `remaining` alone (the original implementation) made
         // the homer "feed-forward only": the moment the setpoint hit
-        // the target, vel was commanded to zero â€” even if the motor
+        // the target, vel was commanded to zero — even if the motor
         // was still 2-3Â° short because the firmware velocity loop
         // tapered to a stall against gravity/static friction on the
         // final approach. The motor then sat in vel=0 hold mode
@@ -519,9 +519,9 @@ pub async fn run_with_tracking_budget(
         //     overrun = motor AHEAD of setpoint   (= +signed_errÂ·dir)
         //
         // Lag is the binding/stall mode the tracking-error gate is
-        // designed to catch â€” it feeds `err_rad` below. Overrun is
+        // designed to catch — it feeds `err_rad` below. Overrun is
         // the gravity-assisted mode (shoulder_pitch / elbow_pitch
-        // falling toward a low-gravity neutral pose under a payload â€”
+        // falling toward a low-gravity neutral pose under a payload —
         // firmware velocity-loop overshoot + gravity carry the motor
         // past the virtual setpoint each tick). It feeds `lag_scale`
         // a few lines down so the homer brakes commanded velocity as
@@ -559,8 +559,8 @@ pub async fn run_with_tracking_budget(
         // into trajectory. At an overrun of one `step_size_rad` we
         // command vel=0 and let the setpoint catch up; smaller
         // overruns get a linear ease-off. Combined with the one-sided
-        // `tracking_error_should_abort` gate below â€” overrun never
-        // counts toward the tracking abort â€” this keeps
+        // `tracking_error_should_abort` gate below — overrun never
+        // counts toward the tracking abort — this keeps
         // gravity-assisted homes (shoulder_pitch falling toward its
         // low-gravity neutral pose) from either tripping a spurious
         // `tracking_error` abort OR running unboundedly past the
@@ -569,7 +569,7 @@ pub async fn run_with_tracking_budget(
         let vel = direction * nominal_speed * approach_scale * lag_scale;
 
         // The band-edge cap is the most diagnostic single piece of
-        // information for "is fix #2 actually doing anything?" â€” when
+        // information for "is fix #2 actually doing anything?" — when
         // it's the binding constraint (i.e., the band edge is closer
         // than the home target), we know the homer would have
         // commanded a faster velocity but for the cap, and the
@@ -610,7 +610,7 @@ pub async fn run_with_tracking_budget(
 
         // Per-tick trace at debug. Ten-ish fields is a lot for one
         // line, but every field here has been wished for at least
-        // once in past homing post-mortems â€” `is_fresh` tells you
+        // once in past homing post-mortems — `is_fresh` tells you
         // whether the tracking-error gate ran this tick, the two
         // `consec_*` counters tell you how close we are to a debounce
         // trip, `edge_capped` tells you whether the band-edge cap is
@@ -662,7 +662,7 @@ pub async fn run_with_tracking_budget(
         // One-sided: only the LAG portion of the signed error feeds
         // the abort gate (see the lag/overrun decomposition near the
         // velocity computation above). Overrun is bounded by
-        // `lag_scale` and is not a tracking failure â€” it just means
+        // `lag_scale` and is not a tracking failure — it just means
         // gravity is doing some of the work and the firmware velocity
         // loop will catch up on the next tick. Re-derive from the
         // SAME `last_measured` mock-mode may have just rewritten (so
@@ -696,7 +696,7 @@ pub async fn run_with_tracking_budget(
     };
 
     // Always stop the motor before returning. Errors here are logged
-    // but don't change the outcome â€” the watchdog and firmware
+    // but don't change the outcome — the watchdog and firmware
     // canTimeout backstop us if cmd_stop didn't reach the bus.
     if let Some(core) = state.real_can.clone() {
         let motor_for_stop = motor.clone();
@@ -712,7 +712,7 @@ pub async fn run_with_tracking_budget(
     // post-mortem: ticks, elapsed_ms, where the motor ended up, where
     // the setpoint ended up, distance to target, and how close we
     // came to either debounce trip. The orchestrator and operator
-    // home handlers each emit their own outcome lines too â€” those
+    // home handlers each emit their own outcome lines too — those
     // capture the *domain* meaning (boot orchestrator marked Homed,
     // operator received 200 OK), where this one captures the
     // *control loop* meaning.
