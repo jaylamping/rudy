@@ -4,6 +4,8 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 description = "Cortex daemon: CAN bus owner, REST + WebTransport surface"
+# Two bins (`cortex`, `migrate_inventory`); `cargo run` must target one.
+default-run = "cortex"
 
 [lib]
 name = "cortex"
