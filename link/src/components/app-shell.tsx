@@ -1,7 +1,6 @@
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import {
   Activity,
-  Cog,
   Gamepad2,
   HardDrive,
   LayoutDashboard,
@@ -38,7 +37,6 @@ const NAV: readonly NavItem[] = [
   { to: "/", label: "Overview", Icon: LayoutDashboard, exact: true },
   { to: "/devices", label: "Devices", Icon: HardDrive },
   { to: "/telemetry", label: "Telemetry", Icon: Activity },
-  { to: "/params", label: "Params", Icon: Cog },
   { to: "/jog", label: "Jog", Icon: Gamepad2 },
   { to: "/viz", label: "Viz", Icon: View },
   { to: "/logs", label: "Logs", Icon: ScrollText },

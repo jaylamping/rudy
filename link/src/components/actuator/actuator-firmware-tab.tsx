@@ -1,7 +1,8 @@
 // Firmware tab: the full parameter catalog for one motor.
 //
-// Reuses `ParamRow` (writable + observables) from `_app.params.tsx`'s
-// extracted version, plus bulk "Sync drifted" to push inventory desired values.
+// Renders the writable firmware-limit rows (via `ParamRow`) plus a
+// read-only observables table, and offers bulk "Sync drifted" to push
+// inventory desired values to the device.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
@@ -35,11 +36,14 @@ export function ActuatorFirmwareTab({ role }: { role: string }) {
       ),
     [paramsQ.data],
   );
-  // Mirror the classifier in `_app.params.tsx`: split on the spec
-  // section the param came from (`writable`), not on the presence of
-  // `hardware_range`. Keeps writable enums/counters
-  // (`run_mode`, `can_timeout`, `zero_sta`, `damper`, `add_offset`)
-  // out of the read-only observables table.
+  // Split on the spec section the param came from (`writable`), not on
+  // the presence of `hardware_range`. Several firmware-limit params
+  // (`run_mode`, `can_timeout`, `zero_sta`, `damper`, `add_offset`) are
+  // writable but have no numeric range — they're enums or counters — so
+  // a `hardware_range`-based gate would misclassify them as observables.
+  // The cortex `PUT /api/motors/:role/params/:name` handler validates
+  // against `spec.firmware_limits` directly, so this flag is the
+  // canonical "the server will accept a write to me" signal.
   const editable = entries.filter((p) => p.writable);
   const observables = entries.filter((p) => !p.writable);
   const driftCount = useMemo(
