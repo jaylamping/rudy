@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 description = "Cortex daemon: CAN bus owner, REST + WebTransport surface"
-# Two bins (`cortex`, `migrate_inventory`); `cargo run` must target one.
+# Bins: `cortex`, `migrate_inventory`, `repair_inventory`. `cargo run` targets `cortex`.
 default-run = "cortex"
 
 [lib]
@@ -18,6 +18,10 @@ path = "src/main.rs"
 [[bin]]
 name = "migrate_inventory"
 path = "src/bin/migrate_inventory.rs"
+
+[[bin]]
+name = "repair_inventory"
+path = "src/bin/repair_inventory.rs"
 
 # REST contract suites under `tests/api/`. Cargo only auto-discovers `tests/*.rs`, so each
 # file needs an explicit `[[test]]` root (see The Cargo Book: integration tests).

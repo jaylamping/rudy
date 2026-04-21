@@ -1,5 +1,95 @@
 use super::*;
 
+use crate::limb::JointKind;
+
+fn minimal_actuator(
+    role: &str,
+    can_bus: &str,
+    can_id: u8,
+    limb: Option<&str>,
+    joint: Option<JointKind>,
+) -> Device {
+    Device::Actuator(Actuator {
+        common: ActuatorCommon {
+            role: role.into(),
+            can_bus: can_bus.into(),
+            can_id,
+            present: true,
+            verified: false,
+            commissioned_at: None,
+            firmware_version: None,
+            travel_limits: None,
+            commissioned_zero_offset: None,
+            active_report_persisted: false,
+            predefined_home_rad: None,
+            homing_speed_rad_s: None,
+            limb: limb.map(String::from),
+            joint_kind: joint,
+            notes_yaml: None,
+            desired_params: std::collections::BTreeMap::new(),
+        },
+        family: ActuatorFamily::Robstride {
+            model: RobstrideModel::Rs03,
+        },
+    })
+}
+
+#[test]
+fn repair_aligns_role_to_limb_and_joint() {
+    let mut inv = Inventory {
+        schema_version: Some(2),
+        devices: vec![minimal_actuator(
+            "right_arm.shoulder_pitch",
+            "can0",
+            8,
+            Some("right_arm"),
+            Some(JointKind::ShoulderRoll),
+        )],
+    };
+    let changes = repair_canonical_actuator_roles(&mut inv).expect("repair");
+    assert_eq!(
+        changes,
+        vec![(
+            "right_arm.shoulder_pitch".to_string(),
+            "right_arm.shoulder_roll".to_string()
+        )]
+    );
+    assert_eq!(
+        inv.actuator_by_role("right_arm.shoulder_roll")
+            .expect("renamed")
+            .common
+            .can_id,
+        8
+    );
+    inv.validate().expect("valid after repair");
+}
+
+#[test]
+fn repair_fails_if_target_role_taken() {
+    let inv = Inventory {
+        schema_version: Some(2),
+        devices: vec![
+            minimal_actuator(
+                "right_arm.shoulder_pitch",
+                "can0",
+                8,
+                Some("right_arm"),
+                Some(JointKind::ShoulderRoll),
+            ),
+            minimal_actuator(
+                "right_arm.shoulder_roll",
+                "can0",
+                9,
+                Some("right_arm"),
+                Some(JointKind::ShoulderRoll),
+            ),
+        ],
+    };
+    let mut inv = inv;
+    let err = repair_canonical_actuator_roles(&mut inv).expect_err("conflict");
+    assert!(err.to_string().contains("already used"));
+}
+
 #[test]
 fn validate_rejects_duplicate_can_id_same_bus() {
     let inv = Inventory {

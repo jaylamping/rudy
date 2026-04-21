@@ -12,7 +12,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::limb::JointKind;
@@ -33,7 +33,7 @@ pub use devices::{
 pub use error::InventoryError;
 pub use migration::migrate_v1_yaml_to_v2_inventory;
 pub use role::{validate_canonical_role, validate_role_format};
-pub use store::{ensure_seeded, write_atomic};
+pub use store::{ensure_seeded, write_atomic, write_replace};
 pub use travel_limits::TravelLimits;
 
 pub(crate) const INVENTORY_SCHEMA_V2: u32 = 2;
@@ -203,6 +203,69 @@ pub fn ordered_actuators_per_limb(inv: &Inventory) -> BTreeMap<String, Vec<&Actu
         actuators.sort_by_key(|a| a.common.joint_kind.map(|jk| jk.home_order()).unwrap_or(255));
     }
     by_limb
+}
+
+/// Set each actuator's `role` to `limb` + `joint_kind` (canonical form) when both
+/// are set and the string disagrees. Use after a partial YAML edit or to recover
+/// from `role` / `limb+joint_kind` skew.
+///
+/// Fails with an error if the target role is already used by a different device,
+/// or if more than one actuator would end up with the same new role.
+pub fn repair_canonical_actuator_roles(inv: &mut Inventory) -> Result<Vec<(String, String)>> {
+    use std::collections::BTreeSet;
+
+    let mut work: Vec<(usize, String, String)> = Vec::new();
+    for (idx, d) in inv.devices.iter().enumerate() {
+        let Device::Actuator(a) = d else {
+            continue;
+        };
+        if let (Some(limb), Some(jk)) = (&a.common.limb, a.common.joint_kind) {
+            let canonical = format!("{limb}.{}", jk.as_snake_case());
+            if a.common.role == canonical {
+                continue;
+            }
+            let me = (a.common.can_bus.as_str(), a.common.can_id);
+            for d2 in &inv.devices {
+                if d2.role() == canonical {
+                    let other = device_actuator_id(d2);
+                    if other != Some(me) {
+                        bail!(
+                            "cannot repair {} -> {canonical}: role {canonical} is already used by another device ({} 0x{:02x})",
+                            a.common.role,
+                            d2.can_bus(),
+                            d2.can_id()
+                        );
+                    }
+                }
+            }
+            work.push((idx, a.common.role.clone(), canonical));
+        }
+    }
+
+    let mut seen_new: BTreeSet<String> = BTreeSet::new();
+    for (_, _old, new) in &work {
+        if !seen_new.insert(new.clone()) {
+            bail!(
+                "cannot repair: multiple actuators would become role {new} — fix manually (swap or clear one row)"
+            );
+        }
+    }
+
+    for (idx, _old, new) in &work {
+        if let Device::Actuator(a) = &mut inv.devices[*idx] {
+            a.common.role = new.clone();
+        }
+    }
+
+    let changes: Vec<(String, String)> = work.into_iter().map(|(_, old, new)| (old, new)).collect();
+    Ok(changes)
+}
+
+fn device_actuator_id(d: &Device) -> Option<(&str, u8)> {
+    match d {
+        Device::Actuator(a) => Some((a.common.can_bus.as_str(), a.common.can_id)),
+        _ => None,
+    }
 }
 
 #[cfg(test)]

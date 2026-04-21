@@ -45,6 +45,36 @@ pub fn write_atomic(
     Ok(inv)
 }
 
+/// Write an already-mutated, validated [`Inventory`] to `path` (replaces the
+/// file). Offline tools (e.g. `repair_inventory`) use this to avoid
+/// `write_atomic`'s re-load.
+pub fn write_replace(path: &Path, inv: &Inventory) -> Result<()> {
+    inv.validate()
+        .context("write_replace: inventory did not pass validate()")?;
+    let yaml = serde_yaml::to_string(inv).context("serialising inventory to YAML")?;
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let file_stem = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("inventory.yaml");
+    let mut tmp = tempfile::Builder::new()
+        .prefix(&format!(".{file_stem}."))
+        .suffix(".tmp")
+        .tempfile_in(parent)
+        .with_context(|| format!("creating tempfile next to {}", path.display()))?;
+    {
+        use std::io::Write;
+        tmp.write_all(yaml.as_bytes())
+            .context("writing inventory YAML to tempfile")?;
+        tmp.as_file()
+            .sync_all()
+            .context("fsync inventory tempfile")?;
+    }
+    tmp.persist(path)
+        .with_context(|| format!("rename tempfile -> {}", path.display()))?;
+    Ok(())
+}
+
 /// Seed copy helper (unchanged contract from v1).
 pub fn ensure_seeded(inventory: &Path, seed: Option<&Path>) -> Result<()> {
     if inventory.exists() {
