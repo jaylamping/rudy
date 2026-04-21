@@ -146,15 +146,39 @@ pub async fn run_with_tracking_budget(
             break Err(("path_violation".into(), last_measured));
         }
 
-        // Issue the velocity setpoint. Direction: sign of remaining;
-        // magnitude: nominal_speed scaled down on the final approach
-        // so we don't overshoot the target tolerance.
-        let direction = if remaining.abs() < f32::EPSILON {
+        // Issue the velocity setpoint. We govern the magnitude by the
+        // LARGER of the two remaining-distance measurements:
+        //
+        //   - `remaining` (target - setpoint): the trajectory's view.
+        //     Drops to zero the tick the ramp arrives at the target.
+        //   - `measured_remaining` (target - measured): the physical
+        //     view. Stays non-zero until the motor actually parks at
+        //     the target.
+        //
+        // Using `remaining` alone (the original implementation) made
+        // the homer "feed-forward only": the moment the setpoint hit
+        // the target, vel was commanded to zero — even if the motor
+        // was still 2-3° short because the firmware velocity loop
+        // tapered to a stall against gravity/static friction on the
+        // final approach. The motor then sat in vel=0 hold mode
+        // (audibly cogging) until `homer_timeout_ms` fired and the
+        // homer gave up. By keeping `measured_remaining` in the mix,
+        // we continue to push toward the target until the motor has
+        // physically arrived (or the success-tolerance / timeout /
+        // tracking-error checks fire). The `nominal_speed` cap and
+        // the `approach_scale` taper keep the final approach soft.
+        let measured_remaining = unwrapped_target - last_measured;
+        let governing = if measured_remaining.abs() > remaining.abs() {
+            measured_remaining
+        } else {
+            remaining
+        };
+        let direction = if governing.abs() < f32::EPSILON {
             0.0
         } else {
-            remaining.signum()
+            governing.signum()
         };
-        let approach_scale = (remaining.abs() / cfg.step_size_rad.max(1e-6)).min(1.0);
+        let approach_scale = (governing.abs() / cfg.step_size_rad.max(1e-6)).min(1.0);
         let vel = direction * nominal_speed * approach_scale;
         if let Some(core) = state.real_can.clone() {
             let motor_for_blocking = motor.clone();
