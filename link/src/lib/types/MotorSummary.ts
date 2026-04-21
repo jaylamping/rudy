@@ -9,6 +9,10 @@ import type { TravelLimits } from "./TravelLimits";
  */
 export type MotorSummary = { role: string, can_bus: string, can_id: number, firmware_version: string | null, verified: boolean, present: boolean, travel_limits: TravelLimits | null, 
 /**
+ * Daemon's best-effort view of whether torque is currently enabled.
+ */
+enabled: boolean, 
+/**
  * Target angle (radians) for boot-time auto-home. `None` uses 0.0 rad;
  * when set, must stay within `travel_limits`.
  */

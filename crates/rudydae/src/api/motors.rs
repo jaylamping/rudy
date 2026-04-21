@@ -59,6 +59,7 @@ fn summary_for(
         firmware_version: m.common.firmware_version.clone(),
         verified: m.common.verified,
         present: m.common.present,
+        enabled: state.is_enabled(&m.common.role),
         travel_limits: m.common.travel_limits.clone(),
         predefined_home_rad: m.common.predefined_home_rad,
         latest,
