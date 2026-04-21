@@ -13,25 +13,25 @@ todos:
     status: completed
   - id: p02-config
     content: Phase 2 - split crates/cortex/src/config.rs into config/ submodules (mod, http, webtransport, paths, can, safety, telemetry, logs)
-    status: pending
+    status: completed
   - id: p03-hardware
     content: Phase 3 - consolidate inventory.rs + spec.rs + boot_state.rs + boot_orchestrator.rs + limb.rs + limb_health.rs into hardware/ subtree (inventory, spec, boot, limb) with back-compat aliases in lib.rs (Motor=Actuator alias preserved through Phase 13)
-    status: pending
+    status: completed
   - id: p04-observability
     content: Phase 4 - consolidate audit.rs + log_layer.rs + log_store.rs + telemetry.rs + system.rs (host metrics) + reminders.rs into observability/ subtree; split log_store.rs into mod/schema/writer/retention/filter
-    status: pending
+    status: completed
   - id: p05-wt
     content: Phase 5 - consolidate wt.rs + wt_router.rs + wt_client.rs into webtransport/ submodules (listener, session, subscription, broadcast_loop, client_frames); move WT envelope/macro from types/wt.rs into webtransport/envelope and webtransport/streams
-    status: pending
+    status: completed
   - id: p06-http
     content: Phase 6 - move server.rs into http/ (server, spa); move util.rs session_from_headers into http/headers.rs and util.rs serde_u8_flex into hardware/inventory/role.rs
-    status: pending
+    status: completed
   - id: p07-app
     content: Phase 7 - split state.rs into app/ submodules (state, lock, seen, filter_reload); move main.rs body into app/bootstrap.rs (plus app/systemd.rs, app/persisted_filter.rs)
-    status: pending
+    status: completed
   - id: p08-can
     content: Phase 8 - split can/bus_worker.rs into can/worker/ submodules (command, handle, thread, pin) and can/linux.rs into can/handle/ submodules (mod, lifecycle, params, motion, offset, poll, scan); move discovery.rs under can/; rename can/motion.rs to can/math.rs and add a pub-use shim under the old path; run scripts/check-cortex-linux-docker.sh
-    status: pending
+    status: in_progress
   - id: p09-motion
     content: Phase 9 - split motion/intent.rs into intent.rs + status.rs; move motion/sweep.rs + wave.rs under motion/patterns/
     status: pending
@@ -49,7 +49,7 @@ todos:
     status: pending
   - id: p14-lint-docs
     content: Phase 14 - run cargo clippy --all-targets -D warnings; add crates/cortex/ARCHITECTURE.md with the new tree; update ADR-0004 paragraph D8 addendum if drifted
-    status: pending
+    status: completed
 isProject: false
 ---
 

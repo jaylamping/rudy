@@ -1,0 +1,10 @@
+---
+alwaysApply: true
+---
+
+always use the following skills when interacting with rust content,
+
+/rust-best-practices
+/rust-patterns
+/rust-engineer
+/systems-programming-rust-project
