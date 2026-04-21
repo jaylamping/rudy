@@ -122,6 +122,11 @@ impl LinuxCanCore {
                         units: desc.units.clone(),
                         value,
                         hardware_range: desc.hardware_range,
+                        // Always `false` here: this loop iterates
+                        // `spec.observables` exclusively (mech_pos,
+                        // mech_vel, vbus, fault_sta), which the
+                        // PUT-param handler refuses to write to.
+                        writable: false,
                         desired: None,
                         drift: None,
                     },

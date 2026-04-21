@@ -57,8 +57,17 @@ function ParamsPage() {
 
 function ParamTable({ role, snap }: { role: string; snap: ParamSnapshot }) {
   const entries = useMemo(() => Object.values(snap.values).filter((p): p is ParamValue => p !== undefined), [snap]);
-  const editable = entries.filter((p) => p.hardware_range !== null && p.hardware_range !== undefined);
-  const observables = entries.filter((p) => !p.hardware_range);
+  // Split on the spec section the param came from (`writable`),
+  // not on the presence of `hardware_range`. Several firmware-limit
+  // params (`run_mode`, `can_timeout`, `zero_sta`, `damper`,
+  // `add_offset`) are writable but have no numeric range — they're
+  // enums or counters — so the old `hardware_range`-based gate
+  // misclassified them as observables. The cortex `PUT
+  // /api/motors/:role/params/:name` handler validates against
+  // `spec.firmware_limits` directly, so this flag is the canonical
+  // "the server will accept a write to me" signal.
+  const editable = entries.filter((p) => p.writable);
+  const observables = entries.filter((p) => !p.writable);
 
   return (
     <div className="space-y-6">

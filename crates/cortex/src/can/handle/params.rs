@@ -126,7 +126,7 @@ impl LinuxCanCore {
     ) -> Result<(ParamSnapshot, u32)> {
         let spec = state.spec_for(motor.robstride_model());
         let mut values = BTreeMap::new();
-        for (name, desc) in spec.catalog() {
+        for (name, desc, writable) in spec.catalog() {
             let name_str = name.clone();
             let value = self.read_param_value(motor, &name_str, &desc)?;
             values.insert(
@@ -138,6 +138,7 @@ impl LinuxCanCore {
                     units: desc.units.clone(),
                     value,
                     hardware_range: desc.hardware_range,
+                    writable,
                     desired: None,
                     drift: None,
                 },
@@ -226,6 +227,12 @@ impl LinuxCanCore {
                         units: fw_desc.units.clone(),
                         value: live.clone(),
                         hardware_range: fw_desc.hardware_range,
+                        // `firmware_version` lives under
+                        // `spec.observables` (it's read-only — there's
+                        // no PUT-firmware-version path), so this
+                        // reconcile-only insert always materializes
+                        // as a non-writable observable in the SPA.
+                        writable: false,
                         desired: None,
                         drift: None,
                     });
@@ -263,6 +270,14 @@ impl LinuxCanCore {
                                 units: desc.units.clone(),
                                 value,
                                 hardware_range: desc.hardware_range,
+                                // This loop iterates `spec.firmware_limits`
+                                // exclusively — the writable side of the
+                                // catalog. Hard-code `true` rather than
+                                // re-deriving from `desc` so a future spec
+                                // change that drops `hardware_range` from a
+                                // writable param can't silently flip it
+                                // read-only in the SPA.
+                                writable: true,
                                 desired: None,
                                 drift: None,
                             },

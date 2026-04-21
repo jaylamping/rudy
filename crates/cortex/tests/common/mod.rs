@@ -304,7 +304,7 @@ pub fn seed_params(state: &SharedState) {
     for motor in inv.actuators() {
         let mut values = BTreeMap::new();
         let spec = state.spec_for(motor.robstride_model());
-        for (name, desc) in spec.catalog() {
+        for (name, desc, writable) in spec.catalog() {
             let default = match desc.ty.as_str() {
                 "float" | "f32" | "f64" => serde_json::json!(0.0_f32),
                 "uint8" | "u8" | "uint16" | "u16" | "uint32" | "u32" => serde_json::json!(0_u32),
@@ -319,6 +319,7 @@ pub fn seed_params(state: &SharedState) {
                     units: desc.units.clone(),
                     value: default,
                     hardware_range: desc.hardware_range,
+                    writable,
                     desired: None,
                     drift: None,
                 },

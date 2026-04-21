@@ -35,10 +35,13 @@ export function ActuatorFirmwareTab({ role }: { role: string }) {
       ),
     [paramsQ.data],
   );
-  const editable = entries.filter(
-    (p) => p.hardware_range !== null && p.hardware_range !== undefined,
-  );
-  const observables = entries.filter((p) => !p.hardware_range);
+  // Mirror the classifier in `_app.params.tsx`: split on the spec
+  // section the param came from (`writable`), not on the presence of
+  // `hardware_range`. Keeps writable enums/counters
+  // (`run_mode`, `can_timeout`, `zero_sta`, `damper`, `add_offset`)
+  // out of the read-only observables table.
+  const editable = entries.filter((p) => p.writable);
+  const observables = entries.filter((p) => !p.writable);
   const driftCount = useMemo(
     () => editable.filter((p) => p.drift).length,
     [editable],

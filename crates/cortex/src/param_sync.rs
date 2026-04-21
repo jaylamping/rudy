@@ -23,7 +23,7 @@ pub fn json_values_close(a: &serde_json::Value, b: &serde_json::Value) -> bool {
 pub fn decorate_snapshot(motor: &Actuator, spec: &ActuatorSpec, snap: &mut ParamSnapshot) -> u32 {
     let mut drifted = 0u32;
 
-    for (name, _desc) in spec.catalog() {
+    for (name, _desc, _writable) in spec.catalog() {
         let Some(pv) = snap.values.get_mut(&name) else {
             continue;
         };

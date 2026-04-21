@@ -22,29 +22,36 @@
 //!   3. Re-runs the path-aware band check on the current measured position
 //!      vs. the next setpoint.
 //!   4. Issues a velocity setpoint sized so the motor advances by
-//!      ~`step_size_rad` per `tick_interval_ms` (default ~0.4 rad/s ≈
+//!      ~`step_size_rad` per `tick_interval_ms` (default ~0.4 rad/s â‰ˆ
 //!      23 deg/s), in the direction of the remaining signed delta.
 //!   5. Aborts on tracking error after `tracking_error_debounce_ticks`
 //!      consecutive **fresh** over-budget samples (post grace), on
 //!      band/path violation after `band_violation_debounce_ticks`
-//!      consecutive fresh out-of-band samples (post grace) — the
+//!      consecutive fresh out-of-band samples (post grace) â€” the
 //!      debounce keeps a single-tick gravity-driven overshoot of a
-//!      home target near the band edge from killing the whole run —
+//!      home target near the band edge from killing the whole run â€”
 //!      or on `homer_timeout_ms`.
 //!
 //! Velocity profile: the per-tick velocity command is tapered by the
-//! SMALLER of (a) distance from `last_measured` to the home target
-//! and (b) distance from `last_measured` to the nearest `travel_limits`
-//! edge in the direction of motion. (a) preserves the soft final
-//! approach to the home target; (b) is a predictive cap that
-//! pre-decelerates the motor before it can run into the band edge,
-//! independent of where the home target sits in the band. Together
-//! with the band-violation debounce these keep gravity-loaded joints
-//! (shoulder_pitch homing into its low-stop, elbow_pitch into its
-//! upper-stop) from tripping `path_violation` on the very tick they
-//! arrive at the predefined neutral pose.
+//! SMALLER of (a) distance from `last_measured` to the home target,
+//! (b) distance from `last_measured` to the nearest `travel_limits`
+//! edge in the direction of motion, and (c) `step_size_rad` minus the
+//! current overrun of `last_measured` past the virtual setpoint in the
+//! direction of motion. (a) preserves the soft final approach to the
+//! home target; (b) is a predictive cap that pre-decelerates the motor
+//! before it can run into the band edge, independent of where the home
+//! target sits in the band; (c) is a symmetric companion to (a) that
+//! brakes the commanded velocity to zero whenever the motor races
+//! ahead of the trajectory under gravity assist (shoulder_pitch
+//! falling toward its low-gravity neutral pose with a payload), so the
+//! firmware velocity loop pulls the motor back into trajectory rather
+//! than letting position lead grow unboundedly. Together with the
+//! band-violation debounce and the one-sided tracking-error gate (only
+//! lag, not overrun, counts toward the abort), these keep
+//! gravity-loaded joints from false-aborting on the very approach
+//! they're supposed to be making.
 //!
-//! On EVERY exit path — success, abort, or timeout — the motor is
+//! On EVERY exit path â€” success, abort, or timeout â€” the motor is
 //! commanded to stop (type-4) and `state.enabled` is cleared. Mock-mode
 //! (`state.real_can.is_none()`) skips the I/O and simulates instant
 //! tracking so contract tests can pin the success path without
@@ -112,8 +119,8 @@ fn tracking_error_should_abort(
 
 /// Returns `true` when the homer should abort with `path_violation`.
 ///
-/// Mirrors [`tracking_error_should_abort`] in shape — same flat
-/// argument list, same gate semantics — so the loop body reads as two
+/// Mirrors [`tracking_error_should_abort`] in shape â€” same flat
+/// argument list, same gate semantics â€” so the loop body reads as two
 /// parallel one-line decisions rather than two different control
 /// shapes. The "why" is in `safety.band_violation_debounce_ticks`'s
 /// docstring; the short version is that the slow-ramp commands
@@ -125,7 +132,7 @@ fn tracking_error_should_abort(
 /// `is_violation` is `true` when this tick's
 /// `enforce_position_with_path` returned `OutOfBand` or
 /// `PathViolation` against `last_measured` (or, in the OutOfBand case,
-/// `setpoint_unwrapped` — both feed the same gate because the
+/// `setpoint_unwrapped` â€” both feed the same gate because the
 /// caller-visible reason string is the same and the recovery is the
 /// same).
 ///
@@ -171,7 +178,7 @@ fn band_violation_should_abort(
 /// **target**. That works when the home target sits comfortably inside
 /// the band, but fails when the target is near (or coincident with) a
 /// band edge: the motor reaches its tapered final-approach velocity
-/// *and* gravity / inertia carry it past the target by ≪ step_size_rad,
+/// *and* gravity / inertia carry it past the target by â‰ª step_size_rad,
 /// which lands it outside the band before the reactive
 /// direction-flip logic in `governing` can reverse the velocity command.
 ///
@@ -187,7 +194,7 @@ fn band_violation_should_abort(
 /// ```
 ///
 /// so the motor's commanded velocity smoothly approaches zero as it
-/// nears whichever boundary it would hit first — the home target OR
+/// nears whichever boundary it would hit first â€” the home target OR
 /// the band edge. Importantly this is a **predictive** cap (computed
 /// from the current `last_measured`, before the next velocity command
 /// goes out), where the existing reactive flip via `governing` only
@@ -201,7 +208,7 @@ fn band_violation_should_abort(
 /// `vel = 0`).
 ///
 /// Uses principal angles (`wrap_to_pi`) on `last_measured` because the
-/// stored `travel_limits` are likewise principal-angle bounds —
+/// stored `travel_limits` are likewise principal-angle bounds â€”
 /// matches the convention `enforce_position_with_path` uses for the
 /// abort check.
 fn band_edge_distance(
@@ -227,17 +234,17 @@ fn band_edge_distance(
 ///
 /// `from_rad` is the operator-supplied (or telemetry-snapshotted)
 /// current position; `target_rad` is the principal-angle home target.
-/// Both pre-conditions — control-lock, BootState gate, band check —
+/// Both pre-conditions â€” control-lock, BootState gate, band check â€”
 /// are the caller's responsibility. This function is safe to call from
 /// either an HTTP handler or the boot orchestrator; it does NOT
 /// transition `BootState` itself, audit-log the outcome, or emit any
-/// `SafetyEvent` — those are domain concerns the caller owns so the
+/// `SafetyEvent` â€” those are domain concerns the caller owns so the
 /// orchestrator can route them through its own state machine.
 ///
 /// Convenience wrapper that uses the operator-driven tracking-error
 /// budget (`safety.tracking_error_max_rad`). Callers that need a
-/// different budget — currently just the boot orchestrator, which
-/// drives cold motors at boot and warrants more headroom — should
+/// different budget â€” currently just the boot orchestrator, which
+/// drives cold motors at boot and warrants more headroom â€” should
 /// call [`run_with_tracking_budget`] directly.
 pub async fn run(
     state: SharedState,
@@ -262,7 +269,7 @@ pub async fn run(
 /// loosen (or tighten) the operator-driven default. Today the only
 /// caller is [`crate::boot_orchestrator::maybe_run`], which passes
 /// `safety.boot_tracking_error_max_rad` because the orchestrator runs
-/// unattended on cold motors at boot and a ~3° budget falsely aborts
+/// unattended on cold motors at boot and a ~3Â° budget falsely aborts
 /// every time.
 pub async fn run_with_tracking_budget(
     state: SharedState,
@@ -282,7 +289,7 @@ pub async fn run_with_tracking_budget(
     // The per-tick band check below still re-reads the live inventory
     // via `enforce_position_with_path` so a config change mid-ramp
     // (`PUT /api/motors/:role/limits`) still aborts cleanly. The cap is
-    // an opportunistic safety net — being one config-version stale on
+    // an opportunistic safety net â€” being one config-version stale on
     // it can at worst either mildly under-protect (limits widened, motor
     // decelerates more aggressively than necessary) or mildly over-cap
     // (limits tightened, but the live `enforce_position_with_path`
@@ -352,12 +359,12 @@ pub async fn run_with_tracking_budget(
     // Periodic info-level progress log. Default tick is 50 ms, so
     // `progress_every_ticks = 20` emits one progress line per second.
     // Cheap enough to leave on at info during real homes (the longest
-    // ones are bounded by `homer_timeout_ms`, default 30 s → ~30
+    // ones are bounded by `homer_timeout_ms`, default 30 s â†’ ~30
     // lines), expensive enough to skip in the noisy unit-test flood.
     // Tests use a 5 ms tick + 5 s timeout, which would produce 200
     // periodic lines per stuck-motor test if we kept the same
     // interval, so we floor at "every 1 s of wall-clock if possible,
-    // else every 200 ticks" — same idea, no per-test spam.
+    // else every 200 ticks" â€” same idea, no per-test spam.
     let progress_every_ticks = (1_000 / cfg.tick_interval_ms.max(1)).max(20);
 
     let outcome = loop {
@@ -432,7 +439,7 @@ pub async fn run_with_tracking_budget(
         // mid-ramp (or the motor drifting out of band under us)
         // aborts cleanly. Note: this check uses **live** inventory
         // (re-read every tick) so a `PUT /api/motors/:role/limits`
-        // tightens the band on the very next iteration — the
+        // tightens the band on the very next iteration â€” the
         // `limits_snapshot` taken at entry is only consulted by the
         // predictive band-edge velocity cap below.
         let check =
@@ -480,8 +487,8 @@ pub async fn run_with_tracking_budget(
         //
         // Using `remaining` alone (the original implementation) made
         // the homer "feed-forward only": the moment the setpoint hit
-        // the target, vel was commanded to zero — even if the motor
-        // was still 2-3° short because the firmware velocity loop
+        // the target, vel was commanded to zero â€” even if the motor
+        // was still 2-3Â° short because the firmware velocity loop
         // tapered to a stall against gravity/static friction on the
         // final approach. The motor then sat in vel=0 hold mode
         // (audibly cogging) until `homer_timeout_ms` fired and the
@@ -501,6 +508,30 @@ pub async fn run_with_tracking_budget(
         } else {
             governing.signum()
         };
+        // Decompose the signed measured-vs-setpoint delta into the
+        // two failure modes along the direction of motion:
+        //
+        //   `shortest_signed_delta(setpoint, measured)` returns
+        //   `measured - setpoint` (modulo wrap). Multiplying by
+        //   `direction` projects that onto the axis of motion:
+        //
+        //     lag     = motor BEHIND setpoint     (= -signed_errÂ·dir)
+        //     overrun = motor AHEAD of setpoint   (= +signed_errÂ·dir)
+        //
+        // Lag is the binding/stall mode the tracking-error gate is
+        // designed to catch â€” it feeds `err_rad` below. Overrun is
+        // the gravity-assisted mode (shoulder_pitch / elbow_pitch
+        // falling toward a low-gravity neutral pose under a payload â€”
+        // firmware velocity-loop overshoot + gravity carry the motor
+        // past the virtual setpoint each tick). It feeds `lag_scale`
+        // a few lines down so the homer brakes commanded velocity as
+        // the motor outruns the ramp instead of pinning Â±nominal_speed
+        // and watching position lead grow unboundedly. Computed once
+        // per tick from the same `last_measured` the band/vel logic
+        // below references so all three derived scales (approach,
+        // edge cap, lag) see a consistent snapshot.
+        let signed_err = shortest_signed_delta(setpoint_unwrapped, last_measured);
+        let overrun = (signed_err * direction).max(0.0);
         // Predictive band-edge velocity cap. The existing
         // `approach_scale = |governing| / step_size_rad` taper
         // decelerates as the motor approaches the **home target**, but
@@ -521,10 +552,24 @@ pub async fn run_with_tracking_budget(
         let dist_to_edge = band_edge_distance(limits_snapshot.as_ref(), last_measured, direction);
         let governing_capped = governing.abs().min(dist_to_edge);
         let approach_scale = (governing_capped / cfg.step_size_rad.max(1e-6)).min(1.0);
-        let vel = direction * nominal_speed * approach_scale;
+        // Symmetric companion to `approach_scale`: when the motor is
+        // racing ahead of the slow-ramp trajectory (gravity assist on
+        // a payload-loaded joint), taper commanded velocity toward
+        // zero so the firmware velocity loop brakes the motor back
+        // into trajectory. At an overrun of one `step_size_rad` we
+        // command vel=0 and let the setpoint catch up; smaller
+        // overruns get a linear ease-off. Combined with the one-sided
+        // `tracking_error_should_abort` gate below â€” overrun never
+        // counts toward the tracking abort â€” this keeps
+        // gravity-assisted homes (shoulder_pitch falling toward its
+        // low-gravity neutral pose) from either tripping a spurious
+        // `tracking_error` abort OR running unboundedly past the
+        // virtual setpoint into the band edge.
+        let lag_scale = (1.0 - overrun / cfg.step_size_rad.max(1e-6)).clamp(0.0, 1.0);
+        let vel = direction * nominal_speed * approach_scale * lag_scale;
 
         // The band-edge cap is the most diagnostic single piece of
-        // information for "is fix #2 actually doing anything?" — when
+        // information for "is fix #2 actually doing anything?" â€” when
         // it's the binding constraint (i.e., the band edge is closer
         // than the home target), we know the homer would have
         // commanded a faster velocity but for the cap, and the
@@ -565,7 +610,7 @@ pub async fn run_with_tracking_budget(
 
         // Per-tick trace at debug. Ten-ish fields is a lot for one
         // line, but every field here has been wished for at least
-        // once in past homing post-mortems — `is_fresh` tells you
+        // once in past homing post-mortems â€” `is_fresh` tells you
         // whether the tracking-error gate ran this tick, the two
         // `consec_*` counters tell you how close we are to a debounce
         // trip, `edge_capped` tells you whether the band-edge cap is
@@ -584,6 +629,8 @@ pub async fn run_with_tracking_budget(
             dist_to_edge,
             edge_capped,
             approach_scale,
+            overrun,
+            lag_scale,
             vel,
             consec_band_over,
             consec_tracking_over = consec_over,
@@ -612,7 +659,17 @@ pub async fn run_with_tracking_budget(
             last_measured = setpoint_unwrapped;
         }
 
-        let err_rad = shortest_signed_delta(setpoint_unwrapped, last_measured).abs();
+        // One-sided: only the LAG portion of the signed error feeds
+        // the abort gate (see the lag/overrun decomposition near the
+        // velocity computation above). Overrun is bounded by
+        // `lag_scale` and is not a tracking failure â€” it just means
+        // gravity is doing some of the work and the firmware velocity
+        // loop will catch up on the next tick. Re-derive from the
+        // SAME `last_measured` mock-mode may have just rewritten (so
+        // mock mode still sees err_rad == 0 and the gate's mock-mode
+        // short-circuit remains the authoritative no-op for tests).
+        let err_rad =
+            (-shortest_signed_delta(setpoint_unwrapped, last_measured) * direction).max(0.0);
         if tracking_error_should_abort(
             homer_has_real_can,
             is_fresh,
@@ -639,7 +696,7 @@ pub async fn run_with_tracking_budget(
     };
 
     // Always stop the motor before returning. Errors here are logged
-    // but don't change the outcome — the watchdog and firmware
+    // but don't change the outcome â€” the watchdog and firmware
     // canTimeout backstop us if cmd_stop didn't reach the bus.
     if let Some(core) = state.real_can.clone() {
         let motor_for_stop = motor.clone();
@@ -655,7 +712,7 @@ pub async fn run_with_tracking_budget(
     // post-mortem: ticks, elapsed_ms, where the motor ended up, where
     // the setpoint ended up, distance to target, and how close we
     // came to either debounce trip. The orchestrator and operator
-    // home handlers each emit their own outcome lines too — those
+    // home handlers each emit their own outcome lines too â€” those
     // capture the *domain* meaning (boot orchestrator marked Homed,
     // operator received 200 OK), where this one captures the
     // *control loop* meaning.
@@ -697,474 +754,17 @@ pub async fn run_with_tracking_budget(
 }
 
 #[cfg(test)]
-mod tracking_gate_tests {
-    use super::tracking_error_should_abort;
+#[path = "slow_ramp_tracking_gate_tests.rs"]
+mod tracking_gate_tests;
 
-    #[test]
-    fn debounce_trips_on_third_consecutive_fresh_over_budget() {
-        let mut c = 0;
-        assert!(!tracking_error_should_abort(
-            true, true, 4, 3, 0.06, 0.05, 3, &mut c, "m"
-        ));
-        assert_eq!(c, 1);
-        assert!(!tracking_error_should_abort(
-            true, true, 5, 3, 0.06, 0.05, 3, &mut c, "m"
-        ));
-        assert_eq!(c, 2);
-        assert!(tracking_error_should_abort(
-            true, true, 6, 3, 0.06, 0.05, 3, &mut c, "m"
-        ));
-        assert_eq!(c, 3);
-    }
-
-    #[test]
-    fn single_good_sample_resets_debounce() {
-        let mut c = 0;
-        assert!(!tracking_error_should_abort(
-            true, true, 4, 3, 0.06, 0.05, 3, &mut c, "m"
-        ));
-        assert_eq!(c, 1);
-        assert!(!tracking_error_should_abort(
-            true, true, 5, 3, 0.01, 0.05, 3, &mut c, "m"
-        ));
-        assert_eq!(c, 0);
-        assert!(!tracking_error_should_abort(
-            true, true, 6, 3, 0.06, 0.05, 3, &mut c, "m"
-        ));
-        assert_eq!(c, 1);
-    }
-
-    #[test]
-    fn stale_tick_leaves_consec_unchanged() {
-        let mut c = 2;
-        assert!(!tracking_error_should_abort(
-            true, false, 10, 0, 1.0, 0.05, 3, &mut c, "m"
-        ));
-        assert_eq!(c, 2);
-    }
-
-    #[test]
-    fn mock_mode_skips_tracking_abort() {
-        let mut c = 0;
-        assert!(!tracking_error_should_abort(
-            false, true, 100, 0, 10.0, 0.05, 3, &mut c, "m"
-        ));
-        assert_eq!(c, 0);
-    }
-
-    #[test]
-    fn grace_suppresses_tracking_abort() {
-        let mut c = 0;
-        assert!(!tracking_error_should_abort(
-            true, true, 2, 3, 10.0, 0.05, 1, &mut c, "m"
-        ));
-        assert_eq!(c, 0);
-    }
-}
-
-/// Pins the band-violation debounce gate symmetric with the
-/// tracking-error gate above. Each test mirrors a tracking-error case
-/// so the two gates stay in sync as we tune defaults.
 #[cfg(test)]
-mod band_gate_tests {
-    use super::band_violation_should_abort;
+#[path = "slow_ramp_band_gate_tests.rs"]
+mod band_gate_tests;
 
-    #[test]
-    fn debounce_trips_on_third_consecutive_fresh_violation() {
-        let mut c = 0;
-        assert!(!band_violation_should_abort(
-            true, true, 4, 3, true, 3, &mut c, "m"
-        ));
-        assert_eq!(c, 1);
-        assert!(!band_violation_should_abort(
-            true, true, 5, 3, true, 3, &mut c, "m"
-        ));
-        assert_eq!(c, 2);
-        assert!(band_violation_should_abort(
-            true, true, 6, 3, true, 3, &mut c, "m"
-        ));
-        assert_eq!(c, 3);
-    }
-
-    #[test]
-    fn single_in_band_sample_resets_band_debounce() {
-        let mut c = 0;
-        assert!(!band_violation_should_abort(
-            true, true, 4, 3, true, 3, &mut c, "m"
-        ));
-        assert_eq!(c, 1);
-        assert!(!band_violation_should_abort(
-            true, true, 5, 3, false, 3, &mut c, "m"
-        ));
-        assert_eq!(c, 0);
-        assert!(!band_violation_should_abort(
-            true, true, 6, 3, true, 3, &mut c, "m"
-        ));
-        assert_eq!(c, 1);
-    }
-
-    #[test]
-    fn stale_tick_leaves_band_consec_unchanged() {
-        let mut c = 2;
-        assert!(!band_violation_should_abort(
-            true, false, 10, 0, true, 3, &mut c, "m"
-        ));
-        assert_eq!(c, 2);
-    }
-
-    #[test]
-    fn mock_mode_skips_band_abort_in_gate() {
-        // Note: the mock-mode immediate-abort path lives at the call
-        // site (we pin the slow_ramp loop's mock-mode short-circuit
-        // separately). The gate itself stays inert in mock mode so the
-        // call site retains full control of the timing.
-        let mut c = 0;
-        assert!(!band_violation_should_abort(
-            false, true, 100, 0, true, 3, &mut c, "m"
-        ));
-        assert_eq!(c, 0);
-    }
-
-    #[test]
-    fn grace_suppresses_band_abort() {
-        let mut c = 0;
-        assert!(!band_violation_should_abort(
-            true, true, 2, 3, true, 1, &mut c, "m"
-        ));
-        assert_eq!(c, 0);
-    }
-}
-
-/// Pins the predictive band-edge velocity-cap helper. The integration
-/// behavior (motor that would otherwise overshoot now decelerates
-/// before the edge) is exercised end-to-end by the slow-ramp
-/// `real_can_stub_tests`; these unit tests focus on the math.
 #[cfg(test)]
-mod band_edge_distance_tests {
-    use super::band_edge_distance;
-    use crate::inventory::TravelLimits;
+#[path = "slow_ramp_band_edge_distance_tests.rs"]
+mod band_edge_distance_tests;
 
-    fn limits(min_rad: f32, max_rad: f32) -> TravelLimits {
-        TravelLimits {
-            min_rad,
-            max_rad,
-            updated_at: None,
-        }
-    }
-
-    #[test]
-    fn no_limits_returns_infinity() {
-        // Without travel_limits the cap is a no-op and the slow-ramp
-        // falls back to the original `governing` taper. Encoded as
-        // f32::INFINITY so the caller's `min(|governing|, _)` lands on
-        // `|governing|` unchanged.
-        let d = band_edge_distance(None, 0.0, 1.0);
-        assert!(d.is_infinite());
-    }
-
-    #[test]
-    fn zero_direction_returns_infinity() {
-        // Direction == 0 means the slow-ramp already commanded `vel = 0`
-        // (we're parked at the target); no edge to fear.
-        let l = limits(-1.0, 1.0);
-        let d = band_edge_distance(Some(&l), 0.5, 0.0);
-        assert!(d.is_infinite());
-    }
-
-    #[test]
-    fn positive_direction_yields_distance_to_max() {
-        let l = limits(-1.0, 1.0);
-        let d = band_edge_distance(Some(&l), 0.7, 1.0);
-        assert!((d - 0.3).abs() < 1e-6);
-    }
-
-    #[test]
-    fn negative_direction_yields_distance_to_min() {
-        let l = limits(-1.0, 1.0);
-        let d = band_edge_distance(Some(&l), -0.7, -1.0);
-        assert!((d - 0.3).abs() < 1e-6);
-    }
-
-    #[test]
-    fn measured_already_past_edge_clamps_to_zero() {
-        // If `last_measured` has already crossed the band edge in the
-        // direction of motion (the band check will abort separately),
-        // the cap returns 0 so the velocity command goes to zero on
-        // this tick — we never want the homer pushing further into the
-        // overshoot while the band-debounce is making up its mind.
-        let l = limits(-1.0, 1.0);
-        let d = band_edge_distance(Some(&l), 1.1, 1.0);
-        assert_eq!(d, 0.0);
-    }
-
-    #[test]
-    fn principal_angle_wrap_is_respected() {
-        // `last_measured = 6.4 rad` wraps to ~+0.117 rad, well inside a
-        // [-1.0, +1.0] band. Distance to +1.0 in the positive
-        // direction is therefore ~0.883 rad, NOT a negative number
-        // from the unwrapped 6.4. This matches the convention
-        // `enforce_position_with_path` uses.
-        let l = limits(-1.0, 1.0);
-        let d = band_edge_distance(Some(&l), 6.4, 1.0);
-        let principal = 6.4 - 2.0 * std::f32::consts::PI;
-        let expected = 1.0 - principal;
-        assert!((d - expected).abs() < 1e-5, "d={d} expected={expected}");
-    }
-}
-
-/// `slow_ramp` with `real_can = Some` only builds on non-Linux CI hosts using
-/// the in-tree stub (`set_velocity_setpoint` / `stop` are no-op `Ok`).
 #[cfg(all(test, not(target_os = "linux")))]
-mod real_can_stub_tests {
-    use std::sync::Arc;
-    use std::time::Duration;
-
-    use super::run_with_tracking_budget;
-    use crate::audit::AuditLog;
-    use crate::can;
-    use crate::config::{
-        CanConfig, Config, HttpConfig, LogsConfig, PathsConfig, SafetyConfig, TelemetryConfig,
-        WebTransportConfig,
-    };
-    use crate::inventory::Inventory;
-    use crate::reminders::ReminderStore;
-    use crate::spec;
-    use crate::state::AppState;
-    use crate::types::MotorFeedback;
-
-    fn state_with_real_can_stub() -> (crate::state::SharedState, crate::inventory::Actuator) {
-        let dir = tempfile::tempdir().unwrap();
-        let spec_path = dir.path().join("robstride_rs03.yaml");
-        std::fs::write(
-            &spec_path,
-            "schema_version: 2\nactuator_model: RS03\nfirmware_limits: {}\nobservables: {}\n",
-        )
-        .unwrap();
-        let inv_path = dir.path().join("inv.yaml");
-        std::fs::write(
-            &inv_path,
-            "schema_version: 2\ndevices:\n  - kind: actuator\n    role: m\n    can_bus: can0\n    can_id: 1\n    present: true\n    family:\n      kind: robstride\n      model: rs03\n    travel_limits:\n      min_rad: -1.0\n      max_rad: 1.0\n",
-        )
-        .unwrap();
-        let cfg = Config {
-            http: HttpConfig {
-                bind: "127.0.0.1:0".into(),
-            },
-            webtransport: WebTransportConfig {
-                bind: "127.0.0.1:0".into(),
-                enabled: false,
-                cert_path: None,
-                key_path: None,
-            },
-            paths: PathsConfig {
-                actuator_spec: spec_path.clone(),
-                inventory: inv_path.clone(),
-                inventory_seed: None,
-                audit_log: dir.path().join("audit.jsonl"),
-            },
-            can: CanConfig {
-                mock: true,
-                buses: vec![],
-            },
-            telemetry: TelemetryConfig {
-                poll_interval_ms: 10,
-            },
-            safety: SafetyConfig {
-                require_verified: false,
-                boot_max_step_rad: 0.087,
-                step_size_rad: 0.02,
-                tick_interval_ms: 5,
-                tracking_error_max_rad: 0.05,
-                tracking_error_grace_ticks: 0,
-                tracking_freshness_max_age_ms: 100,
-                tracking_error_debounce_ticks: 3,
-                band_violation_debounce_ticks: 3,
-                boot_tracking_error_max_rad: 0.05,
-                target_tolerance_rad: 0.005,
-                homer_timeout_ms: 5_000,
-                max_feedback_age_ms: 100,
-                commission_readback_tolerance_rad: 1e-3,
-                auto_home_on_boot: true,
-                scan_on_boot: true,
-            },
-            logs: LogsConfig {
-                db_path: dir.path().join("logs.db"),
-                ..LogsConfig::default()
-            },
-        };
-        let specs = spec::load_robstride_specs(dir.path(), Some(&spec_path)).unwrap();
-        let inv = Inventory::load(&inv_path).unwrap();
-        let motor = inv.actuators().next().cloned().expect("fixture actuator");
-        let audit = AuditLog::open(dir.path().join("audit.jsonl")).unwrap();
-        let real_can = Some(Arc::new(can::RealCanHandle));
-        let reminders = ReminderStore::open(dir.path().join("reminders.json")).unwrap();
-        let state = Arc::new(AppState::new(cfg, specs, inv, audit, real_can, reminders));
-        (state, motor)
-    }
-
-    #[tokio::test]
-    async fn stuck_motor_aborts_after_debounced_tracking_error() {
-        let (state, motor) = state_with_real_can_stub();
-        let role = motor.common.role.clone();
-        {
-            let mut latest = state.latest.write().unwrap();
-            latest.insert(
-                role.clone(),
-                MotorFeedback {
-                    t_ms: chrono::Utc::now().timestamp_millis(),
-                    role: role.clone(),
-                    can_id: 1,
-                    mech_pos_rad: 0.0,
-                    mech_vel_rad_s: 0.0,
-                    torque_nm: 0.0,
-                    vbus_v: 48.0,
-                    temp_c: 30.0,
-                    fault_sta: 0,
-                    warn_sta: 0,
-                },
-            );
-        }
-        let updater = {
-            let state = state.clone();
-            let role = role.clone();
-            tokio::spawn(async move {
-                loop {
-                    tokio::time::sleep(Duration::from_millis(2)).await;
-                    let mut w = state.latest.write().unwrap();
-                    if let Some(fb) = w.get_mut(&role) {
-                        fb.t_ms = chrono::Utc::now().timestamp_millis();
-                        fb.mech_pos_rad = 0.0;
-                    }
-                }
-            })
-        };
-        let r = run_with_tracking_budget(state.clone(), motor, 0.0, 0.5, 0.05).await;
-        updater.abort();
-        let Err((reason, _)) = r else {
-            panic!("expected Err, got {r:?}");
-        };
-        assert_eq!(reason, "tracking_error");
-    }
-
-    #[tokio::test]
-    async fn sustained_out_of_band_aborts_with_path_violation_after_debounce() {
-        // Pin both halves of the band-violation hardening:
-        //
-        //   1. The debounce gate doesn't fire on a single tick of OOB
-        //      telemetry (the motor "just barely" past the edge after a
-        //      single overshoot — exactly the failure mode that
-        //      shoulder_pitch's auto-home tripped).
-        //   2. Sustained OOB still aborts with `path_violation`, not
-        //      `tracking_error` or `timeout`. The whole point of the
-        //      debounce is to give the *reactive* velocity flip a few
-        //      ticks to recover; a motor that genuinely refuses to
-        //      come back into band must still surface as
-        //      `path_violation` so the operator-recovery flow runs the
-        //      right script.
-        //
-        // We wedge `mech_pos_rad` at -1.1 (band is [-1.0, +1.0], from
-        // the fixture YAML), which is a sustained OOB position. The
-        // homer is asked to drive to 0.0; the slow-ramp's velocity cap
-        // pulls vel toward zero (because `dist_to_edge = 0` at this
-        // measured position), the band-debounce counter increments
-        // every fresh tick, and after three consecutive fresh ticks
-        // the abort fires.
-        let (state, motor) = state_with_real_can_stub();
-        let role = motor.common.role.clone();
-        {
-            let mut latest = state.latest.write().unwrap();
-            latest.insert(
-                role.clone(),
-                MotorFeedback {
-                    t_ms: chrono::Utc::now().timestamp_millis(),
-                    role: role.clone(),
-                    can_id: 1,
-                    mech_pos_rad: -1.1,
-                    mech_vel_rad_s: 0.0,
-                    torque_nm: 0.0,
-                    vbus_v: 48.0,
-                    temp_c: 30.0,
-                    fault_sta: 0,
-                    warn_sta: 0,
-                },
-            );
-        }
-        let updater = {
-            let state = state.clone();
-            let role = role.clone();
-            tokio::spawn(async move {
-                loop {
-                    tokio::time::sleep(Duration::from_millis(2)).await;
-                    let mut w = state.latest.write().unwrap();
-                    if let Some(fb) = w.get_mut(&role) {
-                        fb.t_ms = chrono::Utc::now().timestamp_millis();
-                        // Wedged just outside the lower band edge.
-                    }
-                }
-            })
-        };
-        // Loose tracking budget so the tracking-error gate doesn't race
-        // the band-violation gate to the abort. We're pinning the band
-        // path specifically.
-        let r = run_with_tracking_budget(state.clone(), motor, -1.1, 0.0, 1.0).await;
-        updater.abort();
-        let Err((reason, last_pos)) = r else {
-            panic!("expected Err, got {r:?}");
-        };
-        assert_eq!(reason, "path_violation");
-        // The reported `last_pos` should reflect the wedged measured
-        // position, NOT the home target. Operators triage from this
-        // value so it has to be the actual physical readout that
-        // tripped the band check.
-        assert!(
-            (last_pos - -1.1_f32).abs() < 1e-3,
-            "expected last_pos ~= -1.1, got {last_pos}"
-        );
-    }
-
-    #[tokio::test]
-    async fn stale_telemetry_hold_then_fresh_run_completes() {
-        let (state, motor) = state_with_real_can_stub();
-        let role = motor.common.role.clone();
-        let stale_ms = chrono::Utc::now().timestamp_millis() - 60_000;
-        {
-            let mut latest = state.latest.write().unwrap();
-            latest.insert(
-                role.clone(),
-                MotorFeedback {
-                    t_ms: stale_ms,
-                    role: role.clone(),
-                    can_id: 1,
-                    mech_pos_rad: 0.0,
-                    mech_vel_rad_s: 0.0,
-                    torque_nm: 0.0,
-                    vbus_v: 48.0,
-                    temp_c: 30.0,
-                    fault_sta: 0,
-                    warn_sta: 0,
-                },
-            );
-        }
-        let state2 = state.clone();
-        let role2 = role.clone();
-        let updater = tokio::spawn(async move {
-            let mut phase2 = false;
-            let t0 = tokio::time::Instant::now();
-            loop {
-                tokio::time::sleep(Duration::from_millis(3)).await;
-                if t0.elapsed() > Duration::from_millis(50) {
-                    phase2 = true;
-                }
-                let mut w = state2.latest.write().unwrap();
-                let fb = w.get_mut(&role2).unwrap();
-                if phase2 {
-                    fb.t_ms = chrono::Utc::now().timestamp_millis();
-                    fb.mech_pos_rad = (fb.mech_pos_rad + 0.03).min(0.25);
-                }
-            }
-        });
-        let r = run_with_tracking_budget(state.clone(), motor, 0.0, 0.12, 0.05).await;
-        updater.abort();
-        assert!(r.is_ok(), "expected Ok, got {r:?}");
-    }
-}
+#[path = "slow_ramp_real_can_stub_tests.rs"]
+mod real_can_stub_tests;

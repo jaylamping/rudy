@@ -4,6 +4,20 @@ import type { JsonValue } from "./serde_json/JsonValue";
 
 export type ParamValue = { name: string, index: number, type: string, units: string | null, value: JsonValue, hardware_range: [number, number] | null, 
 /**
+ * `true` for entries sourced from `spec.firmware_limits` (the
+ * SPA shows these in the writable Parameters table and the
+ * `PUT /api/motors/:role/params/:name` handler accepts writes
+ * to them); `false` for `spec.observables` (read-only). The
+ * SPA used to derive this from `hardware_range.is_some()`,
+ * but several writable params (`run_mode`, `can_timeout`,
+ * `zero_sta`, `damper`, `add_offset`) intentionally have no
+ * numeric range — they're enums or counters — and were being
+ * misclassified as observables. This flag tracks the spec
+ * section directly so any future writable-without-range param
+ * stays writable in the UI.
+ */
+writable: boolean, 
+/**
  * From `inventory.desired_params` for writable params.
  */
 desired?: JsonValue, 

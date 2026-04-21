@@ -308,14 +308,23 @@ impl ActuatorSpec {
         Ok(())
     }
 
-    /// Full parameter catalog (firmware_limits + observables) suitable for the UI.
-    pub fn catalog(&self) -> Vec<(String, ParamDescriptor)> {
+    /// Full parameter catalog suitable for the UI. The trailing
+    /// `bool` is `true` for entries from `firmware_limits` (writable
+    /// via `PUT /api/motors/:role/params/:name`) and `false` for
+    /// entries from `observables`. Threaded into `ParamValue.writable`
+    /// at every construction site so the SPA can split its writable /
+    /// read-only tables on the spec section instead of guessing from
+    /// `hardware_range` (which is only set on the three numeric-range
+    /// firmware limits — `limit_torque`, `limit_spd`, `limit_cur` —
+    /// and would silently misclassify `can_timeout`, `zero_sta`,
+    /// `damper`, etc.).
+    pub fn catalog(&self) -> Vec<(String, ParamDescriptor, bool)> {
         let mut out = Vec::with_capacity(self.firmware_limits.len() + self.observables.len());
         for (name, d) in &self.firmware_limits {
-            out.push((name.clone(), d.clone()));
+            out.push((name.clone(), d.clone(), true));
         }
         for (name, d) in &self.observables {
-            out.push((name.clone(), d.clone()));
+            out.push((name.clone(), d.clone(), false));
         }
         out
     }

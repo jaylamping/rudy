@@ -74,6 +74,18 @@ pub struct ParamValue {
     pub units: Option<String>,
     pub value: serde_json::Value,
     pub hardware_range: Option<[f32; 2]>,
+    /// `true` for entries sourced from `spec.firmware_limits` (the
+    /// SPA shows these in the writable Parameters table and the
+    /// `PUT /api/motors/:role/params/:name` handler accepts writes
+    /// to them); `false` for `spec.observables` (read-only). The
+    /// SPA used to derive this from `hardware_range.is_some()`,
+    /// but several writable params (`run_mode`, `can_timeout`,
+    /// `zero_sta`, `damper`, `add_offset`) intentionally have no
+    /// numeric range — they're enums or counters — and were being
+    /// misclassified as observables. This flag tracks the spec
+    /// section directly so any future writable-without-range param
+    /// stays writable in the UI.
+    pub writable: bool,
     /// From `inventory.desired_params` for writable params.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
