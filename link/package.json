@@ -10,6 +10,8 @@
   },
   "scripts": {
     "dev": "npm run bake:urdf && vite",
+    "dev:cortex": "cd .. && cargo run --manifest-path crates/Cargo.toml -p cortex",
+    "dev:stack": "concurrently -k -n cortex,link -c blue,magenta \"cd .. && cargo run --manifest-path crates/Cargo.toml -p cortex\" \"npm run dev\"",
     "gen:routes": "node scripts/gen-routetree.mjs",
     "bake:urdf": "node scripts/bake-urdf.mjs",
     "build": "npm run bake:urdf && npm run gen:routes && tsc -b && vite build",
@@ -67,6 +69,7 @@
     "tailwindcss": "^4.0.0",
     "typescript": "^5.7.2",
     "vite": "^6.0.0",
-    "vitest": "^4.1.4"
+    "vitest": "^4.1.4",
+    "concurrently": "^9.1.2"
   }
 }

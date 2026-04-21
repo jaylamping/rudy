@@ -11,10 +11,25 @@ See [ADR-0004](../docs/decisions/0004-operator-console.md) for architecture.
 ```bash
 cd link
 npm install
+```
 
-# Point at a locally-running cortex (http://127.0.0.1:8443).
+**UI + local `cortex` in one terminal** (same thing as in two windows: Vite on `:5173`, daemon on `127.0.0.1:8443`):
+
+```bash
+npm run dev:stack
+```
+
+**Or run the pieces separately** — Vite only (expects `cortex` at `http://127.0.0.1:8443` from another shell):
+
+```bash
 npm run dev
 # -> http://localhost:5173
+```
+
+**`cortex` only** (from repo root via `..`; paths in `config/cortex.toml` resolve against that cwd):
+
+```bash
+npm run dev:cortex
 ```
 
 WebTransport requires HTTPS in the browser, so dev-mode Vite (plain HTTP) does

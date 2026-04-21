@@ -119,7 +119,9 @@ function peripheralGroup(p: PeripheralDevice): PeripheralGroupId {
 function DevicesPage() {
   const qc = useQueryClient();
   const poll = useLiveInterval({ live: 30_000, fallback: 2_000 });
-  const [onboardTarget, setOnboardTarget] = useState<UnassignedDevice | null>(null);
+  const [onboardTarget, setOnboardTarget] = useState<UnassignedDevice | null>(
+    null,
+  );
   const [onboardOpen, setOnboardOpen] = useState(false);
   const [removeTarget, setRemoveTarget] = useState<{
     role: string;
@@ -229,7 +231,9 @@ function DevicesPage() {
       can_id: a.can_id,
     });
   };
-  const removePendingRole = removeMut.isPending ? removeTarget?.role ?? null : null;
+  const removePendingRole = removeMut.isPending
+    ? (removeTarget?.role ?? null)
+    : null;
 
   return (
     <div className="space-y-12">
@@ -244,8 +248,9 @@ function DevicesPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Devices</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Everything in <code className="text-xs">inventory.yaml</code>, grouped by
-          actuators, sensors, and power. Newly discovered CAN nodes show up under
+          Everything in <code className="text-xs">inventory.yaml</code>, grouped
+          by actuators, sensors, and power. Newly discovered CAN nodes show up
+          under
           <em> Unassigned</em> at the bottom.
         </p>
       </div>
@@ -287,14 +292,14 @@ function DevicesPage() {
           description={
             <div className="space-y-2">
               <p>
-                Remove <code className="font-mono">{removeTarget.role}</code>{" "}
-                ({removeTarget.can_bus} / 0x
+                Remove <code className="font-mono">{removeTarget.role}</code> (
+                {removeTarget.can_bus} / 0x
                 {removeTarget.can_id.toString(16).padStart(2, "0")}) from{" "}
                 <code className="font-mono">inventory.yaml</code>?
               </p>
               <p>
-                This motor will disappear from the limb view and must be onboarded
-                again before control.
+                This motor will disappear from the limb view and must be
+                onboarded again before control.
               </p>
               {removeMut.isError ? (
                 <p className="text-xs text-destructive">
@@ -337,7 +342,10 @@ function ActuatorsSection({
   onRequestRemove: (a: ActuatorDevice) => void;
   removePendingRole: string | null;
 }) {
-  const totalArms = LIMB_GRID.reduce((acc, id) => acc + (armsLegs.get(id)?.length ?? 0), 0);
+  const totalArms = LIMB_GRID.reduce(
+    (acc, id) => acc + (armsLegs.get(id)?.length ?? 0),
+    0,
+  );
   const total = totalArms + trunk.length + other.length;
 
   return (
@@ -376,8 +384,8 @@ function ActuatorsSection({
             <CardHeader>
               <CardTitle className="text-base">Other actuators</CardTitle>
               <CardDescription>
-                Actuators whose <code className="text-xs">limb</code> field doesn't match
-                one of the six canonical limbs.
+                Actuators whose <code className="text-xs">limb</code> field
+                doesn't match one of the six canonical limbs.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -496,7 +504,9 @@ function ActuatorTable({
         <thead className="border-b border-border bg-muted/30">
           <tr>
             <th className="px-3 py-2 font-medium">Role</th>
-            {showLimbColumn ? <th className="px-3 py-2 font-medium">Limb</th> : null}
+            {showLimbColumn ? (
+              <th className="px-3 py-2 font-medium">Limb</th>
+            ) : null}
             <th className="px-3 py-2 font-medium">Bus</th>
             <th className="px-3 py-2 font-medium">ID</th>
             <th className="px-3 py-2 font-medium">Family</th>
@@ -526,7 +536,10 @@ function ActuatorTable({
               </Button>
             );
             return (
-              <tr key={a.role} className="border-b border-border/50 last:border-b-0">
+              <tr
+                key={a.role}
+                className="border-b border-border/50 last:border-b-0"
+              >
                 <td className="px-3 py-2">
                   <Link
                     to="/actuators/$role"
@@ -537,7 +550,9 @@ function ActuatorTable({
                   </Link>
                 </td>
                 {showLimbColumn ? (
-                  <td className="px-3 py-2 text-muted-foreground">{a.limb ?? "—"}</td>
+                  <td className="px-3 py-2 text-muted-foreground">
+                    {a.limb ?? "—"}
+                  </td>
                 ) : null}
                 <td className="px-3 py-2 font-mono text-xs">{a.can_bus}</td>
                 <td className="px-3 py-2 font-mono text-xs">
@@ -607,16 +622,21 @@ function SensorsSection({ sensors }: { sensors: SensorDevice[] }) {
                       className="border-b border-border/50 last:border-b-0"
                     >
                       <td className="px-3 py-2 font-mono text-xs">{s.role}</td>
-                      <td className="px-3 py-2 text-muted-foreground">{s.limb ?? "—"}</td>
+                      <td className="px-3 py-2 text-muted-foreground">
+                        {s.limb ?? "—"}
+                      </td>
                       <td className="px-3 py-2 text-muted-foreground">
                         {`${s.family.kind} (${s.family.model})`}
                       </td>
-                      <td className="px-3 py-2 font-mono text-xs">{s.can_bus}</td>
+                      <td className="px-3 py-2 font-mono text-xs">
+                        {s.can_bus}
+                      </td>
                       <td className="px-3 py-2 font-mono text-xs">
                         0x{s.can_id.toString(16).padStart(2, "0")}
                       </td>
                       <td className="px-3 py-2 text-muted-foreground">
-                        Sensor pipeline not wired yet — configuration UI coming soon.
+                        Sensor pipeline not wired yet — configuration UI coming
+                        soon.
                       </td>
                     </tr>
                   ))}
@@ -654,8 +674,8 @@ function PeripheralsSection({
         <Card>
           <CardContent className="pt-4">
             <p className="rounded-md border border-dashed border-border bg-muted/20 px-3 py-6 text-center text-sm text-muted-foreground">
-              No peripherals in inventory yet. Microphones, speakers, status LEDs,
-              displays, and fans will appear here as they're added to{" "}
+              No peripherals in inventory yet. Microphones, speakers, status
+              LEDs, displays, and fans will appear here as they're added to{" "}
               <code className="text-xs">inventory.yaml</code>.
             </p>
           </CardContent>
@@ -684,8 +704,12 @@ function PeripheralGroupCard({
     <Card className="flex flex-col">
       <CardHeader className="flex flex-row items-baseline justify-between gap-3 space-y-0">
         <div className="space-y-1">
-          <CardTitle className="text-base">{PERIPHERAL_GROUP_LABELS[group]}</CardTitle>
-          <CardDescription>{PERIPHERAL_GROUP_DESCRIPTIONS[group]}</CardDescription>
+          <CardTitle className="text-base">
+            {PERIPHERAL_GROUP_LABELS[group]}
+          </CardTitle>
+          <CardDescription>
+            {PERIPHERAL_GROUP_DESCRIPTIONS[group]}
+          </CardDescription>
         </div>
         <Badge variant="secondary" className="font-normal">
           {rows.length}
@@ -713,7 +737,9 @@ function PeripheralGroupCard({
                   <td className="px-3 py-2 text-muted-foreground">
                     {`${p.family.kind} (${p.family.model})`}
                   </td>
-                  <td className="px-3 py-2 text-muted-foreground">{p.limb ?? "—"}</td>
+                  <td className="px-3 py-2 text-muted-foreground">
+                    {p.limb ?? "—"}
+                  </td>
                   <td className="px-3 py-2 font-mono text-xs">{p.can_bus}</td>
                   <td className="px-3 py-2 font-mono text-xs">
                     0x{p.can_id.toString(16).padStart(2, "0")}
@@ -742,8 +768,8 @@ function PowerSection({ batteries }: { batteries: BatteryDevice[] }) {
         <CardHeader>
           <CardTitle className="text-base">Batteries</CardTitle>
           <CardDescription>
-            All packs in inventory. Bus and rail monitoring will land in this section
-            as the power pipeline comes online.
+            All packs in inventory. Bus and rail monitoring will land in this
+            section as the power pipeline comes online.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -770,8 +796,12 @@ function PowerSection({ batteries }: { batteries: BatteryDevice[] }) {
                       className="border-b border-border/50 last:border-b-0"
                     >
                       <td className="px-3 py-2 font-mono text-xs">{b.role}</td>
-                      <td className="px-3 py-2 text-muted-foreground">{b.family.kind}</td>
-                      <td className="px-3 py-2 font-mono text-xs">{b.can_bus}</td>
+                      <td className="px-3 py-2 text-muted-foreground">
+                        {b.family.kind}
+                      </td>
+                      <td className="px-3 py-2 font-mono text-xs">
+                        {b.can_bus}
+                      </td>
                       <td className="px-3 py-2 font-mono text-xs">
                         0x{b.can_id.toString(16).padStart(2, "0")}
                       </td>
@@ -833,8 +863,9 @@ function UnassignedSection({
       </div>
       {rows.length === 0 ? (
         <p className="rounded-md border border-dashed border-border bg-muted/30 px-4 py-6 text-sm text-muted-foreground">
-          No unassigned CAN IDs yet. Click Discover to run an active scan on the robot, or wait for
-          the daemon to observe traffic (type-2 / type-17 frames). Then use Onboard to add a device to{" "}
+          No unassigned CAN IDs yet. Click Discover to run an active scan on the
+          robot, or wait for the daemon to observe traffic (type-2 / type-17
+          frames). Then use Onboard to add a device to{" "}
           <code className="text-xs">inventory.yaml</code>.
         </p>
       ) : (
@@ -852,14 +883,21 @@ function UnassignedSection({
             </thead>
             <tbody>
               {rows.map((r) => (
-                <tr key={`${r.bus}-${r.can_id}`} className="border-b border-border/50 last:border-b-0">
+                <tr
+                  key={`${r.bus}-${r.can_id}`}
+                  className="border-b border-border/50 last:border-b-0"
+                >
                   <td className="px-3 py-2 font-mono text-xs">{r.bus}</td>
                   <td className="px-3 py-2 font-mono text-xs">
                     0x{r.can_id.toString(16).padStart(2, "0")}
                   </td>
                   <td className="px-3 py-2">{r.source}</td>
-                  <td className="px-3 py-2 text-muted-foreground">{r.family_hint ?? "—"}</td>
-                  <td className="px-3 py-2 text-muted-foreground">{r.last_seen_ms}</td>
+                  <td className="px-3 py-2 text-muted-foreground">
+                    {r.family_hint ?? "—"}
+                  </td>
+                  <td className="px-3 py-2 text-muted-foreground">
+                    {r.last_seen_ms}
+                  </td>
                   <td className="px-3 py-2">
                     <Button
                       type="button"
