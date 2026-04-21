@@ -7,12 +7,13 @@
 
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Home, Lock, LockOpen, Radio, RadioOff } from "lucide-react";
 import { useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { HomingProgressBar } from "@/components/actuator/homing-progress";
 import { useLiveInterval } from "@/lib/hooks/useLiveInterval";
 import { Badge } from "@/components/ui/badge";
+import { Tooltip } from "@/components/ui/tooltip";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -169,15 +170,53 @@ function ActuatorHeader({ motor }: { motor: MotorSummary }) {
           </span>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant={motor.verified ? "success" : "warning"}>
-            {motor.verified ? "verified" : "unverified"}
-          </Badge>
+          <Tooltip
+            content={motor.verified ? "Verified" : "Unverified"}
+            side="bottom"
+          >
+            <Badge
+              variant={motor.verified ? "success" : "warning"}
+              className="inline-flex size-7 items-center justify-center p-0"
+              aria-label={motor.verified ? "Verified" : "Unverified"}
+            >
+              {motor.verified ? (
+                <Lock className="size-3.5" strokeWidth={2.25} />
+              ) : (
+                <LockOpen className="size-3.5" strokeWidth={2.25} />
+              )}
+            </Badge>
+          </Tooltip>
           {motor.firmware_version && (
             <Badge variant="outline">fw {motor.firmware_version}</Badge>
           )}
-          <Badge variant={fb ? (stale ? "warning" : "success") : "outline"}>
-            {fb ? (stale ? `stale ${ageS?.toFixed(1)}s` : "live") : "no data"}
-          </Badge>
+          <Tooltip
+            content={
+              fb
+                ? stale
+                  ? `Stale — ${ageS?.toFixed(1)}s since last frame`
+                  : "Live telemetry"
+                : "No telemetry"
+            }
+            side="bottom"
+          >
+            <Badge
+              variant={fb ? (stale ? "warning" : "success") : "outline"}
+              className="inline-flex size-7 items-center justify-center p-0"
+              aria-label={
+                fb
+                  ? stale
+                    ? `Stale telemetry, ${ageS?.toFixed(1)} seconds old`
+                    : "Live telemetry"
+                  : "No telemetry"
+              }
+            >
+              {fb ? (
+                <Radio className="size-3.5" strokeWidth={2.25} />
+              ) : (
+                <RadioOff className="size-3.5 text-muted-foreground" strokeWidth={2.25} />
+              )}
+            </Badge>
+          </Tooltip>
           {!motor.travel_limits && (
             <Link
               to="/actuators/$role"
@@ -237,7 +276,18 @@ function BootStateBadge({ motor }: { motor: MotorSummary }) {
   const pre = bootLabelPrefix(motor);
 
   if (bs.kind === "homed") {
-    return <Badge variant="success">{pre}homed</Badge>;
+    const homedLabel = `${pre}Homed`;
+    return (
+      <Tooltip content={homedLabel} side="bottom">
+        <Badge
+          variant="success"
+          className="inline-flex size-7 items-center justify-center p-0"
+          aria-label={homedLabel}
+        >
+          <Home className="size-3.5" strokeWidth={2.25} />
+        </Badge>
+      </Tooltip>
+    );
   }
   if (bs.kind === "in_band") {
     return (
