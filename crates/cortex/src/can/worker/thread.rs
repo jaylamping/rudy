@@ -408,7 +408,7 @@ fn handle_cmd(
             motor_id,
             host_id,
             target_principal_rad,
-            role,
+            role: _,
             reply,
         } => {
             let result: io::Result<()> = {
