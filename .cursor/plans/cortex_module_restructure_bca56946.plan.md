@@ -1,16 +1,16 @@
 ---
-name: rudydae module restructure
+name: cortex module restructure
 overview: Rename the rudydae crate and rudyd deployment artifacts to cortex, then reorganize the crate from a flat 23-file src/ layout into clear domain-oriented module trees, split four >500-line god files (types, inventory, can/linux, can/bus_worker, wt_router) into focused submodules, pull every inline cfg(test) block into sibling test files, and split tests/api_contract.rs (2859 lines, 70+ tests) into per-resource integration test files. Single-crate, behaviour-preserving, staged across 16 PR-sized phases (Phase 0 + 0a for the rename, Phases 1-14 for the structural moves). Robot itself stays named rudy.
 todos:
   - id: p00-rename
     content: Phase 0 - rename the rudydae crate and rudyd deployment artifacts to cortex (crate dir, Cargo.toml package/lib/bin name, ~600 use-rudydae sites, config/rudyd.toml, deploy/pi5/rudyd.service, .rudyd state dir, VITE_RUDYD_URL, scripts/check-rudydae-linux-docker.sh)
-    status: pending
+    status: completed
   - id: p00a-pi-migration
     content: Phase 0a - add a one-shot Pi state migration step to deploy/pi5/install.sh (or rudy-update.sh) that renames the running rudyd.service to cortex.service, moves /var/lib/rudyd/tailscale to /var/lib/rudy/cortex/tailscale, and confirms the new daemon comes up clean
-    status: pending
+    status: completed
   - id: p01-types
     content: Phase 1 - split crates/cortex/src/types.rs into types/ submodules (meta, motor, system, tests, safety, reminders, logs, wt); verify ts-rs export diff is empty AND link/ npm run typecheck passes
-    status: pending
+    status: completed
   - id: p02-config
     content: Phase 2 - split crates/cortex/src/config.rs into config/ submodules (mod, http, webtransport, paths, can, safety, telemetry, logs)
     status: pending
@@ -53,7 +53,7 @@ todos:
 isProject: false
 ---
 
-# rudydae module restructure
+# cortex module restructure
 
 ## Why
 
@@ -250,7 +250,7 @@ What does **NOT** change (project-level, intentionally kept as `rudy`):
 - The `rudy-update`, `rudy-watchdog`, `rudy-pi-<sha>.tar.gz` artifact names (project scope).
 - `[cad/](cad/)`, `[ros/](ros/)`, `[ros/src/control/](ros/src/control/)` (ROS workspace lives at the project layer, not the daemon).
 - Historical `[.cursor/plans/*.plan.md](.cursor/plans/)` files that reference `rudydae` — those are immutable history.
-- This plan file's name on disk (`rudydae_module_restructure_bca56946.plan.md`) — also history.
+- Older copies of this plan used the filename `rudydae_module_restructure_bca56946.plan.md`; the tracked file is now `cortex_module_restructure_bca56946.plan.md`.
 
 Test plan for the rename PR:
 
