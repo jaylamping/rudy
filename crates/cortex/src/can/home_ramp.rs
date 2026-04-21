@@ -71,11 +71,18 @@ use crate::can::travel::{enforce_position_with_path, BandCheck};
 use crate::inventory::Actuator;
 use crate::state::SharedState;
 
-/// Hard cap on the velocity the homer will issue. Matches the jog endpoint's
-/// `MAX_JOG_VEL_RAD_S` so the homer can't outrun the operator-driven path.
-/// In practice the per-tick rate (~0.4 rad/s with default `step_size_rad`
-/// and `tick_interval_ms`) is well below this; the cap is a safety net.
-pub const MAX_HOMER_VEL_RAD_S: f32 = 0.5;
+/// Hard cap on the velocity the homer will issue. 100 deg/s expressed in
+/// rad/s (~1.7453). This intentionally **exceeds** the jog endpoint's
+/// `MAX_JOG_VEL_RAD_S` (0.5 rad/s ~= 28.6 deg/s) — operators commissioning a
+/// new arm wanted to dial in faster homes than the jog ceiling allows. The
+/// gating is the per-actuator `inventory.homing_speed_rad_s` override (UI
+/// in `actuator-travel-tab.tsx`); the auto-home path on boot inherits the
+/// same override, so a fast homing speed configured here will also be used
+/// unattended at boot — set it to a value the joint can actually track
+/// against gravity from a cold start. In practice the per-tick rate
+/// (~0.4 rad/s with default `step_size_rad` and `tick_interval_ms`) is
+/// well below this; the cap is a safety net for the override knob.
+pub const MAX_HOMER_VEL_RAD_S: f32 = 100.0_f32.to_radians();
 
 /// Returns `true` when the homer should abort with `tracking_error`.
 ///

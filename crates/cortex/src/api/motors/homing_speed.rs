@@ -1,7 +1,8 @@
 //! PUT /api/motors/:role/homing_speed — per-actuator home-ramp speed override.
 //!
 //! Persists `homing_speed_rad_s` in `inventory.yaml` (`None` clears the override).
-//! Values must lie in **[~1°, 0.5 rad/s]** (inclusive), matching the homer cap.
+//! Values must lie in **[1°/s, 100°/s]** (inclusive), matching the homer cap
+//! [`crate::can::home_ramp::MAX_HOMER_VEL_RAD_S`].
 
 use axum::{
     extract::{Path, State},

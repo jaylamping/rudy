@@ -116,7 +116,7 @@ fn resolve_homing_speed_uses_actuator_override() {
 #[test]
 fn resolve_homing_speed_clamps_high_override() {
     let (state, mut motor) = state_with_real_can_stub();
-    motor.common.homing_speed_rad_s = Some(0.9);
+    motor.common.homing_speed_rad_s = Some(MAX_HOMER_VEL_RAD_S + 1.0);
     let (v, src) = resolve_homing_speed(&state, &motor);
     assert!((v - MAX_HOMER_VEL_RAD_S).abs() < 1e-5, "got {v}");
     assert_eq!(src, "actuator_override");
@@ -127,8 +127,8 @@ fn resolve_homing_speed_derives_from_step_when_global_unset() {
     let (state, mut motor) = state_with_real_can_stub();
     motor.common.homing_speed_rad_s = None;
     let (v, src) = resolve_homing_speed(&state, &motor);
-    // step_size_rad 0.02 / 0.005s = 4 rad/s -> clamped to 0.5
-    assert!((v - 0.5).abs() < 1e-5, "got {v}");
+    // step_size_rad 0.02 / 0.005s = 4 rad/s -> clamped to MAX_HOMER_VEL_RAD_S
+    assert!((v - MAX_HOMER_VEL_RAD_S).abs() < 1e-5, "got {v}");
     assert_eq!(src, "derived_step_tick");
 }
 

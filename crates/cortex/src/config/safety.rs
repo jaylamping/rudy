@@ -24,9 +24,10 @@ pub struct SafetyConfig {
     pub tick_interval_ms: u32,
 
     /// Optional global nominal home-ramp speed (rad/s). When `None`, speed
-    /// is derived from `step_size_rad / tick_interval_s`. Capped at **0.5**
-    /// rad/s (same hard ceiling as `can::home_ramp::MAX_HOMER_VEL_RAD_S`).
-    /// Per-actuator `inventory.homing_speed_rad_s` overrides this when set.
+    /// is derived from `step_size_rad / tick_interval_s`. Capped at
+    /// [`crate::can::home_ramp::MAX_HOMER_VEL_RAD_S`] (100 deg/s ~= 1.745
+    /// rad/s). Per-actuator `inventory.homing_speed_rad_s` overrides this
+    /// when set.
     #[serde(default)]
     pub homing_speed_rad_s: Option<f32>,
 
@@ -198,17 +199,17 @@ pub struct SafetyConfig {
 impl SafetyConfig {
     /// Effective global home-ramp nominal speed (rad/s): explicit
     /// [`homing_speed_rad_s`] when set and positive, otherwise
-    /// `step_size_rad / tick_interval_s`. Clamped to **0.5** rad/s (keep in
-    /// sync with `crate::can::home_ramp::MAX_HOMER_VEL_RAD_S`).
+    /// `step_size_rad / tick_interval_s`. Clamped to
+    /// [`crate::can::home_ramp::MAX_HOMER_VEL_RAD_S`] (100 deg/s ~= 1.745
+    /// rad/s) so config drift can't widen it.
     pub fn effective_homing_speed_rad_s(&self) -> f32 {
-        const CAP: f32 = 0.5;
         let tick_secs = (self.tick_interval_ms.max(5) as f32) / 1000.0;
         let derived = (self.step_size_rad / tick_secs).max(0.0);
         let raw = self
             .homing_speed_rad_s
             .filter(|v| v.is_finite() && *v > 0.0)
             .unwrap_or(derived);
-        raw.min(CAP)
+        raw.min(crate::can::home_ramp::MAX_HOMER_VEL_RAD_S)
     }
 }
 

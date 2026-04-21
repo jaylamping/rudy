@@ -29,9 +29,10 @@ import type { TravelLimits } from "@/lib/types/TravelLimits";
 // (matches the RS03 spec.protocol.position_min/max_rad, which is +/- 2 turns).
 const RAIL_DEG = 360;
 
-/** Home-ramp speed UI range (matches cortex PUT /homing_speed). */
+/** Home-ramp speed UI range (matches cortex PUT /homing_speed, which clamps
+ * at `MAX_HOMER_VEL_RAD_S` = 100 deg/s ~= 1.745 rad/s). */
 const MIN_HOMING_DEG_S = 1;
-const MAX_HOMING_DEG_S = radToDeg(0.5);
+const MAX_HOMING_DEG_S = 100;
 
 export function ActuatorTravelTab({ motor }: { motor: MotorSummary }) {
   const qc = useQueryClient();

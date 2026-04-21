@@ -394,7 +394,7 @@ async fn put_homing_speed_persists() {
     assert_eq!(in_mem.common.homing_speed_rad_s, Some(v));
 }
 
-/// Values outside [~1 deg/s, 0.5 rad/s] are rejected.
+/// Values outside [~1 deg/s, 100 deg/s ~= 1.745 rad/s] are rejected.
 #[tokio::test]
 async fn put_homing_speed_rejects_out_of_range() {
     let (state, _dir) = common::make_state();
@@ -417,7 +417,7 @@ async fn put_homing_speed_rejects_out_of_range() {
     let err: ApiError = body_json(resp).await;
     assert_eq!(err.error, "out_of_range");
 
-    let too_high = serde_json::to_vec(&json!({"homing_speed_rad_s": 0.6_f32})).unwrap();
+    let too_high = serde_json::to_vec(&json!({"homing_speed_rad_s": 2.0_f32})).unwrap();
     let resp = app
         .oneshot(
             Request::builder()
