@@ -86,6 +86,7 @@ pub fn make_state() -> (SharedState, tempfile::TempDir) {
             tracking_error_grace_ticks: 0,
             tracking_freshness_max_age_ms: 100,
             tracking_error_debounce_ticks: 3,
+            band_violation_debounce_ticks: 3,
             // Match the operator-driven budget so boot-orchestrator
             // tests that exercise abort paths continue to fire on the
             // same thresholds they always have.
@@ -177,6 +178,7 @@ pub fn make_state_commission_can_path_fails() -> (SharedState, tempfile::TempDir
             tracking_error_grace_ticks: 0,
             tracking_freshness_max_age_ms: 100,
             tracking_error_debounce_ticks: 3,
+            band_violation_debounce_ticks: 3,
             boot_tracking_error_max_rad: 0.05,
             target_tolerance_rad: 0.005,
             homer_timeout_ms: 5_000,

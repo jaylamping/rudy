@@ -50,6 +50,23 @@
 //! of the existing safety gates inside `slow_ramp::run` (path-aware
 //! band check on every tick, tracking-error abort, `homer_timeout_ms`
 //! ceiling). It is a thin orchestrator above existing primitives.
+//!
+//! Note on `path_violation` failure mode: the slow-ramp is a
+//! velocity-feedforward controller, not a position controller. On a
+//! gravity-loaded joint (shoulder_pitch, elbow_pitch) whose
+//! `predefined_home_rad` sits near a `travel_limits` edge, the
+//! firmware velocity loop's deceleration can carry the physical
+//! position past the edge by ≪ `step_size_rad` for a single tick
+//! before the slow-ramp's reactive direction-flip observes the
+//! overshoot and reverses the command. The debounce on
+//! `safety.band_violation_debounce_ticks` (default 3) absorbs that
+//! transient; the predictive band-edge velocity taper in `slow_ramp`
+//! (which decelerates as `last_measured` nears whichever boundary —
+//! home target OR band edge — it would hit first) keeps the residual
+//! overshoot small enough that the debounce window is genuinely
+//! sufficient. A motor that genuinely refuses to return to band
+//! still surfaces here as `BootState::HomeFailed { reason:
+//! "path_violation" }` once the debounce trips.
 
 use std::time::Duration;
 
@@ -253,13 +270,35 @@ pub async fn maybe_run(state: SharedState, role: String) {
     }
 
     // Step 8: transition to AutoHoming and run the slow ramp.
-    let target_rad = motor.common.predefined_home_rad.unwrap_or(0.0);
+    let predefined_home_rad = motor.common.predefined_home_rad;
+    let target_rad = predefined_home_rad.unwrap_or(0.0);
     boot_state::force_set_auto_homing(&state, &role, mech_pos_rad, target_rad);
     audit_auto_homing_started(&state, &role, mech_pos_rad, target_rad);
+    // Include `travel_limits` and the raw `predefined_home_rad`
+    // (Some / None) alongside the resolved target so a post-mortem
+    // can tell at a glance whether the homer was using the configured
+    // home or the 0.0 fallback, and whether the band was tight enough
+    // around the target for `path_violation` to be plausible without
+    // drilling into the inventory file. The `slow_ramp: starting`
+    // info line emitted by the slow-ramp itself one millisecond later
+    // also has these fields, so post-mortems that only have the
+    // slow-ramp line still have everything they need; we duplicate
+    // the most-useful subset here so the boot-orchestrator chronology
+    // is self-contained when filtering by `boot_orchestrator:` only.
+    let (limits_min, limits_max) = motor
+        .common
+        .travel_limits
+        .as_ref()
+        .map(|l| (Some(l.min_rad), Some(l.max_rad)))
+        .unwrap_or((None, None));
     info!(
         role = %role,
         from_rad = mech_pos_rad,
         target_rad,
+        predefined_home_rad = ?predefined_home_rad,
+        limits_min_rad = ?limits_min,
+        limits_max_rad = ?limits_max,
+        boot_tracking_error_max_rad = state.cfg.safety.boot_tracking_error_max_rad,
         "boot_orchestrator: starting auto-home",
     );
 
@@ -346,10 +385,21 @@ pub async fn maybe_run(state: SharedState, role: String) {
                 reason: reason.clone(),
                 last_pos_rad,
             });
+            // Include the band envelope and the homing trajectory
+            // (`from_rad`, `target_rad`, `last_pos_rad`) on the
+            // failure line. For `reason="path_violation"` failures
+            // specifically, the operator's first triage step is "did
+            // the motor end up just outside one of the band edges?";
+            // putting `limits_*` on the same line as `last_pos_rad`
+            // turns that into a single-line answer.
             warn!(
                 role = %role,
                 reason = %reason,
+                from_rad = mech_pos_rad,
+                target_rad,
                 last_pos_rad,
+                limits_min_rad = ?limits_min,
+                limits_max_rad = ?limits_max,
                 "boot_orchestrator: auto-home failed",
             );
             // Leave attempted set: the operator's POST /home is the
