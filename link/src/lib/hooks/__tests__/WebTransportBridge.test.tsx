@@ -107,6 +107,26 @@ function makeFeedback(role: string, t_ms: number, pos: number): MotorFeedback {
   };
 }
 
+/** Full `MotorSummary` for query seeding; keeps required fields in sync with ts-rs output. */
+function motorSummaryFixture(
+  patch: Pick<
+    MotorSummary,
+    "role" | "can_bus" | "can_id" | "firmware_version" | "verified" | "present"
+  >,
+): MotorSummary {
+  return {
+    enabled: false,
+    travel_limits: null,
+    predefined_home_rad: null,
+    latest: null,
+    boot_state: { kind: "unknown" },
+    limb: null,
+    joint_kind: null,
+    drifted_param_count: 0,
+    ...patch,
+  };
+}
+
 function makeSystem(t_ms: number): SystemSnapshot {
   return {
     t_ms: BigInt(t_ms) as unknown as bigint,
@@ -153,38 +173,22 @@ function renderBridge(
 describe("WebTransportBridge", () => {
   it("merges MotorFeedback into the ['motors'] cache by role, preserving metadata", async () => {
     const baseline: MotorSummary[] = [
-      {
+      motorSummaryFixture({
         role: "shoulder_a",
         can_bus: "can1",
         can_id: 8,
         firmware_version: "1.2.3",
         verified: true,
         present: true,
-        enabled: false,
-        travel_limits: null,
-        predefined_home_rad: null,
-        latest: null,
-        boot_state: { kind: "unknown" },
-        limb: null,
-        joint_kind: null,
-        drifted_param_count: 0,
-      },
-      {
+      }),
+      motorSummaryFixture({
         role: "shoulder_b",
         can_bus: "can1",
         can_id: 9,
         firmware_version: "1.2.3",
         verified: false,
         present: true,
-        enabled: false,
-        travel_limits: null,
-        predefined_home_rad: null,
-        latest: null,
-        boot_state: { kind: "unknown" },
-        limb: null,
-        joint_kind: null,
-        drifted_param_count: 0,
-      },
+      }),
     ];
     qc.setQueryData(["motors"], baseline);
 
@@ -220,22 +224,14 @@ describe("WebTransportBridge", () => {
 
   it("coalesces multiple frames within one animation frame into a single cache write", async () => {
     const baseline: MotorSummary[] = [
-      {
+      motorSummaryFixture({
         role: "x",
         can_bus: "can1",
         can_id: 1,
         firmware_version: null,
         verified: true,
         present: true,
-        enabled: false,
-        travel_limits: null,
-        predefined_home_rad: null,
-        latest: null,
-        boot_state: { kind: "unknown" },
-        limb: null,
-        joint_kind: null,
-        drifted_param_count: 0,
-      },
+      }),
     ];
     qc.setQueryData(["motors"], baseline);
 
