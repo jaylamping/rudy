@@ -4,10 +4,9 @@
 //! every method talks to a CAN bus; that path is exercised by the per-bus
 //! integration tests on the deployment Pi, not here. On every other host
 //! (macOS / Windows dev machines) `RealCanHandle` is the stub defined in
-//! `crates/cortex/src/can/mod.rs`, which `bail!`s on every method *except*
-//! `read_add_offset`, which the commissioned-zero plan asks to return
-//! `Ok(0.0)` so contract tests for the upcoming commission endpoint and
-//! boot orchestrator don't need a real CAN bus to run.
+//! `crates/cortex/src/can/mod.rs`, which `bail!`s on most methods. Exceptions:
+//! `read_add_offset` returns `Ok(0.0)`; `set_velocity_setpoint` and `stop`
+//! return `Ok(())` so `slow_ramp` can run with `real_can = Some` without a bus.
 //!
 //! These tests pin that stub contract. If a future change makes the stub
 //! `bail!` on `read_add_offset`, the contract tests landing in Phase B

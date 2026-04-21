@@ -1,4 +1,6 @@
-//! Non-Linux stub for [`super::RealCanHandle`]: same API surface, errors on real CAN.
+//! Non-Linux stub for [`super::RealCanHandle`]: same API surface, errors on real CAN
+//! except `read_add_offset` (returns `Ok(0.0)`), `set_velocity_setpoint`, and `stop`
+//! (no-op `Ok` so tests can run `slow_ramp` with `real_can = Some`).
 
 use anyhow::Result;
 
@@ -27,7 +29,7 @@ impl RealCanHandle {
     }
 
     pub fn stop(&self, _motor: &Actuator) -> Result<()> {
-        anyhow::bail!("real CAN is only available on Linux targets")
+        Ok(())
     }
 
     pub fn save_to_flash(&self, _motor: &Actuator) -> Result<()> {
@@ -53,7 +55,9 @@ impl RealCanHandle {
     }
 
     pub fn set_velocity_setpoint(&self, _motor: &Actuator, _vel_rad_s: f32) -> Result<()> {
-        anyhow::bail!("real CAN is only available on Linux targets")
+        // No-op success so non-Linux integration/unit tests can exercise
+        // `slow_ramp` with `real_can = Some` without a SocketCAN stack.
+        Ok(())
     }
 
     pub fn refresh_all_params(&self, _state: &SharedState) -> Result<()> {

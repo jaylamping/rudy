@@ -12,16 +12,21 @@
 //!   telemetry and drives it to the per-motor `predefined_home_rad`
 //!   without operator intervention.
 //!
-//! Behavior is unchanged from the pre-refactor `run_homer`: each tick
-//!   1. Re-runs the path-aware band check on the current measured
-//!      position vs. the next setpoint.
-//!   2. Issues a velocity setpoint sized so the motor advances by
+//! Each tick:
+//!   1. Reads the latest type-2 telemetry row from `state.latest` (when
+//!      `real_can` is present) and applies `tracking_freshness_max_age_ms`.
+//!      Stale/missing rows **hold** the ramp setpoint for that tick so the
+//!      setpoint cannot outrun a frozen `mech_pos_rad`.
+//!   2. Advances the setpoint by at most `step_size_rad` toward the target
+//!      only when telemetry is fresh (always advances in mock mode).
+//!   3. Re-runs the path-aware band check on the current measured position
+//!      vs. the next setpoint.
+//!   4. Issues a velocity setpoint sized so the motor advances by
 //!      ~`step_size_rad` per `tick_interval_ms` (default ~0.4 rad/s ≈
 //!      23 deg/s), in the direction of the remaining signed delta.
-//!   3. Reads the latest type-2 telemetry row from `state.latest`.
-//!   4. Aborts on tracking error (motor not following), path violation
-//!      (config edited mid-move, or measured drifted out of band), or
-//!      `homer_timeout_ms`.
+//!   5. Aborts on tracking error after `tracking_error_debounce_ticks`
+//!      consecutive **fresh** over-budget samples (post grace), path
+//!      violation, or `homer_timeout_ms`.
 //!
 //! On EVERY exit path — success, abort, or timeout — the motor is
 //! commanded to stop (type-4) and `state.enabled` is cleared. Mock-mode
@@ -35,6 +40,9 @@
 
 use std::time::{Duration, Instant};
 
+use chrono::Utc;
+use tracing::debug;
+
 use crate::can::motion::shortest_signed_delta;
 use crate::can::travel::{enforce_position_with_path, BandCheck};
 use crate::inventory::Actuator;
@@ -45,6 +53,37 @@ use crate::state::SharedState;
 /// In practice the per-tick rate (~0.4 rad/s with default `step_size_rad`
 /// and `tick_interval_ms`) is well below this; the cap is a safety net.
 pub const MAX_HOMER_VEL_RAD_S: f32 = 0.5;
+
+/// Returns `true` when the homer should abort with `tracking_error`.
+fn tracking_error_should_abort(
+    homer_has_real_can: bool,
+    is_fresh: bool,
+    ticks: u32,
+    grace_ticks: u32,
+    err_rad: f32,
+    budget_rad: f32,
+    debounce_ticks: u32,
+    consec_over: &mut u32,
+    role: &str,
+) -> bool {
+    if !homer_has_real_can || !is_fresh || ticks <= grace_ticks {
+        return false;
+    }
+    if err_rad > budget_rad {
+        *consec_over = consec_over.saturating_add(1);
+        debug!(
+            role = %role,
+            consec_over = *consec_over,
+            err_rad,
+            budget_rad,
+            "slow_ramp: tracking error accumulating"
+        );
+        *consec_over >= debounce_ticks
+    } else {
+        *consec_over = 0;
+        false
+    }
+}
 
 /// Slow-ramp closed loop. See module docstring for the full semantics.
 ///
@@ -77,7 +116,8 @@ pub async fn run(
 /// The budget overrides `safety.tracking_error_max_rad` for the life of
 /// this run; it does NOT mutate config. All other knobs
 /// (`step_size_rad`, `tick_interval_ms`, `homer_timeout_ms`,
-/// `target_tolerance_rad`, `tracking_error_grace_ticks`) come from
+/// `target_tolerance_rad`, `tracking_error_grace_ticks`,
+/// `tracking_freshness_max_age_ms`, `tracking_error_debounce_ticks`) come from
 /// `safety`.
 ///
 /// Use this entry point when the caller has a principled reason to
@@ -119,6 +159,11 @@ pub async fn run_with_tracking_budget(
     let mut setpoint_unwrapped = from_rad;
     let mut ticks: u32 = 0;
     let mut last_measured = from_rad;
+    let homer_has_real_can = state.real_can.is_some();
+    let debounce_ticks = cfg.tracking_error_debounce_ticks;
+    let freshness_ms = cfg.tracking_freshness_max_age_ms as i64;
+    let mut stale_stretch_logged = false;
+    let mut consec_over: u32 = 0;
 
     let outcome = loop {
         if start.elapsed() >= timeout {
@@ -126,13 +171,53 @@ pub async fn run_with_tracking_budget(
         }
         ticks = ticks.saturating_add(1);
 
-        // Ramp the setpoint by at most `step_size_rad` toward the
-        // unwrapped target. We carry the unwrapped value so the
-        // tracking-error check below can compare against the raw
-        // (multi-turn) measured position without losing a revolution.
+        let is_fresh = if homer_has_real_can {
+            let now_ms = Utc::now().timestamp_millis();
+            match state.latest.read().expect("latest poisoned").get(&role) {
+                Some(fb) => {
+                    let age_ms = now_ms - fb.t_ms;
+                    if age_ms <= freshness_ms {
+                        last_measured = fb.mech_pos_rad;
+                        stale_stretch_logged = false;
+                        true
+                    } else {
+                        if !stale_stretch_logged {
+                            debug!(
+                                role = %role,
+                                age_ms,
+                                max_age_ms = freshness_ms,
+                                "slow_ramp: stale telemetry, holding setpoint"
+                            );
+                            stale_stretch_logged = true;
+                        }
+                        false
+                    }
+                }
+                None => {
+                    if !stale_stretch_logged {
+                        debug!(
+                            role = %role,
+                            "slow_ramp: stale telemetry (missing), holding setpoint"
+                        );
+                        stale_stretch_logged = true;
+                    }
+                    false
+                }
+            }
+        } else {
+            true
+        };
+
+        // Ramp the setpoint only when telemetry is fresh (real CAN) or in
+        // mock mode, so a stale `mech_pos_rad` cannot accumulate phantom
+        // tracking error against a marching setpoint.
+        if !homer_has_real_can || is_fresh {
+            let remaining = unwrapped_target - setpoint_unwrapped;
+            let step = remaining.signum() * remaining.abs().min(cfg.step_size_rad);
+            setpoint_unwrapped += step;
+        }
+
         let remaining = unwrapped_target - setpoint_unwrapped;
-        let step = remaining.signum() * remaining.abs().min(cfg.step_size_rad);
-        setpoint_unwrapped += step;
 
         // Re-check the path on principal angles so a config change
         // mid-ramp (or the motor drifting out of band under us)
@@ -197,48 +282,32 @@ pub async fn run_with_tracking_budget(
             }
         }
 
-        // Read measured. In mock mode (no real CAN) we simulate
-        // perfect tracking so the existing tests still pin the success
-        // path without standing up a full bus.
-        let measured = if state.real_can.is_some() {
-            state
-                .latest
-                .read()
-                .expect("latest poisoned")
-                .get(&role)
-                .map(|f| f.mech_pos_rad)
-                .unwrap_or(last_measured)
-        } else {
-            setpoint_unwrapped
-        };
-        last_measured = measured;
+        // Mock mode: perfect tracking so contract tests pin the success path.
+        if !homer_has_real_can {
+            last_measured = setpoint_unwrapped;
+        }
 
-        // Tracking-error check: compare the current ramp setpoint to
-        // the freshly-measured position via shortest signed delta so
-        // an N-turn unwrapped reading doesn't trip a false abort.
-        //
-        // Suppressed for the first `grace_ticks` ticks so a cold motor
-        // (one that has just been re-armed by the bus_worker's
-        // RUN_MODE + cmd_enable sequence and hasn't received a single
-        // type-2 frame yet under the new velocity command) gets a
-        // chance to start moving before the abort kicks in. Without
-        // the grace window, the homer aborts on tick 2-3 every time —
-        // the setpoint advances by `step_size_rad` per tick, but the
-        // measurement lags by one full step until the firmware loop
-        // and telemetry pipeline catch up. The `homer_timeout_ms`
-        // ceiling still backstops a motor that genuinely refuses.
-        if ticks > grace_ticks
-            && shortest_signed_delta(setpoint_unwrapped, measured).abs() > tracking_error_max_rad
-        {
-            break Err(("tracking_error".into(), measured));
+        let err_rad = shortest_signed_delta(setpoint_unwrapped, last_measured).abs();
+        if tracking_error_should_abort(
+            homer_has_real_can,
+            is_fresh,
+            ticks,
+            grace_ticks,
+            err_rad,
+            tracking_error_max_rad,
+            debounce_ticks,
+            &mut consec_over,
+            &role,
+        ) {
+            break Err(("tracking_error".into(), last_measured));
         }
 
         // Success when we're within tolerance of the target. Also
         // compared via shortest signed delta so a measured value that
         // happens to land on the other side of a wrap from the
         // unwrapped_target still counts.
-        if shortest_signed_delta(measured, unwrapped_target).abs() < cfg.target_tolerance_rad {
-            break Ok((measured, ticks));
+        if shortest_signed_delta(last_measured, unwrapped_target).abs() < cfg.target_tolerance_rad {
+            break Ok((last_measured, ticks));
         }
 
         tokio::time::sleep(tick).await;
@@ -254,4 +323,250 @@ pub async fn run_with_tracking_budget(
     state.mark_stopped(&role);
 
     outcome
+}
+
+#[cfg(test)]
+mod tracking_gate_tests {
+    use super::tracking_error_should_abort;
+
+    #[test]
+    fn debounce_trips_on_third_consecutive_fresh_over_budget() {
+        let mut c = 0;
+        assert!(!tracking_error_should_abort(
+            true, true, 4, 3, 0.06, 0.05, 3, &mut c, "m"
+        ));
+        assert_eq!(c, 1);
+        assert!(!tracking_error_should_abort(
+            true, true, 5, 3, 0.06, 0.05, 3, &mut c, "m"
+        ));
+        assert_eq!(c, 2);
+        assert!(tracking_error_should_abort(
+            true, true, 6, 3, 0.06, 0.05, 3, &mut c, "m"
+        ));
+        assert_eq!(c, 3);
+    }
+
+    #[test]
+    fn single_good_sample_resets_debounce() {
+        let mut c = 0;
+        assert!(!tracking_error_should_abort(
+            true, true, 4, 3, 0.06, 0.05, 3, &mut c, "m"
+        ));
+        assert_eq!(c, 1);
+        assert!(!tracking_error_should_abort(
+            true, true, 5, 3, 0.01, 0.05, 3, &mut c, "m"
+        ));
+        assert_eq!(c, 0);
+        assert!(!tracking_error_should_abort(
+            true, true, 6, 3, 0.06, 0.05, 3, &mut c, "m"
+        ));
+        assert_eq!(c, 1);
+    }
+
+    #[test]
+    fn stale_tick_leaves_consec_unchanged() {
+        let mut c = 2;
+        assert!(!tracking_error_should_abort(
+            true, false, 10, 0, 1.0, 0.05, 3, &mut c, "m"
+        ));
+        assert_eq!(c, 2);
+    }
+
+    #[test]
+    fn mock_mode_skips_tracking_abort() {
+        let mut c = 0;
+        assert!(!tracking_error_should_abort(
+            false, true, 100, 0, 10.0, 0.05, 3, &mut c, "m"
+        ));
+        assert_eq!(c, 0);
+    }
+
+    #[test]
+    fn grace_suppresses_tracking_abort() {
+        let mut c = 0;
+        assert!(!tracking_error_should_abort(
+            true, true, 2, 3, 10.0, 0.05, 1, &mut c, "m"
+        ));
+        assert_eq!(c, 0);
+    }
+}
+
+/// `slow_ramp` with `real_can = Some` only builds on non-Linux CI hosts using
+/// the in-tree stub (`set_velocity_setpoint` / `stop` are no-op `Ok`).
+#[cfg(all(test, not(target_os = "linux")))]
+mod real_can_stub_tests {
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use super::run_with_tracking_budget;
+    use crate::audit::AuditLog;
+    use crate::can;
+    use crate::config::{
+        CanConfig, Config, HttpConfig, LogsConfig, PathsConfig, SafetyConfig, TelemetryConfig,
+        WebTransportConfig,
+    };
+    use crate::inventory::Inventory;
+    use crate::reminders::ReminderStore;
+    use crate::spec;
+    use crate::state::AppState;
+    use crate::types::MotorFeedback;
+
+    fn state_with_real_can_stub() -> (crate::state::SharedState, crate::inventory::Actuator) {
+        let dir = tempfile::tempdir().unwrap();
+        let spec_path = dir.path().join("robstride_rs03.yaml");
+        std::fs::write(
+            &spec_path,
+            "schema_version: 2\nactuator_model: RS03\nfirmware_limits: {}\nobservables: {}\n",
+        )
+        .unwrap();
+        let inv_path = dir.path().join("inv.yaml");
+        std::fs::write(
+            &inv_path,
+            "schema_version: 2\ndevices:\n  - kind: actuator\n    role: m\n    can_bus: can0\n    can_id: 1\n    present: true\n    family:\n      kind: robstride\n      model: rs03\n    travel_limits:\n      min_rad: -1.0\n      max_rad: 1.0\n",
+        )
+        .unwrap();
+        let cfg = Config {
+            http: HttpConfig {
+                bind: "127.0.0.1:0".into(),
+            },
+            webtransport: WebTransportConfig {
+                bind: "127.0.0.1:0".into(),
+                enabled: false,
+                cert_path: None,
+                key_path: None,
+            },
+            paths: PathsConfig {
+                actuator_spec: spec_path.clone(),
+                inventory: inv_path.clone(),
+                inventory_seed: None,
+                audit_log: dir.path().join("audit.jsonl"),
+            },
+            can: CanConfig {
+                mock: true,
+                buses: vec![],
+            },
+            telemetry: TelemetryConfig {
+                poll_interval_ms: 10,
+            },
+            safety: SafetyConfig {
+                require_verified: false,
+                boot_max_step_rad: 0.087,
+                step_size_rad: 0.02,
+                tick_interval_ms: 5,
+                tracking_error_max_rad: 0.05,
+                tracking_error_grace_ticks: 0,
+                tracking_freshness_max_age_ms: 100,
+                tracking_error_debounce_ticks: 3,
+                boot_tracking_error_max_rad: 0.05,
+                target_tolerance_rad: 0.005,
+                homer_timeout_ms: 5_000,
+                max_feedback_age_ms: 100,
+                commission_readback_tolerance_rad: 1e-3,
+                auto_home_on_boot: true,
+                scan_on_boot: true,
+            },
+            logs: LogsConfig {
+                db_path: dir.path().join("logs.db"),
+                ..LogsConfig::default()
+            },
+        };
+        let specs = spec::load_robstride_specs(dir.path(), Some(&spec_path)).unwrap();
+        let inv = Inventory::load(&inv_path).unwrap();
+        let motor = inv.actuators().next().cloned().expect("fixture actuator");
+        let audit = AuditLog::open(dir.path().join("audit.jsonl")).unwrap();
+        let real_can = Some(Arc::new(can::RealCanHandle));
+        let reminders = ReminderStore::open(dir.path().join("reminders.json")).unwrap();
+        let state = Arc::new(AppState::new(cfg, specs, inv, audit, real_can, reminders));
+        (state, motor)
+    }
+
+    #[tokio::test]
+    async fn stuck_motor_aborts_after_debounced_tracking_error() {
+        let (state, motor) = state_with_real_can_stub();
+        let role = motor.common.role.clone();
+        {
+            let mut latest = state.latest.write().unwrap();
+            latest.insert(
+                role.clone(),
+                MotorFeedback {
+                    t_ms: chrono::Utc::now().timestamp_millis(),
+                    role: role.clone(),
+                    can_id: 1,
+                    mech_pos_rad: 0.0,
+                    mech_vel_rad_s: 0.0,
+                    torque_nm: 0.0,
+                    vbus_v: 48.0,
+                    temp_c: 30.0,
+                    fault_sta: 0,
+                    warn_sta: 0,
+                },
+            );
+        }
+        let updater = {
+            let state = state.clone();
+            let role = role.clone();
+            tokio::spawn(async move {
+                loop {
+                    tokio::time::sleep(Duration::from_millis(2)).await;
+                    let mut w = state.latest.write().unwrap();
+                    if let Some(fb) = w.get_mut(&role) {
+                        fb.t_ms = chrono::Utc::now().timestamp_millis();
+                        fb.mech_pos_rad = 0.0;
+                    }
+                }
+            })
+        };
+        let r = run_with_tracking_budget(state.clone(), motor, 0.0, 0.5, 0.05).await;
+        updater.abort();
+        let Err((reason, _)) = r else {
+            panic!("expected Err, got {r:?}");
+        };
+        assert_eq!(reason, "tracking_error");
+    }
+
+    #[tokio::test]
+    async fn stale_telemetry_hold_then_fresh_run_completes() {
+        let (state, motor) = state_with_real_can_stub();
+        let role = motor.common.role.clone();
+        let stale_ms = chrono::Utc::now().timestamp_millis() - 60_000;
+        {
+            let mut latest = state.latest.write().unwrap();
+            latest.insert(
+                role.clone(),
+                MotorFeedback {
+                    t_ms: stale_ms,
+                    role: role.clone(),
+                    can_id: 1,
+                    mech_pos_rad: 0.0,
+                    mech_vel_rad_s: 0.0,
+                    torque_nm: 0.0,
+                    vbus_v: 48.0,
+                    temp_c: 30.0,
+                    fault_sta: 0,
+                    warn_sta: 0,
+                },
+            );
+        }
+        let state2 = state.clone();
+        let role2 = role.clone();
+        let updater = tokio::spawn(async move {
+            let mut phase2 = false;
+            let t0 = tokio::time::Instant::now();
+            loop {
+                tokio::time::sleep(Duration::from_millis(3)).await;
+                if t0.elapsed() > Duration::from_millis(50) {
+                    phase2 = true;
+                }
+                let mut w = state2.latest.write().unwrap();
+                let fb = w.get_mut(&role2).unwrap();
+                if phase2 {
+                    fb.t_ms = chrono::Utc::now().timestamp_millis();
+                    fb.mech_pos_rad = (fb.mech_pos_rad + 0.03).min(0.25);
+                }
+            }
+        });
+        let r = run_with_tracking_budget(state.clone(), motor, 0.0, 0.12, 0.05).await;
+        updater.abort();
+        assert!(r.is_ok(), "expected Ok, got {r:?}");
+    }
 }

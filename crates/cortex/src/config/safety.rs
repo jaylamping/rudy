@@ -43,6 +43,27 @@ pub struct SafetyConfig {
     #[serde(default = "default_tracking_error_grace_ticks")]
     pub tracking_error_grace_ticks: u32,
 
+    /// Maximum age of `state.latest[role].t_ms` for a slow-ramp tick to treat
+    /// telemetry as fresh. When stale or missing, the homer **holds**
+    /// `setpoint_unwrapped` for that tick (no phantom tracking error from a
+    /// frozen `mech_pos_rad` while the setpoint kept marching) and skips the
+    /// tracking-error debounce for that tick. Default **100 ms** (~2× the
+    /// default `tick_interval_ms`). Independent of `max_feedback_age_ms`,
+    /// which gates jog and the boot orchestrator's *pre-flight* check only.
+    /// `homer_timeout_ms` still backstops a motor that never reports fresh
+    /// feedback again.
+    #[serde(default = "default_tracking_freshness_max_age_ms")]
+    pub tracking_freshness_max_age_ms: u64,
+
+    /// Number of **consecutive** fresh ticks (after `tracking_error_grace_ticks`)
+    /// with `|setpoint − measured| >` the active tracking budget required to
+    /// abort with `tracking_error`. A single transient spike or one stale gap
+    /// in telemetry no longer kills the whole home. Default **3**. Set to
+    /// **1** to restore the legacy single-sample abort. `homer_timeout_ms`
+    /// remains the ceiling for a motor that never converges.
+    #[serde(default = "default_tracking_error_debounce_ticks")]
+    pub tracking_error_debounce_ticks: u32,
+
     /// Boot-orchestrator-specific override for `tracking_error_max_rad`.
     /// The orchestrator runs unattended on cold motors at boot, so a
     /// looser budget than the operator-driven `POST /home` is
@@ -142,6 +163,14 @@ pub(crate) fn default_tracking_error_max_rad() -> f32 {
 }
 
 pub(crate) fn default_tracking_error_grace_ticks() -> u32 {
+    3
+}
+
+pub(crate) fn default_tracking_freshness_max_age_ms() -> u64 {
+    100
+}
+
+pub(crate) fn default_tracking_error_debounce_ticks() -> u32 {
     3
 }
 
