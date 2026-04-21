@@ -12,6 +12,7 @@ devices:
   firmware_version: 0.3.1.41
   travel_limits: null
   commissioned_zero_offset: null
+  active_report_persisted: false
   predefined_home_rad: null
   limb: null
   joint_kind: null
@@ -178,6 +179,7 @@ devices:
   firmware_version: unknown
   travel_limits: null
   commissioned_zero_offset: null
+  active_report_persisted: false
   predefined_home_rad: null
   limb: null
   joint_kind: null

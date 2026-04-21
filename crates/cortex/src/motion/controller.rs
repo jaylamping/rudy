@@ -42,15 +42,14 @@ use crate::motion::sweep::{self, SweepState};
 use crate::motion::wave::{self, WaveState};
 use crate::state::SharedState;
 
-/// Minimum tick interval. Faster than this is pointless on the bus
-/// (CAN frame at 1 Mbps is ~100 us, but the firmware aggregates
-/// updates) and risks starving the bus_worker.
-const MIN_TICK_INTERVAL_MS: u64 = 16;
+/// Minimum tick interval. Set to 10 ms to match the RS03's active-report
+/// floor (`EPScan_time = 1`), so the controller can consume 100 Hz feedback
+/// without aliasing.
+const MIN_TICK_INTERVAL_MS: u64 = 10;
 
-/// Default tick interval. Matches the configured `poll_interval_ms`
-/// when the cadence-bump plan landed; we re-derive instead of import
-/// to avoid a tight coupling on the telemetry config.
-const DEFAULT_TICK_INTERVAL_MS: u64 = 16;
+/// Default tick interval. Keep aligned with `MIN_TICK_INTERVAL_MS` so the
+/// controller loop runs at the same 100 Hz cadence as firmware feedback.
+const DEFAULT_TICK_INTERVAL_MS: u64 = 10;
 
 /// Heartbeat window for [`MotionIntent::Jog`]. If the operator's
 /// dead-man stream doesn't refresh within this many milliseconds, the

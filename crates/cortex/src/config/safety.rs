@@ -13,12 +13,13 @@ pub struct SafetyConfig {
     #[serde(default = "default_boot_max_step_rad")]
     pub boot_max_step_rad: f32,
 
-    /// Per-tick step size for the slow-ramp homer. Default 0.02 rad ~= 1.1 deg.
+    /// Per-tick step size for the slow-ramp homer. Default 0.004 rad ~= 0.23 deg.
     #[serde(default = "default_step_size_rad")]
     pub step_size_rad: f32,
 
-    /// Tick interval for the slow-ramp loops, in milliseconds. Default 50
-    /// ms; combined with `step_size_rad` gives ~22 deg/s effective speed.
+    /// Tick interval for the slow-ramp loops, in milliseconds. Default 10
+    /// ms; combined with `step_size_rad` keeps the same ~22 deg/s effective
+    /// speed as the old 50 ms / 0.02 rad pairing.
     #[serde(default = "default_tick_interval_ms")]
     pub tick_interval_ms: u32,
 
@@ -37,7 +38,7 @@ pub struct SafetyConfig {
     /// sequence). Without this grace window, the homer aborts on tick 2
     /// or 3 every time it's asked to move a motor that hasn't been
     /// jogged yet this power-cycle — which is exactly the scenario the
-    /// boot orchestrator runs in. Default 3 ticks (150 ms with default
+    /// boot orchestrator runs in. Default 15 ticks (150 ms with default
     /// `tick_interval_ms`); the `homer_timeout_ms` ceiling still
     /// backstops a motor that genuinely refuses to move.
     #[serde(default = "default_tracking_error_grace_ticks")]
@@ -47,7 +48,7 @@ pub struct SafetyConfig {
     /// telemetry as fresh. When stale or missing, the homer **holds**
     /// `setpoint_unwrapped` for that tick (no phantom tracking error from a
     /// frozen `mech_pos_rad` while the setpoint kept marching) and skips the
-    /// tracking-error debounce for that tick. Default **100 ms** (~2× the
+    /// tracking-error debounce for that tick. Default **100 ms** (~10× the
     /// default `tick_interval_ms`). Independent of `max_feedback_age_ms`,
     /// which gates jog and the boot orchestrator's *pre-flight* check only.
     /// `homer_timeout_ms` still backstops a motor that never reports fresh
@@ -58,7 +59,7 @@ pub struct SafetyConfig {
     /// Number of **consecutive** fresh ticks (after `tracking_error_grace_ticks`)
     /// with `|setpoint − measured| >` the active tracking budget required to
     /// abort with `tracking_error`. A single transient spike or one stale gap
-    /// in telemetry no longer kills the whole home. Default **3**. Set to
+    /// in telemetry no longer kills the whole home. Default **15**. Set to
     /// **1** to restore the legacy single-sample abort. `homer_timeout_ms`
     /// remains the ceiling for a motor that never converges.
     #[serde(default = "default_tracking_error_debounce_ticks")]
@@ -84,7 +85,7 @@ pub struct SafetyConfig {
     /// had to re-home manually — even though the motor was already
     /// returning to band on its own.
     ///
-    /// At the default of `3` (~150 ms with the default `tick_interval_ms`)
+    /// At the default of `15` (~150 ms with the default `tick_interval_ms`)
     /// the homer absorbs the one-or-two tick excursion that the velocity
     /// loop's reaction takes to undo, while still aborting promptly on a
     /// genuinely runaway motor. Combined with the band-edge velocity taper
@@ -143,11 +144,11 @@ pub struct SafetyConfig {
     /// would otherwise approve every subsequent jog forever.
     ///
     /// Default 250 ms. The original 100 ms target matched the type-2
-    /// hot-path cadence (~16 ms at 60 Hz), but on a real bus with N
+    /// hot-path cadence (~10 ms at 100 Hz), but on a real bus with N
     /// idle motors the type-17 fallback round-robin sits at roughly
     /// `poll_interval_ms × N + slack` per role — easily 100-200 ms when
     /// the motor isn't actively emitting type-2 frames. 250 ms absorbs
-    /// that worst-case fallback gap (still ~15 missed 60 Hz frames) so
+    /// that worst-case fallback gap (still ~25 missed 100 Hz frames) so
     /// the very first jog out of idle isn't a guaranteed false positive,
     /// while staying tight enough that a true mid-sweep type-2 stall
     /// fails closed within ~4 SPA tick budgets. The SPA mirror in
@@ -200,11 +201,11 @@ pub(crate) fn default_commission_readback_tolerance_rad() -> f32 {
 }
 
 pub(crate) fn default_step_size_rad() -> f32 {
-    0.02
+    0.004
 }
 
 pub(crate) fn default_tick_interval_ms() -> u32 {
-    50
+    10
 }
 
 pub(crate) fn default_tracking_error_max_rad() -> f32 {
@@ -212,7 +213,7 @@ pub(crate) fn default_tracking_error_max_rad() -> f32 {
 }
 
 pub(crate) fn default_tracking_error_grace_ticks() -> u32 {
-    3
+    15
 }
 
 pub(crate) fn default_tracking_freshness_max_age_ms() -> u64 {
@@ -220,11 +221,11 @@ pub(crate) fn default_tracking_freshness_max_age_ms() -> u64 {
 }
 
 pub(crate) fn default_tracking_error_debounce_ticks() -> u32 {
-    3
+    15
 }
 
 pub(crate) fn default_band_violation_debounce_ticks() -> u32 {
-    3
+    15
 }
 
 pub(crate) fn default_boot_tracking_error_max_rad() -> f32 {

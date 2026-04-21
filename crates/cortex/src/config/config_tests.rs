@@ -71,6 +71,34 @@ fn safety_config_json_roundtrip_preserves_tracking_gates() {
         back.band_violation_debounce_ticks,
         super::safety::default_band_violation_debounce_ticks()
     );
+    assert_eq!(
+        back.tracking_error_grace_ticks,
+        super::safety::default_tracking_error_grace_ticks()
+    );
+}
+
+#[test]
+fn actuator_common_roundtrip_preserves_active_report_persisted_flag() {
+    let common = crate::inventory::ActuatorCommon {
+        role: "test.motor".into(),
+        can_bus: "can0".into(),
+        can_id: 7,
+        present: true,
+        verified: false,
+        commissioned_at: None,
+        firmware_version: None,
+        travel_limits: None,
+        commissioned_zero_offset: None,
+        active_report_persisted: true,
+        predefined_home_rad: None,
+        limb: None,
+        joint_kind: None,
+        notes_yaml: None,
+    };
+    let json = serde_json::to_string(&common).expect("serialize actuator common");
+    let back: crate::inventory::ActuatorCommon =
+        serde_json::from_str(&json).expect("deserialize actuator common");
+    assert!(back.active_report_persisted);
 }
 
 #[test]

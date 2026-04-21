@@ -70,11 +70,17 @@ pub fn spawn(state: SharedState) {
                 // ANYTHING else with the bus. Runs once at startup; the
                 // operator-initiated home transition restores per-motor
                 // full limits via `home::run_homer`.
+                //
+                // Then ensure active type-2 reporting is enabled at 100 Hz
+                // for every present motor, and persist that setting once per
+                // motor (`active_report_persisted`) via type-22 + inventory
+                // write-back.
                 {
                     let state = state.clone();
                     let core = core.clone();
                     let _ = tokio::task::spawn_blocking(move || {
                         core.seed_boot_low_limits(&state);
+                        core.ensure_active_reporting_for_all(&state);
                     })
                     .await;
                 }

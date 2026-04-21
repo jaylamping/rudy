@@ -14,6 +14,7 @@ pub enum CommType {
     WriteParam = 0x12,
     FaultFeedback = 0x15,
     SaveParams = 0x16,
+    ActiveReport = 0x18,
 }
 
 impl TryFrom<u8> for CommType {
@@ -32,6 +33,7 @@ impl TryFrom<u8> for CommType {
             0x12 => Ok(Self::WriteParam),
             0x15 => Ok(Self::FaultFeedback),
             0x16 => Ok(Self::SaveParams),
+            0x18 => Ok(Self::ActiveReport),
             _ => Err(()),
         }
     }

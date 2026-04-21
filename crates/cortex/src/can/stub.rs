@@ -36,6 +36,10 @@ impl RealCanHandle {
         anyhow::bail!("real CAN is only available on Linux targets")
     }
 
+    pub fn ensure_active_report_100hz(&self, _motor: &Actuator) -> Result<()> {
+        Ok(())
+    }
+
     pub fn set_zero(&self, _motor: &Actuator) -> Result<()> {
         anyhow::bail!("real CAN is only available on Linux targets")
     }

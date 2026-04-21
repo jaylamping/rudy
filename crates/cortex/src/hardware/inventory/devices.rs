@@ -56,6 +56,8 @@ pub struct ActuatorCommon {
     #[serde(default)]
     pub commissioned_zero_offset: Option<f32>,
     #[serde(default)]
+    pub active_report_persisted: bool,
+    #[serde(default)]
     pub predefined_home_rad: Option<f32>,
     #[serde(default)]
     pub limb: Option<String>,

@@ -292,7 +292,7 @@ pub async fn run_with_tracking_budget(
 
     // Effective top speed: one `step_size_rad` per `tick_interval_ms`,
     // clamped to MAX_HOMER_VEL_RAD_S as a hard upper bound. With the
-    // defaults (0.02 rad / 50 ms) this works out to ~0.4 rad/s.
+    // defaults (0.004 rad / 10 ms) this works out to ~0.4 rad/s.
     let tick_secs = (cfg.tick_interval_ms.max(5) as f32) / 1000.0;
     let nominal_speed = (cfg.step_size_rad / tick_secs).min(MAX_HOMER_VEL_RAD_S);
 

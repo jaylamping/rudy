@@ -99,6 +99,17 @@ impl BusHandle {
         recv_blocking(rx, REPLY_TIMEOUT)?
     }
 
+    pub fn active_report(&self, host_id: u8, motor_id: u8, enable: bool) -> io::Result<()> {
+        let (tx, rx) = mpsc::channel();
+        self.submit(Cmd::ActiveReport {
+            motor_id,
+            host_id,
+            enable,
+            reply: tx,
+        })?;
+        recv_blocking(rx, REPLY_TIMEOUT)?
+    }
+
     pub fn set_velocity(
         &self,
         host_id: u8,

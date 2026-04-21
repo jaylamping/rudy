@@ -50,6 +50,25 @@ pub fn cmd_save_params(bus: &CanBus, host_id: u8, motor_id: u8) -> io::Result<()
     send_frame(bus, CommType::SaveParams, host_id, motor_id, &[])
 }
 
+#[inline]
+fn active_report_payload(enable: bool) -> [u8; 8] {
+    // RS03 type-24 docs use byte 7 (`F_CMD`) for the switch:
+    // 0x00 = disable, 0x01 = enable.
+    let mut payload = [0u8; 8];
+    payload[7] = u8::from(enable);
+    payload
+}
+
+pub fn cmd_active_report(
+    bus: &CanBus,
+    host_id: u8,
+    motor_id: u8,
+    enable: bool,
+) -> io::Result<()> {
+    let payload = active_report_payload(enable);
+    send_frame(bus, CommType::ActiveReport, host_id, motor_id, &payload)
+}
+
 pub fn write_param_f32(
     bus: &CanBus,
     host_id: u8,
@@ -275,5 +294,17 @@ mod tests {
         data[4..8].copy_from_slice(&1.25f32.to_le_bytes());
         let r = interpret_read_param_response(reply_id, &data, 8, tx, host, motor, index);
         assert_eq!(r, Some(Some(1.25f32.to_le_bytes())));
+    }
+
+    #[test]
+    fn active_report_frame_uses_type24_comm_bits() {
+        let raw_id = arb_id(CommType::ActiveReport, 0xFD, 0x08);
+        assert_eq!(raw_id, 0x1800_FD08);
+    }
+
+    #[test]
+    fn active_report_payload_sets_f_cmd_in_byte7() {
+        assert_eq!(active_report_payload(false), [0, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(active_report_payload(true), [0, 0, 0, 0, 0, 0, 0, 1]);
     }
 }

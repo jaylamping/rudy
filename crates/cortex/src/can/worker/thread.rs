@@ -337,6 +337,19 @@ fn handle_cmd(
             log_send_result(iface, "save_params", motor_id, &result);
             let _ = reply.send(result);
         }
+        Cmd::ActiveReport {
+            motor_id,
+            host_id,
+            enable,
+            reply,
+        } => {
+            let result = {
+                let guard = bus.lock().expect("bus mutex poisoned");
+                session::cmd_active_report(&guard, host_id, motor_id, enable)
+            };
+            log_send_result(iface, "active_report", motor_id, &result);
+            let _ = reply.send(result);
+        }
         Cmd::SetVelocity {
             motor_id,
             host_id,

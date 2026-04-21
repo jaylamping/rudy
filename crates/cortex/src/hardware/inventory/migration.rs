@@ -32,6 +32,8 @@ pub(crate) struct LegacyMotorV1 {
     #[serde(default)]
     pub commissioned_zero_offset: Option<f32>,
     #[serde(default)]
+    pub active_report_persisted: bool,
+    #[serde(default)]
     pub predefined_home_rad: Option<f32>,
     #[serde(default)]
     pub limb: Option<String>,
@@ -71,6 +73,7 @@ pub fn migrate_v1_yaml_to_v2_inventory(yaml: &str) -> Result<Inventory> {
             firmware_version: m.firmware_version,
             travel_limits: m.travel_limits,
             commissioned_zero_offset: m.commissioned_zero_offset,
+            active_report_persisted: m.active_report_persisted,
             predefined_home_rad: m.predefined_home_rad,
             limb: m.limb,
             joint_kind: m.joint_kind,

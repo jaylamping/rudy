@@ -60,7 +60,7 @@ bits  7..0  : destination address (8 bits, motor CAN_ID)
 | 21       | 0x15     | Fault feedback frame                                     |
 | 22       | 0x16     | **Save parameters to flash (0x20xx range)**              |
 | 23       | 0x17     | Change baud rate (effective after power cycle)           |
-| 24       | 0x18     | Active reporting enable/disable (default 10 ms interval) |
+| 24       | 0x18     | Active reporting enable/disable (default 10 ms interval; `cortex` applies this at boot and persists via type-22 on first successful setup) |
 | 25       | 0x19     | Change protocol: 0=private / 1=CANopen / 2=MIT           |
 | 26       | 0x1A     | Version number read                                      |
 

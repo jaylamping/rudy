@@ -102,7 +102,7 @@ impl MotionRegistry {
             state,
             role,
             vel_rad_s: 0.0,
-            horizon_ms: 16,
+            horizon_ms: 10,
         };
         let pf = preflight.run()?;
 

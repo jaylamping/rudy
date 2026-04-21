@@ -15,6 +15,7 @@ pub const VBUS: u16 = 0x701C;
 pub const ACC_RAD: u16 = 0x7022;
 pub const VEL_MAX: u16 = 0x7024;
 pub const ACC_SET: u16 = 0x7025;
+pub const EPSCAN_TIME: u16 = 0x7026;
 pub const CAN_TIMEOUT: u16 = 0x7028;
 pub const ZERO_STA: u16 = 0x7029;
 pub const DAMPER: u16 = 0x702A;

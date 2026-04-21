@@ -51,6 +51,13 @@ pub enum Cmd {
         host_id: u8,
         reply: Sender<io::Result<()>>,
     },
+    /// `cmd_active_report` (type-24 on RS03).
+    ActiveReport {
+        motor_id: u8,
+        host_id: u8,
+        enable: bool,
+        reply: Sender<io::Result<()>>,
+    },
     /// Velocity-mode setpoint. Smart re-arm: writes RUN_MODE +
     /// `cmd_enable` only when the worker has not yet observed this
     /// motor as enabled (transition path). Subsequent calls send only

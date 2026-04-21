@@ -52,17 +52,17 @@ audit_log = "./.cortex/audit.jsonl"
 mock = true
 
 [telemetry]
-# Slow-cadence type-17 sweep for the auxiliary observables that don't
-# ride the type-2 stream (`fault_sta`, `vbus`). The dedicated bus
-# worker (`crates/cortex/src/can/bus_worker.rs`) streams pos / vel /
-# torque / temp into `state.latest` at native bus cadence (~60 Hz on
-# the RS03), so this interval is now just for the housekeeping reads,
-# NOT the live position feedback that the jog safety check reads from.
+# Type-17 sweep cadence for auxiliary observables (`fault_sta`, `vbus`)
+# and fallback refresh when a motor is idle.
 #
-# Bumped from 100 ms (10 Hz) to 16 ms (~60 Hz) to match the SPA's new
-# 60 Hz tick; this also matches `MotorBackoff::INITIAL_BACKOFF` so the
-# very first retry after a per-motor failure happens on the next tick.
-poll_interval_ms = 16
+# Type-2 position/velocity/torque comes from firmware active reporting
+# (type-24) configured at boot by:
+# - `LinuxCanCore::ensure_active_report_100hz` (EPScan_time=1, enable type-24)
+# - `LinuxCanCore::ensure_active_reporting_for_all` (boot-wide pass)
+#
+# Keep this at 10 ms so fallback polling, controller tick, and initial
+# backoff all align at 100 Hz.
+poll_interval_ms = 10
 
 [safety]
 # `cortex` refuses to enable a motor whose inventory entry lacks
@@ -76,12 +76,18 @@ require_verified = true
 # `telemetry.poll_interval_ms × motors_per_bus + slack` per role, so an
 # idle motor's `state.latest` row only refreshes every ~100 ms even
 # under healthy conditions. 250 ms absorbs that worst-case fallback
-# gap (still ~15 missed type-2 frames at 60 Hz, so a real mid-sweep
+# gap (still ~25 missed type-2 frames at 100 Hz, so a real mid-sweep
 # stall still fails closed within ~4 SPA tick budgets).
 #
 # The SPA mirror in `link/src/components/actuator/motion-tests-card.tsx`
 # reads the same value; bump both together if you change this.
 max_feedback_age_ms = 250
+
+# Slow-ramp homer tick and per-tick setpoint increment. At 10 ms +
+# 0.004 rad, nominal homing speed stays ~0.4 rad/s (~23 deg/s), matching
+# previous behavior but with 5x finer control updates.
+tick_interval_ms = 10
+step_size_rad = 0.004
 
 # Tolerance for the boot orchestrator's add_offset readback check
 # (commissioned-zero quick-home plan, Phase C). On every boot the
@@ -126,7 +132,7 @@ auto_home_on_boot = true
 # `BootState::HomeFailed { reason: "path_violation" }` even though the
 # motor was already on its way back into band.
 #
-# At the default of 3 (~150 ms with the default tick_interval_ms) the
+# At the default of 15 (~150 ms with the default tick_interval_ms) the
 # homer absorbs the one-or-two tick excursion the velocity loop's
 # reaction takes to undo, while still aborting promptly on a motor
 # that genuinely keeps drifting outside the band. Combined with the
@@ -142,7 +148,7 @@ auto_home_on_boot = true
 # path still backstop a motor that genuinely refuses to come back into
 # band — debounce only delays the reason flip, it does not let a
 # runaway joint travel any further than the tracking-error gate would.
-band_violation_debounce_ticks = 3
+band_violation_debounce_ticks = 15
 
 # After SocketCAN workers start, run one active discovery scan (type-17
 # probes across 0x01..0x7F on each configured bus). Disable to trim boot

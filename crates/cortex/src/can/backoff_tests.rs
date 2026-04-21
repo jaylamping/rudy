@@ -11,6 +11,11 @@ fn fresh_role_polls_immediately() {
 }
 
 #[test]
+fn initial_backoff_matches_100hz_poll_tick() {
+    assert_eq!(INITIAL_BACKOFF, Duration::from_millis(10));
+}
+
+#[test]
 fn first_failure_starts_initial_backoff() {
     let b = MotorBackoff::new();
     let t0 = Instant::now();
@@ -45,8 +50,7 @@ fn backoff_caps_at_max() {
     let b = MotorBackoff::new();
     let t0 = Instant::now();
 
-    // 1, 2, 4, 8, 16, 32 (capped to 30) seconds. 9 failures puts us
-    // well past the cap.
+    // 10, 20, 40, ... ms (doubling) until the 30 s cap.
     for _ in 0..20 {
         b.record_failure_at("a", &err("x"), t0);
     }

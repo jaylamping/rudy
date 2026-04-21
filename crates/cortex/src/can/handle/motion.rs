@@ -1,6 +1,8 @@
-use anyhow::Result;
+use std::time::Duration;
 
-use crate::inventory::Actuator;
+use anyhow::{anyhow, Result};
+
+use crate::inventory::{self, Actuator, Device};
 use crate::state::SharedState;
 
 use super::LinuxCanCore;
@@ -66,5 +68,200 @@ impl LinuxCanCore {
                 }
             }
         }
+    }
+
+    /// Ensure every present RS03 motor has active type-2 reporting enabled
+    /// at 100 Hz, and persist the setting once per motor.
+    ///
+    /// Per motor:
+    /// 1) Always re-apply RAM-side `EPScan_time=1` + type-24 enable.
+    /// 2) If inventory says it has not been persisted yet, issue type-22
+    ///    save-to-flash, then flip `active_report_persisted=true` via
+    ///    inventory::write_atomic.
+    pub fn ensure_active_reporting_for_all(&self, state: &SharedState) {
+        let motors: Vec<Actuator> = state
+            .inventory
+            .read()
+            .expect("inventory poisoned")
+            .actuators()
+            .filter(|m| m.common.present)
+            .cloned()
+            .collect();
+
+        let inv_path = state.cfg.paths.inventory.clone();
+        for motor in motors {
+            let role = motor.common.role.clone();
+            if let Err(e) = self.ensure_active_report_100hz(&motor) {
+                tracing::warn!(role = %role, error = ?e, "boot active-report enable failed");
+                continue;
+            }
+
+            if motor.common.active_report_persisted {
+                continue;
+            }
+
+            if let Err(e) = self.save_to_flash(&motor) {
+                tracing::warn!(role = %role, error = ?e, "boot active-report save-to-flash failed");
+                continue;
+            }
+
+            // RS03 flash commit is asynchronous; match the existing
+            // post-save settle window used by commission flow.
+            std::thread::sleep(Duration::from_millis(100));
+
+            match mark_active_report_persisted(state, &inv_path, &role) {
+                Ok(true) => {
+                    tracing::info!(role = %role, "boot active-report persisted to flash");
+                }
+                Ok(false) => {}
+                Err(e) => {
+                    tracing::warn!(role = %role, error = ?e, "boot active-report inventory update failed");
+                }
+            }
+        }
+    }
+}
+
+fn mark_active_report_persisted(
+    state: &SharedState,
+    inv_path: &std::path::Path,
+    role: &str,
+) -> Result<bool> {
+    {
+        let inv = state.inventory.read().expect("inventory poisoned");
+        if let Some(actuator) = inv.actuator_by_role(role) {
+            if actuator.common.active_report_persisted {
+                return Ok(false);
+            }
+        }
+    }
+
+    let role_owned = role.to_string();
+    let new_inv = inventory::write_atomic(inv_path, |inv| {
+        let actuator = inv
+            .devices
+            .iter_mut()
+            .find_map(|device| match device {
+                Device::Actuator(a) if a.common.role == role_owned => Some(a),
+                _ => None,
+            })
+            .ok_or_else(|| anyhow!("role {role_owned} disappeared during inventory update"))?;
+        actuator.common.active_report_persisted = true;
+        Ok(())
+    })?;
+    *state.inventory.write().expect("inventory poisoned") = new_inv;
+    Ok(true)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use crate::audit::AuditLog;
+    use crate::config::{
+        CanConfig, Config, HttpConfig, LogsConfig, PathsConfig, SafetyConfig, TelemetryConfig,
+        WebTransportConfig,
+    };
+    use crate::inventory::Inventory;
+    use crate::reminders::ReminderStore;
+    use crate::spec;
+    use crate::state::AppState;
+
+    use super::mark_active_report_persisted;
+
+    fn state_with_inventory_flag(
+        active_report_persisted: bool,
+    ) -> (
+        crate::state::SharedState,
+        tempfile::TempDir,
+        std::path::PathBuf,
+    ) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let spec_path = dir.path().join("robstride_rs03.yaml");
+        std::fs::write(
+            &spec_path,
+            "schema_version: 2\nactuator_model: RS03\nfirmware_limits: {}\nobservables: {}\n",
+        )
+        .expect("write spec");
+
+        let inv_path = dir.path().join("inventory.yaml");
+        std::fs::write(
+            &inv_path,
+            format!(
+                "schema_version: 2\ndevices:\n  - kind: actuator\n    role: m\n    can_bus: can0\n    can_id: 1\n    present: true\n    verified: false\n    travel_limits:\n      min_rad: -1.0\n      max_rad: 1.0\n    commissioned_zero_offset: null\n    active_report_persisted: {active_report_persisted}\n    family:\n      kind: robstride\n      model: rs03\n"
+            ),
+        )
+        .expect("write inventory");
+
+        let cfg = Config {
+            http: HttpConfig {
+                bind: "127.0.0.1:0".into(),
+            },
+            webtransport: WebTransportConfig {
+                bind: "127.0.0.1:0".into(),
+                enabled: false,
+                cert_path: None,
+                key_path: None,
+            },
+            paths: PathsConfig {
+                actuator_spec: spec_path.clone(),
+                inventory: inv_path.clone(),
+                inventory_seed: None,
+                audit_log: dir.path().join("audit.jsonl"),
+            },
+            can: CanConfig {
+                mock: true,
+                buses: vec![],
+            },
+            telemetry: TelemetryConfig {
+                poll_interval_ms: 10,
+            },
+            safety: SafetyConfig {
+                require_verified: false,
+                boot_max_step_rad: 0.087,
+                step_size_rad: 0.004,
+                tick_interval_ms: 10,
+                tracking_error_max_rad: 0.05,
+                tracking_error_grace_ticks: 15,
+                tracking_freshness_max_age_ms: 100,
+                tracking_error_debounce_ticks: 15,
+                band_violation_debounce_ticks: 15,
+                boot_tracking_error_max_rad: 0.2,
+                target_tolerance_rad: 0.005,
+                homer_timeout_ms: 30_000,
+                max_feedback_age_ms: 250,
+                commission_readback_tolerance_rad: 1e-3,
+                auto_home_on_boot: true,
+                scan_on_boot: true,
+            },
+            logs: LogsConfig {
+                db_path: dir.path().join("logs.db"),
+                ..LogsConfig::default()
+            },
+        };
+        let specs = spec::load_robstride_specs(dir.path(), Some(&spec_path)).expect("load specs");
+        let inv = Inventory::load(&inv_path).expect("load inventory");
+        let audit = AuditLog::open(dir.path().join("audit.jsonl")).expect("open audit");
+        let reminders = ReminderStore::open(dir.path().join("reminders.json")).expect("reminders");
+        let state = Arc::new(AppState::new(cfg, specs, inv, audit, None, reminders));
+        (state, dir, inv_path)
+    }
+
+    #[test]
+    fn active_report_persist_flag_writes_once_then_is_idempotent() {
+        let (state, _dir, inv_path) = state_with_inventory_flag(false);
+
+        let first = mark_active_report_persisted(&state, &inv_path, "m").expect("first persist");
+        assert!(first, "first call should persist");
+
+        let on_disk = Inventory::load(&inv_path).expect("reload inventory");
+        let motor = on_disk.actuator_by_role("m").expect("motor m exists");
+        assert!(motor.common.active_report_persisted);
+
+        let bytes_after_first = std::fs::read_to_string(&inv_path).expect("inventory text");
+        let second = mark_active_report_persisted(&state, &inv_path, "m").expect("second persist");
+        assert!(!second, "second call should be no-op");
+        let bytes_after_second = std::fs::read_to_string(&inv_path).expect("inventory text");
+        assert_eq!(bytes_after_first, bytes_after_second);
     }
 }

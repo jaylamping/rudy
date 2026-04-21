@@ -33,10 +33,10 @@ use tracing::{debug, info, warn};
 
 /// First retry delay after a failure. Starts here, doubles each subsequent
 /// failure, capped at [`MAX_BACKOFF`]. Picked to match the typical poll
-/// cadence (`telemetry.poll_interval_ms` defaults to 16 ms ≈ 60 Hz) so
+/// cadence (`telemetry.poll_interval_ms` defaults to 10 ms = 100 Hz) so
 /// the very first retry happens on the next tick — only persistent
 /// failures back off.
-const INITIAL_BACKOFF: Duration = Duration::from_millis(16);
+const INITIAL_BACKOFF: Duration = Duration::from_millis(10);
 
 /// Cap on the per-motor retry interval. Once a motor has been failing for
 /// long enough to hit this, we keep retrying every 30 s so a motor that

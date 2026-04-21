@@ -6,7 +6,7 @@ import type { TravelLimits } from "./TravelLimits";
 /**
  * RobStride actuator with shared [`ActuatorCommon`] plus a [`ActuatorFamily`] discriminator.
  */
-export type Actuator = { family: ActuatorFamily, role: string, can_bus: string, can_id: number, present: boolean, verified: boolean, commissioned_at: string | null, firmware_version: string | null, travel_limits: TravelLimits | null, commissioned_zero_offset: number | null, predefined_home_rad: number | null, limb: string | null, joint_kind: JointKind | null, 
+export type Actuator = { family: ActuatorFamily, role: string, can_bus: string, can_id: number, present: boolean, verified: boolean, commissioned_at: string | null, firmware_version: string | null, travel_limits: TravelLimits | null, commissioned_zero_offset: number | null, active_report_persisted: boolean, predefined_home_rad: number | null, limb: string | null, joint_kind: JointKind | null, 
 /**
  * YAML fragment (string) preserving v1 `extra` map entries so nothing is silently dropped.
  */
