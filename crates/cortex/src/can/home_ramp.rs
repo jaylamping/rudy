@@ -267,10 +267,15 @@ pub async fn run(
     run_with_tracking_budget(state, motor, from_rad, target_rad, budget).await
 }
 
-/// Resolve inventory override vs global `[safety].homing_speed_rad_s` vs
-/// `step_size_rad / tick_interval` (see [`crate::config::SafetyConfig::effective_homing_speed_rad_s`]).
-/// After a successful home-ramp loop: RS03 profile-position hold, then verify
-/// telemetry after 200 ms. On verification failure, `cmd_stop` and `mark_stopped`.
+/// After a successful home-ramp loop: RS03 **MIT spring-damper hold**
+/// (`run_mode = 0` + single OperationCtrl frame with `vel = 0`,
+/// `torque_ff = 0`, `kp`/`kd` from `safety`). The firmware then closes the
+/// loop on encoder + the standing kp/kd alone — no streamed setpoint, no
+/// continuous current draw, no servo whine — but the joint still resists
+/// droop and snaps back when nudged.
+///
+/// Verifies telemetry after 200 ms; on verification failure, `cmd_stop`
+/// and `mark_stopped`.
 async fn finish_home_success(
     state: &SharedState,
     motor: &Actuator,
@@ -280,10 +285,13 @@ async fn finish_home_success(
     last_measured: f32,
 ) -> Result<(), (String, f32)> {
     let target_p = PrincipalAngle::from_wrapped_rad(target_rad);
+    let kp = cfg.hold_kp_nm_per_rad;
+    let kd = cfg.hold_kd_nm_s_per_rad;
     if let Some(core) = state.real_can.clone() {
         let motor_owned = motor.clone();
         let t = target_p;
-        match tokio::task::spawn_blocking(move || core.set_position_hold(&motor_owned, t)).await {
+        match tokio::task::spawn_blocking(move || core.set_mit_hold(&motor_owned, t, kp, kd)).await
+        {
             Ok(Ok(())) => {}
             Ok(Err(e)) => {
                 if let Some(c2) = state.real_can.clone() {
@@ -296,7 +304,9 @@ async fn finish_home_success(
             Err(e) => return Err((format!("internal: spawn_blocking: {e}"), last_measured)),
         }
     }
-    // Bookkeeping for PP hold (worker does not touch `AppState`; stubs do not either).
+    // `position_hold` is the runtime "drive is held in some non-velocity mode" flag —
+    // it gates `Cmd::SetVelocity`'s smart re-arm so the next jog correctly issues
+    // RUN_MODE=2 + cmd_enable. The bookkeeping is identical for PP and MIT holds.
     state.mark_stopped(role);
     state.mark_position_hold(role);
 

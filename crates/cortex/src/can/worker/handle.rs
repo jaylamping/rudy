@@ -147,6 +147,31 @@ impl BusHandle {
         recv_blocking(rx, REPLY_TIMEOUT)?
     }
 
+    /// MIT spring-damper hold. Sends a single `OperationCtrl` frame after
+    /// `cmd_stop` → `RUN_MODE=0` → `cmd_enable`; the firmware then closes the
+    /// loop on encoder + the standing kp/kd alone (no streamed setpoint).
+    pub fn set_mit_hold(
+        &self,
+        host_id: u8,
+        motor_id: u8,
+        role: &str,
+        target_principal_rad: f32,
+        kp_nm_per_rad: f32,
+        kd_nm_s_per_rad: f32,
+    ) -> io::Result<()> {
+        let (tx, rx) = mpsc::channel();
+        self.submit(Cmd::SetMitHold {
+            motor_id,
+            host_id,
+            target_principal_rad,
+            kp_nm_per_rad,
+            kd_nm_s_per_rad,
+            role: role.to_string(),
+            reply: tx,
+        })?;
+        recv_blocking(rx, REPLY_TIMEOUT)?
+    }
+
     pub fn write_param(
         &self,
         host_id: u8,

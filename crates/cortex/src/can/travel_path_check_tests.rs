@@ -75,6 +75,8 @@ fn state_with_band(min: f32, max: f32) -> (crate::state::SharedState, tempfile::
             commission_readback_tolerance_rad: 1e-3,
             auto_home_on_boot: true,
             scan_on_boot: true,
+            hold_kp_nm_per_rad: 10.0,
+            hold_kd_nm_s_per_rad: 0.5,
         },
         logs: LogsConfig {
             db_path: dir.path().join("logs.db"),
@@ -178,6 +180,8 @@ fn path_check_no_band_returns_nolimit() {
             commission_readback_tolerance_rad: 1e-3,
             auto_home_on_boot: true,
             scan_on_boot: true,
+            hold_kp_nm_per_rad: 10.0,
+            hold_kd_nm_s_per_rad: 0.5,
         },
         logs: LogsConfig {
             db_path: dir.path().join("logs.db"),

@@ -46,6 +46,8 @@ fn cfg_with(audit_log: &str, db_path: Option<&str>) -> Config {
                 super::safety::default_commission_readback_tolerance_rad(),
             auto_home_on_boot: true,
             scan_on_boot: true,
+            hold_kp_nm_per_rad: super::safety::default_hold_kp_nm_per_rad(),
+            hold_kd_nm_s_per_rad: super::safety::default_hold_kd_nm_s_per_rad(),
         },
         logs: LogsConfig {
             db_path: db_path

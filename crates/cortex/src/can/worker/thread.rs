@@ -13,6 +13,7 @@ use driver::rs03::feedback::{decode_motor_feedback, MotorFeedback as DriverFeedb
 use driver::rs03::frame::{comm_type_from_id, passive_observer_node_id, strip_eff_flag};
 use driver::rs03::params::LOC_REF;
 use driver::rs03::session;
+use driver::rs03::{MitCommand, RobstrideCodec};
 use driver::{CanBus, Rs03, RsActuator};
 use tokio::runtime::Handle;
 use tracing::{debug, info, warn};
@@ -30,6 +31,12 @@ use super::pin::pin_to_cpu;
 
 /// RS03 `run_mode`: profile position (PP). See `driver::rs03::params::RUN_MODE`.
 const RUN_MODE_PP: u8 = 1;
+
+/// RS03 `run_mode`: operation (MIT). See `driver::rs03::params::RUN_MODE`.
+/// Used by [`Cmd::SetMitHold`] for the post-home spring-damper hold; the
+/// firmware closes the loop on encoder + the standing kp/kd values without
+/// any streamed setpoint after the single `OperationCtrl` frame.
+const RUN_MODE_OP: u8 = 0;
 
 /// Spawn a worker thread for `bus`, returning a [`BusHandle`].
 ///
@@ -435,6 +442,55 @@ fn handle_cmd(
                 })()
             };
             log_send_result(iface, "set_position_hold", motor_id, &result);
+            let _ = reply.send(result);
+        }
+        Cmd::SetMitHold {
+            motor_id,
+            host_id,
+            target_principal_rad,
+            kp_nm_per_rad,
+            kd_nm_s_per_rad,
+            role: _,
+            reply,
+        } => {
+            // MIT spring-damper hold: cmd_stop -> RUN_MODE=0 (operation/MIT) ->
+            // cmd_enable -> a single OperationCtrl frame carrying
+            // (target, vel=0, torque_ff=0, kp, kd). The firmware then closes the
+            // loop on encoder + the standing kp/kd values, so there is **no**
+            // streamed velocity setpoint and (unlike PP / RUN_MODE=1) no
+            // continuous current draw or audible servo whine while held.
+            let result: io::Result<()> = {
+                let guard = bus.lock().expect("bus mutex poisoned");
+                (|| {
+                    let dev = Rs03::new(host_id, motor_id);
+                    session::cmd_stop(&guard, host_id, motor_id, false)?;
+                    session::write_param_u8(
+                        &guard,
+                        dev.host_id(),
+                        dev.motor_id(),
+                        dev.param_index_run_mode(),
+                        RUN_MODE_OP,
+                    )?;
+                    session::cmd_enable(&guard, dev.host_id(), dev.motor_id())?;
+                    let codec = RobstrideCodec;
+                    let cmd = MitCommand {
+                        position_rad: target_principal_rad,
+                        velocity_rad_s: 0.0,
+                        kp: kp_nm_per_rad,
+                        kd: kd_nm_s_per_rad,
+                        torque_ff_nm: 0.0,
+                    };
+                    let (id, data) = codec.encode_mit(host_id, motor_id, cmd).map_err(|e| {
+                        io::Error::new(
+                            io::ErrorKind::InvalidInput,
+                            format!("encode MIT hold frame: {e:?}"),
+                        )
+                    })?;
+                    guard.send_ext(id, &data)?;
+                    Ok(())
+                })()
+            };
+            log_send_result(iface, "set_mit_hold", motor_id, &result);
             let _ = reply.send(result);
         }
         Cmd::WriteParam {

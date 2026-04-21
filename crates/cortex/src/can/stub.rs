@@ -69,6 +69,16 @@ impl RealCanHandle {
         Ok(())
     }
 
+    pub fn set_mit_hold(
+        &self,
+        _motor: &Actuator,
+        _target: PrincipalAngle,
+        _kp_nm_per_rad: f32,
+        _kd_nm_s_per_rad: f32,
+    ) -> Result<()> {
+        Ok(())
+    }
+
     pub fn refresh_all_params(&self, _state: &SharedState) -> Result<()> {
         anyhow::bail!("real CAN is only available on Linux targets")
     }

@@ -6,7 +6,7 @@ This guide is for operators using **Rudy’s operator console** (`cortex` + Link
 
 The firmware stores a mechanical position offset (`add_offset`, parameter `0x702B`). After you **commission**, the daemon records that value in `config/actuators/inventory.yaml` as `commissioned_zero_offset`. On every boot it compares live readback to that record:
 
-- **Match** (within tolerance): normal boot flow; if the joint is in band and `auto_home_on_boot` is on, the **boot orchestrator** can home-ramp to `predefined_home_rad` (default `0`) and reach **Homed** without clicking Verify & Home. The drive then stays in **profile-position (PP) hold** at that angle (torque applied); expect quiet holding current and normal actuator whine until you jog, stop, or e-stop.
+- **Match** (within tolerance): normal boot flow; if the joint is in band and `auto_home_on_boot` is on, the **boot orchestrator** can home-ramp to `predefined_home_rad` (default `0`) and reach **Homed** without clicking Verify & Home. The drive then settles into a **MIT spring-damper hold** at that angle: it resists droop and snaps back to home if you nudge it, but the daemon stops streaming setpoints — **no servo whine**, no continuous current draw. Stiffness/damping come from `[safety].hold_kp_nm_per_rad` / `hold_kd_nm_s_per_rad` in `cortex.toml`. The hold persists until you jog, `POST /stop`, or e-stop.
 - **Mismatch**: **`OffsetChanged`** — motion is blocked until you **re-commission** or **restore offset** (writes the stored value back to firmware and saves).
 
 ## Before you start

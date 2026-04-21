@@ -132,12 +132,20 @@ bits  7..0  : destination host_id
 | 5     | Position mode (CSP, cyclic)   |
 
 **Cortex (post-home hold).** After a successful home-ramp, `cortex` leaves the
-joint in **PP** (`run_mode = 1`) with `loc_ref` set to the principal-angle home
-target (`wrap_to_pi` of `predefined_home_rad` / HTTP target — see
-[ADR 0005](./0005-angle-units-and-frames.md)). Sequence on the bus worker:
-`cmd_stop` → `RUN_MODE=1` → `LOC_REF` → `cmd_enable`. The next operator jog
-(`spd_ref`) forces a velocity-mode re-arm (`run_mode = 2`) via
-`state.position_hold` + smart re-arm in `Cmd::SetVelocity`.
+joint in **MIT spring-damper hold** (`run_mode = 0`) — **not** PP. Sequence on
+the bus worker: `cmd_stop` → `RUN_MODE = 0` → `cmd_enable` → a single
+`OperationCtrl` frame with `position = wrap_to_pi(target)`, `velocity = 0`,
+`torque_ff = 0`, and `kp` / `kd` from `[safety]` (`hold_kp_nm_per_rad`,
+`hold_kd_nm_s_per_rad`; defaults `10.0` and `0.5`). After that single frame
+the firmware closes the loop on encoder + the standing kp/kd values, so
+**there is no streamed setpoint**: the joint resists droop and snaps back to
+the held angle without any continuous current draw or audible servo whine the
+way `RUN_MODE = 1` (PP, profiled-position) would produce. PP hold
+(`Cmd::SetPositionHold`, `LOC_REF` write) stays in the codebase as a
+primitive but is not currently wired into the home flow. The next operator
+jog (`spd_ref`) forces a velocity-mode re-arm (`run_mode = 2`) via
+`state.position_hold` + smart re-arm in `Cmd::SetVelocity` regardless of
+which hold mode the drive was in.
 
 ### Safety-critical parameters
 

@@ -222,6 +222,33 @@ pub struct SafetyConfig {
     /// Disable on noisy benches or when startup latency matters.
     #[serde(default = "default_true")]
     pub scan_on_boot: bool,
+
+    /// Position-loop stiffness (Nm / rad) applied by the post-home **MIT**
+    /// hold. The drive runs in operation-mode (`run_mode = 0`) with a single
+    /// MIT control frame `(target_principal, vel=0, torque_ff=0, kp, kd)`;
+    /// after that frame the firmware closes the loop on encoder + the
+    /// standing kp/kd values **without** streaming a velocity setpoint, so
+    /// there is no audible servo whine and no continuous current draw the
+    /// way `run_mode = 1` (PP) would produce.
+    ///
+    /// Default **10.0 Nm/rad** — a deliberately conservative spring that
+    /// resists droop on a gravity-loaded RS03 joint without becoming "stiff
+    /// to push back through" by hand. Per-joint overrides will live on the
+    /// inventory `Actuator` once we have bench data; until then this global
+    /// applies to every held motor.
+    #[serde(default = "default_hold_kp_nm_per_rad")]
+    pub hold_kp_nm_per_rad: f32,
+
+    /// Velocity damping (Nm·s / rad) applied by the post-home MIT hold.
+    /// Pairs with [`hold_kp_nm_per_rad`]; together they form a virtual
+    /// spring-damper around the held angle.
+    ///
+    /// Default **0.5 Nm·s/rad** — enough to keep the spring from ringing
+    /// when the operator releases the joint after a manual nudge, without
+    /// fighting deliberate hand motion. Per-joint overrides land alongside
+    /// `hold_kp_nm_per_rad` once benched.
+    #[serde(default = "default_hold_kd_nm_s_per_rad")]
+    pub hold_kd_nm_s_per_rad: f32,
 }
 
 impl SafetyConfig {
@@ -299,4 +326,12 @@ pub(crate) fn default_homer_timeout_ms() -> u32 {
 
 pub(crate) fn default_max_feedback_age_ms() -> u64 {
     250
+}
+
+pub(crate) fn default_hold_kp_nm_per_rad() -> f32 {
+    10.0
+}
+
+pub(crate) fn default_hold_kd_nm_s_per_rad() -> f32 {
+    0.5
 }

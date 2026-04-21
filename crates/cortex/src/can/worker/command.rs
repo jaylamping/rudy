@@ -81,6 +81,25 @@ pub enum Cmd {
         role: String,
         reply: Sender<io::Result<()>>,
     },
+    /// MIT spring-damper hold (operation mode, `run_mode = 0`). Sequence:
+    /// `cmd_stop` → `RUN_MODE = 0` → `cmd_enable` → single MIT control frame
+    /// `(target_principal_rad, vel = 0, torque_ff = 0, kp, kd)`.
+    ///
+    /// After this single frame the firmware closes the loop on encoder + the
+    /// standing kp/kd values **without** streaming a velocity setpoint, so
+    /// there is no audible servo whine and no continuous current draw the
+    /// way `Cmd::SetPositionHold` (PP, `run_mode = 1`) would produce. This is
+    /// the post-home hold cortex actually uses; PP hold stays available for
+    /// future stiff-positioning use cases.
+    SetMitHold {
+        motor_id: u8,
+        host_id: u8,
+        target_principal_rad: f32,
+        kp_nm_per_rad: f32,
+        kd_nm_s_per_rad: f32,
+        role: String,
+        reply: Sender<io::Result<()>>,
+    },
     /// Single-parameter write.
     WriteParam {
         motor_id: u8,
