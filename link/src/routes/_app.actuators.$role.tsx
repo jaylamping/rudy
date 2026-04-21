@@ -7,7 +7,7 @@
 
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Home, Lock, LockOpen, Radio, RadioOff } from "lucide-react";
+import { ArrowLeft, Home, Lock, LockOpen, Radio, WifiOff } from "lucide-react";
 import { useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { HomingProgressBar } from "@/components/actuator/homing-progress";
@@ -213,7 +213,7 @@ function ActuatorHeader({ motor }: { motor: MotorSummary }) {
               {fb ? (
                 <Radio className="size-3.5" strokeWidth={2.25} />
               ) : (
-                <RadioOff className="size-3.5 text-muted-foreground" strokeWidth={2.25} />
+                <WifiOff className="size-3.5 text-muted-foreground" strokeWidth={2.25} />
               )}
             </Badge>
           </Tooltip>
