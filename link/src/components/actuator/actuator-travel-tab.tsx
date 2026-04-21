@@ -75,8 +75,7 @@ export function ActuatorTravelTab({ motor }: { motor: MotorSummary }) {
       setMinDeg(radToDeg(baseline.min_rad));
       setMaxDeg(radToDeg(baseline.max_rad));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [motor.role, baseline?.min_rad, baseline?.max_rad]);
+  }, [motor.role, baseline]);
 
   useEffect(() => {
     setHomeDeg(radToDeg(motor.predefined_home_rad ?? 0));

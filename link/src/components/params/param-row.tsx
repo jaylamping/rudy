@@ -4,7 +4,7 @@
 // per-actuator detail page can reuse the same row + confirm dialog.
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -45,10 +45,7 @@ function wireNumericValue(value: JsonValue): number | null {
 
 export function ParamRow({ role, param }: ParamRowProps) {
   const qc = useQueryClient();
-  const { displayInDeg, displayUnit } = useMemo(
-    () => paramDisplayMode(param),
-    [param.units],
-  );
+  const { displayInDeg, displayUnit } = paramDisplayMode(param);
   const [draft, setDraft] = useState<string>("");
   const [confirmSave, setConfirmSave] = useState(false);
 

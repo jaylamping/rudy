@@ -12,10 +12,8 @@
 import {
   createContext,
   forwardRef,
-  useCallback,
   useContext,
   useId,
-  useMemo,
   useRef,
   useState,
 } from "react";
@@ -53,18 +51,12 @@ export function Tabs({
   const [uncontrolled, setUncontrolled] = useState(defaultValue ?? "");
   const isControlled = value !== undefined;
   const current = isControlled ? value : uncontrolled;
-  const setValue = useCallback(
-    (v: string) => {
-      if (!isControlled) setUncontrolled(v);
-      onValueChange?.(v);
-    },
-    [isControlled, onValueChange],
-  );
+  const setValue = (v: string) => {
+    if (!isControlled) setUncontrolled(v);
+    onValueChange?.(v);
+  };
 
-  const ctx = useMemo(
-    () => ({ value: current, setValue, baseId }),
-    [current, setValue, baseId],
-  );
+  const ctx = { value: current, setValue, baseId };
 
   return (
     <TabsContext.Provider value={ctx}>

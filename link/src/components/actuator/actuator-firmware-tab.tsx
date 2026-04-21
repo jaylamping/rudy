@@ -5,7 +5,7 @@
 // inventory desired values to the device.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -52,12 +52,8 @@ export function ActuatorFirmwareTab({ role }: { role: string }) {
     },
   });
 
-  const entries = useMemo(
-    () =>
-      Object.values(paramsQ.data?.values ?? {}).filter(
-        (p): p is ParamValue => p !== undefined,
-      ),
-    [paramsQ.data],
+  const entries = Object.values(paramsQ.data?.values ?? {}).filter(
+    (p): p is ParamValue => p !== undefined,
   );
   // Split on the spec section the param came from (`writable`), not on
   // the presence of `hardware_range`. Several firmware-limit params
@@ -69,10 +65,7 @@ export function ActuatorFirmwareTab({ role }: { role: string }) {
   // canonical "the server will accept a write to me" signal.
   const editable = entries.filter((p) => p.writable);
   const observables = entries.filter((p) => !p.writable);
-  const driftCount = useMemo(
-    () => editable.filter((p) => p.drift).length,
-    [editable],
-  );
+  const driftCount = editable.filter((p) => p.drift).length;
 
   if (paramsQ.isPending) {
     return <div className="text-muted-foreground">Loading parameters...</div>;

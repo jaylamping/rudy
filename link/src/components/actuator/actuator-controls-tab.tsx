@@ -23,7 +23,11 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/params";
-import { Tooltip } from "@/components/ui/tooltip";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useLimbHealth } from "@/lib/hooks/useLimbHealth";
 import { DeadManJog } from "./dead-man-jog";
 import type { MotorSummary } from "@/lib/types/MotorSummary";
@@ -75,18 +79,23 @@ export function ActuatorControlsTab({ motor }: { motor: MotorSummary }) {
         </CardHeader>
         <CardContent className="flex flex-wrap gap-2">
           {enableTip ? (
-            <Tooltip content={enableTip} className="max-w-xs whitespace-normal">
-              <span className="inline-flex">
-                <Button
-                  variant="default"
-                  disabled={
-                    mutate.isPending || !motor.verified || !limb.healthy
-                  }
-                  onClick={() => setConfirm("enable")}
-                >
-                  Enable
-                </Button>
-              </span>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="inline-flex">
+                  <Button
+                    variant="default"
+                    disabled={
+                      mutate.isPending || !motor.verified || !limb.healthy
+                    }
+                    onClick={() => setConfirm("enable")}
+                  >
+                    Enable
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs whitespace-normal">
+                {enableTip}
+              </TooltipContent>
             </Tooltip>
           ) : (
             <Button

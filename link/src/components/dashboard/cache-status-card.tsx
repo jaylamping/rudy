@@ -3,7 +3,6 @@
 // IndexedDB store; the next viz load will refetch.
 
 import { Trash2 } from "lucide-react";
-import { useMemo } from "react";
 import {
   useAssetManifest,
   useCacheStats,
@@ -17,16 +16,16 @@ export function CacheStatusCard({ className }: { className?: string }) {
   const manifest = useAssetManifest();
   const clear = useClearAssetCache();
 
-  const manifestBytes = useMemo(() => {
-    if (!manifest.data) return null;
-    return manifest.data.entries.reduce((acc, e) => acc + e.bytes, 0);
-  }, [manifest.data]);
+  const manifestBytes =
+    manifest.data == null
+      ? null
+      : manifest.data.entries.reduce((acc, e) => acc + e.bytes, 0);
 
-  const lastBakedMs = useMemo(() => {
-    if (!manifest.data) return null;
+  let lastBakedMs: number | null = null;
+  if (manifest.data) {
     const t = Date.parse(manifest.data.generated_at);
-    return Number.isFinite(t) ? t : null;
-  }, [manifest.data]);
+    if (Number.isFinite(t)) lastBakedMs = t;
+  }
 
   const cacheAvailable = stats.data?.available ?? false;
   const fullyCached =

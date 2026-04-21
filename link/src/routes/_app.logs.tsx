@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
@@ -107,15 +107,12 @@ function LogsPage() {
   const navigate = Route.useNavigate();
   const qc = useQueryClient();
 
-  const filters: LogFilterValue = useMemo(
-    () => ({
-      levels: parseCsvSet<LogLevel>(search.level, ALL_LEVELS, DEFAULT_LEVELS),
-      sources: parseCsvSet<LogSource>(search.source, ALL_SOURCES),
-      q: search.q ?? "",
-      target: search.target ?? "",
-    }),
-    [search.level, search.source, search.q, search.target],
-  );
+  const filters: LogFilterValue = {
+    levels: parseCsvSet<LogLevel>(search.level, ALL_LEVELS, DEFAULT_LEVELS),
+    sources: parseCsvSet<LogSource>(search.source, ALL_SOURCES),
+    q: search.q ?? "",
+    target: search.target ?? "",
+  };
   const follow = search.follow ?? true;
 
   // Defensively widen the WT subscription on mount. Other tabs
@@ -162,23 +159,21 @@ function LogsPage() {
   // Apply client-side filters on top of the live tail. Doing it on the
   // client avoids re-fetching every time the operator toggles a level
   // pill; the cap of 5000 entries keeps the cost negligible.
-  const filtered = useMemo(() => {
-    const q = filters.q.trim().toLowerCase();
-    const t = filters.target.trim().toLowerCase();
-    return allEntries.filter((e) => {
-      if (!filters.levels.has(e.level)) return false;
-      if (!filters.sources.has(e.source)) return false;
-      if (q && !e.message.toLowerCase().includes(q)) return false;
-      if (t && !e.target.toLowerCase().includes(t)) return false;
-      return true;
-    });
-  }, [allEntries, filters]);
+  const qNorm = filters.q.trim().toLowerCase();
+  const tNorm = filters.target.trim().toLowerCase();
+  const filtered = allEntries.filter((e) => {
+    if (!filters.levels.has(e.level)) return false;
+    if (!filters.sources.has(e.source)) return false;
+    if (qNorm && !e.message.toLowerCase().includes(qNorm)) return false;
+    if (tNorm && !e.target.toLowerCase().includes(tNorm)) return false;
+    return true;
+  });
 
   const [selectedId, setSelectedId] = useState<bigint | null>(null);
-  const selectedEntry = useMemo(
-    () => (selectedId === null ? null : filtered.find((e) => e.id === selectedId) ?? null),
-    [filtered, selectedId],
-  );
+  const selectedEntry =
+    selectedId === null
+      ? null
+      : (filtered.find((e) => e.id === selectedId) ?? null);
 
   // If the operator clears their selection by filtering it out, drop it.
   useEffect(() => {

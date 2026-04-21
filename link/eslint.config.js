@@ -7,9 +7,10 @@
 //      on the costly project-aware rules — keeps CI fast and avoids needing
 //      a separate tsconfig for ESLint.
 //   3. React 19 + Vite hot-reload + TanStack Router conventions: keep the
-//      hooks rules on (real correctness gate), keep react-refresh on (warns
-//      when a fast-refresh boundary breaks), turn `react-in-jsx-scope` off
-//      (not needed under the modern JSX transform).
+//      core hooks rules on, keep react-refresh on, turn `react-in-jsx-scope`
+//      off (not needed under the modern JSX transform). `exhaustive-deps` is
+//      off because the React Compiler + `eslint-plugin-react-compiler` cover
+//      stale-closure issues without manual useMemo/useCallback.
 //   4. Don't suddenly turn the codebase red. Anything noisier than the
 //      typescript-eslint "recommended" set is opt-in.
 //
@@ -24,6 +25,7 @@ import tsParser from "@typescript-eslint/parser";
 import tsPlugin from "@typescript-eslint/eslint-plugin";
 import reactHooks from "eslint-plugin-react-hooks";
 import reactRefresh from "eslint-plugin-react-refresh";
+import reactCompiler from "eslint-plugin-react-compiler";
 import globals from "globals";
 
 export default [
@@ -58,10 +60,15 @@ export default [
       "@typescript-eslint": tsPlugin,
       "react-hooks": reactHooks,
       "react-refresh": reactRefresh,
+      "react-compiler": reactCompiler,
     },
     rules: {
       ...tsPlugin.configs.recommended.rules,
       ...reactHooks.configs.recommended.rules,
+      // React Compiler stabilizes callbacks and derived values; exhaustive-deps
+      // still pushes useCallback/useMemo patterns we removed intentionally.
+      "react-hooks/exhaustive-deps": "off",
+      "react-compiler/react-compiler": "error",
 
       // `no-undef` was designed for plain JS — it doesn't know the global DOM
       // type names (`RequestInit`, `ReadableStreamReadResult`, …) and false-

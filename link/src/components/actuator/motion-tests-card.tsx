@@ -13,7 +13,7 @@
 // motor; the bus_worker on the Pi does. See the convention doc in
 // `crates/cortex/src/motion/mod.rs` for the rationale.
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Activity, Square, Waves } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -29,7 +29,11 @@ import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
 import { useLimbHealth } from "@/lib/hooks/useLimbHealth";
 import { getBridgeWt } from "@/lib/hooks/wtBridgeHandle";
-import { Tooltip } from "@/components/ui/tooltip";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import type { MotorSummary } from "@/lib/types/MotorSummary";
 import type { MotionStatus } from "@/lib/types/MotionStatus";
 import {
@@ -169,23 +173,20 @@ export function MotionTestsCard({ motor }: { motor: MotorSummary }) {
     };
   }, [motor.role]);
 
-  const stopMotion = useCallback(
-    async (reason?: string) => {
-      // Optimistic clear; the terminal MotionStatus datagram will
-      // confirm. If the POST itself fails we leave the badge alone so
-      // the operator notices.
-      try {
-        await api.motion.stop(motor.role);
-        runIdRef.current = null;
-        setActive(null);
-        if (reason) setError(reason);
-      } catch (e) {
-        if (e instanceof ApiError) setError(e.message);
-        else setError(String(e));
-      }
-    },
-    [motor.role],
-  );
+  const stopMotion = async (reason?: string) => {
+    // Optimistic clear; the terminal MotionStatus datagram will
+    // confirm. If the POST itself fails we leave the badge alone so
+    // the operator notices.
+    try {
+      await api.motion.stop(motor.role);
+      runIdRef.current = null;
+      setActive(null);
+      if (reason) setError(reason);
+    } catch (e) {
+      if (e instanceof ApiError) setError(e.message);
+      else setError(String(e));
+    }
+  };
 
   // Cleanup: on unmount stop whatever's running for this role. The
   // controller's per-tick preflight + the daemon's safety paths cover
@@ -494,8 +495,13 @@ function PatternRow({
             <Square className="h-4 w-4" /> Stop
           </Button>
         ) : startTooltip && disabled ? (
-          <Tooltip content={startTooltip} className="max-w-xs whitespace-normal">
-            <span className="inline-flex">{startButton}</span>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="inline-flex">{startButton}</span>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-xs whitespace-normal">
+              {startTooltip}
+            </TooltipContent>
           </Tooltip>
         ) : (
           startButton

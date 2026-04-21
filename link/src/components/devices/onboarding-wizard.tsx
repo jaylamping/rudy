@@ -4,7 +4,7 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { Loader2 } from "lucide-react";
 import { ApiError, api } from "@/lib/api";
@@ -77,10 +77,9 @@ export function OnboardingWizard({
   const qc = useQueryClient();
   const configQ = useQuery({ queryKey: ["config"], queryFn: () => api.config() });
 
-  const modelOptions = useMemo(() => {
-    const labels = configQ.data?.actuator_models ?? ["RS03"];
-    return labels.map(specLabelToModelId);
-  }, [configQ.data?.actuator_models]);
+  const modelOptions = (configQ.data?.actuator_models ?? ["RS03"]).map(
+    specLabelToModelId,
+  );
 
   const [model, setModel] = useState<string>("rs03");
   const [limb, setLimb] = useState("left_arm");
@@ -90,17 +89,6 @@ export function OnboardingWizard({
   const [homeDeg, setHomeDeg] = useState("0");
   const [phase, setPhase] = useState<"form" | "after">("form");
   const [createdRole, setCreatedRole] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (open && device) {
-      setPhase("form");
-      setCreatedRole(null);
-      onboardMut.reset();
-      commissionMut.reset();
-      verifyMut.reset();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset when target device changes
-  }, [open, device?.bus, device?.can_id]);
 
   const derivedRole = `${limb}.${jointKind}`;
 
@@ -148,6 +136,16 @@ export function OnboardingWizard({
       void qc.invalidateQueries({ queryKey: ["motors"] });
     },
   });
+
+  useEffect(() => {
+    if (open && device) {
+      setPhase("form");
+      setCreatedRole(null);
+      onboardMut.reset();
+      commissionMut.reset();
+      verifyMut.reset();
+    }
+  }, [open, device, onboardMut, commissionMut, verifyMut]);
 
   const resetAndClose = () => {
     setPhase("form");

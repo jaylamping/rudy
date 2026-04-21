@@ -8,12 +8,16 @@
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Home, Lock, LockOpen, Radio, WifiOff } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { api } from "@/lib/api";
 import { HomingProgressBar } from "@/components/actuator/homing-progress";
 import { useLiveInterval } from "@/lib/hooks/useLiveInterval";
 import { Badge } from "@/components/ui/badge";
-import { Tooltip } from "@/components/ui/tooltip";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -88,10 +92,7 @@ function ActuatorDetailPage() {
     refetchInterval: useLiveInterval({ live: 30_000, fallback: 2_000 }),
   });
 
-  const motor = useMemo(
-    () => motorsQ.data?.find((m) => m.role === role),
-    [motorsQ.data, role],
-  );
+  const motor = motorsQ.data?.find((m) => m.role === role);
 
   // The loader has already proven the role exists; this branch only hits if
   // the role disappears between mount and re-render (e.g. inventory.yaml
@@ -170,52 +171,54 @@ function ActuatorHeader({ motor }: { motor: MotorSummary }) {
           </span>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Tooltip
-            content={motor.verified ? "Verified" : "Unverified"}
-            side="bottom"
-          >
-            <Badge
-              variant={motor.verified ? "success" : "warning"}
-              className="inline-flex size-7 items-center justify-center p-0"
-              aria-label={motor.verified ? "Verified" : "Unverified"}
-            >
-              {motor.verified ? (
-                <Lock className="size-3.5" strokeWidth={2.25} />
-              ) : (
-                <LockOpen className="size-3.5" strokeWidth={2.25} />
-              )}
-            </Badge>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Badge
+                variant={motor.verified ? "success" : "warning"}
+                className="inline-flex size-7 items-center justify-center p-0"
+                aria-label={motor.verified ? "Verified" : "Unverified"}
+              >
+                {motor.verified ? (
+                  <Lock className="size-3.5" strokeWidth={2.25} />
+                ) : (
+                  <LockOpen className="size-3.5" strokeWidth={2.25} />
+                )}
+              </Badge>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              {motor.verified ? "Verified" : "Unverified"}
+            </TooltipContent>
           </Tooltip>
           {motor.firmware_version && (
             <Badge variant="outline">fw {motor.firmware_version}</Badge>
           )}
-          <Tooltip
-            content={
-              fb
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Badge
+                variant={fb ? (stale ? "warning" : "success") : "outline"}
+                className="inline-flex size-7 items-center justify-center p-0"
+                aria-label={
+                  fb
+                    ? stale
+                      ? `Stale telemetry, ${ageS?.toFixed(1)} seconds old`
+                      : "Live telemetry"
+                    : "No telemetry"
+                }
+              >
+                {fb ? (
+                  <Radio className="size-3.5" strokeWidth={2.25} />
+                ) : (
+                  <WifiOff className="size-3.5 text-muted-foreground" strokeWidth={2.25} />
+                )}
+              </Badge>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              {fb
                 ? stale
                   ? `Stale — ${ageS?.toFixed(1)}s since last frame`
                   : "Live telemetry"
-                : "No telemetry"
-            }
-            side="bottom"
-          >
-            <Badge
-              variant={fb ? (stale ? "warning" : "success") : "outline"}
-              className="inline-flex size-7 items-center justify-center p-0"
-              aria-label={
-                fb
-                  ? stale
-                    ? `Stale telemetry, ${ageS?.toFixed(1)} seconds old`
-                    : "Live telemetry"
-                  : "No telemetry"
-              }
-            >
-              {fb ? (
-                <Radio className="size-3.5" strokeWidth={2.25} />
-              ) : (
-                <WifiOff className="size-3.5 text-muted-foreground" strokeWidth={2.25} />
-              )}
-            </Badge>
+                : "No telemetry"}
+            </TooltipContent>
           </Tooltip>
           {!motor.travel_limits && (
             <Link
@@ -278,14 +281,17 @@ function BootStateBadge({ motor }: { motor: MotorSummary }) {
   if (bs.kind === "homed") {
     const homedLabel = `${pre}Homed`;
     return (
-      <Tooltip content={homedLabel} side="bottom">
-        <Badge
-          variant="success"
-          className="inline-flex size-7 items-center justify-center p-0"
-          aria-label={homedLabel}
-        >
-          <Home className="size-3.5" strokeWidth={2.25} />
-        </Badge>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Badge
+            variant="success"
+            className="inline-flex size-7 items-center justify-center p-0"
+            aria-label={homedLabel}
+          >
+            <Home className="size-3.5" strokeWidth={2.25} />
+          </Badge>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">{homedLabel}</TooltipContent>
       </Tooltip>
     );
   }

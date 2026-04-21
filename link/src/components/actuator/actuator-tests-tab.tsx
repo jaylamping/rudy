@@ -22,7 +22,11 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { ConfirmDialog } from "@/components/params";
-import { Tooltip } from "@/components/ui/tooltip";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useLimbHealth } from "@/lib/hooks/useLimbHealth";
 import { useTestProgress } from "@/lib/hooks/useTestProgress";
 import type { MotorSummary } from "@/lib/types/MotorSummary";
@@ -168,19 +172,21 @@ export function ActuatorTestsTab({ motor }: { motor: MotorSummary }) {
                 const runTip =
                   limbGate && limb.blockReason ? limb.blockReason : "";
                 return runTip ? (
-                  <Tooltip
-                    content={runTip}
-                    className="max-w-xs whitespace-normal"
-                  >
-                    <span className="inline-flex">
-                      <Button
-                        variant={t.destructive ? "destructive" : "default"}
-                        disabled={disabled}
-                        onClick={() => setConfirm(t)}
-                      >
-                        Run
-                      </Button>
-                    </span>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex">
+                        <Button
+                          variant={t.destructive ? "destructive" : "default"}
+                          disabled={disabled}
+                          onClick={() => setConfirm(t)}
+                        >
+                          Run
+                        </Button>
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs whitespace-normal">
+                      {runTip}
+                    </TooltipContent>
                   </Tooltip>
                 ) : (
                   <Button

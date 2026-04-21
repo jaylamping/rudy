@@ -2,7 +2,6 @@
 // recency of telemetry, and per-motor temp. Click-through goes to the
 // existing Telemetry route for full charts.
 
-import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { ArrowRight } from "lucide-react";
@@ -37,21 +36,14 @@ export function ActuatorStatusCard({ className }: { className?: string }) {
   });
 
   const motors = q.data ?? [];
-  const sortedMotors = useMemo(
-    () =>
-      [...motors].sort((a, b) => {
-        const d =
-          bootStateSortRank(a.boot_state) - bootStateSortRank(b.boot_state);
-        if (d !== 0) return d;
-        return a.role.localeCompare(b.role);
-      }),
-    [motors],
-  );
+  const sortedMotors = [...motors].sort((a, b) => {
+    const d =
+      bootStateSortRank(a.boot_state) - bootStateSortRank(b.boot_state);
+    if (d !== 0) return d;
+    return a.role.localeCompare(b.role);
+  });
   const tally = countByTone(motors);
-  const driftedMotors = useMemo(
-    () => motors.filter((m) => m.drifted_param_count > 0),
-    [motors],
-  );
+  const driftedMotors = motors.filter((m) => m.drifted_param_count > 0);
   const firstDriftRole = driftedMotors[0]?.role;
 
   return (

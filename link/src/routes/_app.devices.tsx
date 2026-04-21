@@ -23,7 +23,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, RefreshCw, Trash2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { ConfirmDialog } from "@/components/params";
 import { ApiError, api } from "@/lib/api";
 import { DevicesSection } from "@/components/devices/devices-section";
@@ -39,7 +39,11 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { useLiveInterval } from "@/lib/hooks/useLiveInterval";
-import { Tooltip } from "@/components/ui/tooltip";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import type { Device } from "@/lib/types/Device";
 import type { MotorSummary } from "@/lib/types/MotorSummary";
 import type { UnassignedDevice } from "@/lib/types/UnassignedDevice";
@@ -168,58 +172,53 @@ function DevicesPage() {
     },
   });
 
-  const motorByRole = useMemo(() => {
-    const m = new Map<string, MotorSummary>();
-    for (const row of motorsQ.data ?? []) {
-      m.set(row.role, row);
-    }
-    return m;
-  }, [motorsQ.data]);
+  const motorByRole = new Map<string, MotorSummary>();
+  for (const row of motorsQ.data ?? []) {
+    motorByRole.set(row.role, row);
+  }
 
   // Split inventory into the four top-level buckets (actuators, sensors,
   // peripherals, batteries), plus an "other" pile for actuators whose
   // `limb` field is set but doesn't match one of our six canonical limbs
   // (typo, future limb, etc.). Peripherals get further sub-grouped by
   // family inside the Peripherals section.
-  const split = useMemo(() => {
-    const arms_legs = new Map<LimbId, ActuatorDevice[]>();
-    for (const id of LIMB_GRID) arms_legs.set(id, []);
-    const trunk: ActuatorDevice[] = [];
-    const otherActuators: ActuatorDevice[] = [];
-    const sensors: SensorDevice[] = [];
-    const batteries: BatteryDevice[] = [];
-    const peripheralsByGroup = new Map<PeripheralGroupId, PeripheralDevice[]>([
-      ["audio", []],
-      ["lights", []],
-      ["display", []],
-      ["cooling", []],
-    ]);
-    for (const d of devicesQ.data ?? []) {
-      if (d.kind === "actuator") {
-        if (isLimbId(d.limb)) {
-          arms_legs.get(d.limb)!.push(d);
-        } else if (isTrunkLimbId(d.limb)) {
-          trunk.push(d);
-        } else {
-          otherActuators.push(d);
-        }
-      } else if (d.kind === "sensor") {
-        sensors.push(d);
-      } else if (d.kind === "battery") {
-        batteries.push(d);
+  const arms_legs = new Map<LimbId, ActuatorDevice[]>();
+  for (const id of LIMB_GRID) arms_legs.set(id, []);
+  const trunk: ActuatorDevice[] = [];
+  const otherActuators: ActuatorDevice[] = [];
+  const sensors: SensorDevice[] = [];
+  const batteries: BatteryDevice[] = [];
+  const peripheralsByGroup = new Map<PeripheralGroupId, PeripheralDevice[]>([
+    ["audio", []],
+    ["lights", []],
+    ["display", []],
+    ["cooling", []],
+  ]);
+  for (const d of devicesQ.data ?? []) {
+    if (d.kind === "actuator") {
+      if (isLimbId(d.limb)) {
+        arms_legs.get(d.limb)!.push(d);
+      } else if (isTrunkLimbId(d.limb)) {
+        trunk.push(d);
       } else {
-        peripheralsByGroup.get(peripheralGroup(d))!.push(d);
+        otherActuators.push(d);
       }
+    } else if (d.kind === "sensor") {
+      sensors.push(d);
+    } else if (d.kind === "battery") {
+      batteries.push(d);
+    } else {
+      peripheralsByGroup.get(peripheralGroup(d))!.push(d);
     }
-    return {
-      arms_legs,
-      trunk,
-      otherActuators,
-      sensors,
-      batteries,
-      peripheralsByGroup,
-    };
-  }, [devicesQ.data]);
+  }
+  const split = {
+    arms_legs,
+    trunk,
+    otherActuators,
+    sensors,
+    batteries,
+    peripheralsByGroup,
+  };
 
   const unassigned = unassignedQ.data ?? [];
 
@@ -570,8 +569,13 @@ function ActuatorTable({
                 </td>
                 <td className="px-3 py-2 text-right">
                   {isEnabled ? (
-                    <Tooltip content="Stop the motor first." side="top">
-                      <span>{removeBtn}</span>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="inline-flex">{removeBtn}</span>
+                      </TooltipTrigger>
+                      <TooltipContent side="top">
+                        Stop the motor first.
+                      </TooltipContent>
                     </Tooltip>
                   ) : (
                     removeBtn

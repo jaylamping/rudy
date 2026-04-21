@@ -7,7 +7,7 @@
 //   <Slider value={[v]} onValueChange={([v]) => ...}
 //           min={0} max={100} step={1} disabled />
 
-import { forwardRef, useCallback, useEffect, useRef } from "react";
+import { forwardRef, useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 
 export interface SliderProps
@@ -44,89 +44,71 @@ export const Slider = forwardRef<HTMLDivElement, SliderProps>(
     const pct = max === min ? 0 : ((v - min) / (max - min)) * 100;
     const lastCommittedRef = useRef<number>(v);
 
-    const commit = useCallback(
-      (n: number) => {
-        if (onValueCommit && lastCommittedRef.current !== n) {
-          lastCommittedRef.current = n;
-          onValueCommit([n]);
-        }
-      },
-      [onValueCommit],
-    );
+    const commit = (n: number) => {
+      if (onValueCommit && lastCommittedRef.current !== n) {
+        lastCommittedRef.current = n;
+        onValueCommit([n]);
+      }
+    };
 
-    const fromClientX = useCallback(
-      (clientX: number): number => {
-        const track = trackRef.current;
-        if (!track) return v;
-        const rect = track.getBoundingClientRect();
-        const ratio = Math.min(
-          1,
-          Math.max(0, (clientX - rect.left) / rect.width),
-        );
-        const raw = min + ratio * (max - min);
-        const stepped = Math.round(raw / step) * step;
-        return clamp(stepped, min, max);
-      },
-      [min, max, step, v],
-    );
+    const fromClientX = (clientX: number): number => {
+      const track = trackRef.current;
+      if (!track) return v;
+      const rect = track.getBoundingClientRect();
+      const ratio = Math.min(
+        1,
+        Math.max(0, (clientX - rect.left) / rect.width),
+      );
+      const raw = min + ratio * (max - min);
+      const stepped = Math.round(raw / step) * step;
+      return clamp(stepped, min, max);
+    };
 
-    const onPointer = useCallback(
-      (e: React.PointerEvent<HTMLDivElement>) => {
-        if (disabled) return;
-        e.currentTarget.setPointerCapture(e.pointerId);
-        const next = fromClientX(e.clientX);
+    const onPointer = (e: React.PointerEvent<HTMLDivElement>) => {
+      if (disabled) return;
+      e.currentTarget.setPointerCapture(e.pointerId);
+      const next = fromClientX(e.clientX);
+      if (next !== v) onValueChange?.([next]);
+    };
+
+    const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+      if (disabled) return;
+      if (!(e.buttons & 1)) return;
+      const next = fromClientX(e.clientX);
+      if (next !== v) onValueChange?.([next]);
+    };
+
+    const onPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+      if (disabled) return;
+      e.currentTarget.releasePointerCapture(e.pointerId);
+      commit(v);
+    };
+
+    const onKey = (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (disabled) return;
+      let delta = 0;
+      if (e.key === "ArrowRight" || e.key === "ArrowUp") delta = step;
+      else if (e.key === "ArrowLeft" || e.key === "ArrowDown") delta = -step;
+      else if (e.key === "PageUp") delta = step * 10;
+      else if (e.key === "PageDown") delta = -step * 10;
+      else if (e.key === "Home") {
+        onValueChange?.([min]);
+        commit(min);
+        e.preventDefault();
+        return;
+      } else if (e.key === "End") {
+        onValueChange?.([max]);
+        commit(max);
+        e.preventDefault();
+        return;
+      }
+      if (delta !== 0) {
+        const next = clamp(v + delta, min, max);
         if (next !== v) onValueChange?.([next]);
-      },
-      [disabled, fromClientX, onValueChange, v],
-    );
-
-    const onPointerMove = useCallback(
-      (e: React.PointerEvent<HTMLDivElement>) => {
-        if (disabled) return;
-        if (!(e.buttons & 1)) return;
-        const next = fromClientX(e.clientX);
-        if (next !== v) onValueChange?.([next]);
-      },
-      [disabled, fromClientX, onValueChange, v],
-    );
-
-    const onPointerUp = useCallback(
-      (e: React.PointerEvent<HTMLDivElement>) => {
-        if (disabled) return;
-        e.currentTarget.releasePointerCapture(e.pointerId);
-        commit(v);
-      },
-      [disabled, commit, v],
-    );
-
-    const onKey = useCallback(
-      (e: React.KeyboardEvent<HTMLDivElement>) => {
-        if (disabled) return;
-        let delta = 0;
-        if (e.key === "ArrowRight" || e.key === "ArrowUp") delta = step;
-        else if (e.key === "ArrowLeft" || e.key === "ArrowDown") delta = -step;
-        else if (e.key === "PageUp") delta = step * 10;
-        else if (e.key === "PageDown") delta = -step * 10;
-        else if (e.key === "Home") {
-          onValueChange?.([min]);
-          commit(min);
-          e.preventDefault();
-          return;
-        } else if (e.key === "End") {
-          onValueChange?.([max]);
-          commit(max);
-          e.preventDefault();
-          return;
-        }
-        if (delta !== 0) {
-          const next = clamp(v + delta, min, max);
-          if (next !== v) onValueChange?.([next]);
-          commit(next);
-          e.preventDefault();
-        }
-      },
-      [disabled, step, min, max, v, onValueChange, commit],
-    );
+        commit(next);
+        e.preventDefault();
+      }
+    };
 
     useEffect(() => {
       lastCommittedRef.current = v;

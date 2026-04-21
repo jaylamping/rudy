@@ -118,7 +118,6 @@ export function MotorChart({ motor, metric, height = 180 }: MotorChartProps) {
     // We deliberately don't depend on `meta`/`metric`; remounting the
     // chart wipes the buffer. Callers should remount via `key={metric}`
     // if they want to switch metrics on a single host.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [height]);
 
   return <div ref={chartHost} />;

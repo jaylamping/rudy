@@ -28,7 +28,7 @@
 // up, fast REST poll when it's down). See `useWtConnected`.
 
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { useWebTransport } from "@/lib/hooks/useWebTransport";
 import { publishBridgeWt } from "@/lib/hooks/wtBridgeHandle";
@@ -116,12 +116,7 @@ export function WebTransportBridge({
     publishBridgeWt(wt);
   }, [wt]);
 
-  // The active registry. Memoize on identity of the prop so a parent that
-  // builds a fresh array each render doesn't tear down subscriptions.
-  const activeReducers = useMemo(
-    () => reducers ?? DEFAULT_REDUCERS,
-    [reducers],
-  );
+  const activeReducers = reducers ?? DEFAULT_REDUCERS;
 
   // Bucket-per-reducer; the bridge owns these between flushes. We re-init
   // when the reducer set changes so a swap doesn't carry over stale state.

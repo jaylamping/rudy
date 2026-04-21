@@ -21,7 +21,7 @@
 // signals intent. See `crates/cortex/src/motion/mod.rs` for the
 // architecture rule and the heartbeat constants.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -36,7 +36,11 @@ import { Slider } from "@/components/ui/slider";
 import { useLimbHealth } from "@/lib/hooks/useLimbHealth";
 import { getBridgeWt } from "@/lib/hooks/wtBridgeHandle";
 import { useWtConnected } from "@/lib/hooks/wtStatus";
-import { Tooltip } from "@/components/ui/tooltip";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import type { ClientStreamHandle } from "@/lib/wt/clientStream";
 import type { MotorSummary } from "@/lib/types/MotorSummary";
 import { degToRad, radToDeg } from "@/lib/units";
@@ -84,7 +88,7 @@ export function DeadManJog({ motor }: { motor: MotorSummary }) {
   // stream (we just let the daemon's TTL stop the motor).
   const transportRef = useRef<Transport>("unavailable");
 
-  const stopJog = useCallback(() => {
+  const stopJog = () => {
     directionRef.current = 0;
     if (timerRef.current !== null) {
       window.clearInterval(timerRef.current);
@@ -108,7 +112,7 @@ export function DeadManJog({ motor }: { motor: MotorSummary }) {
         // ignored
       });
     }
-  }, [motor.role]);
+  };
 
   // Stop on unmount. The dependency array deliberately doesn't include
   // `vel` etc — we only want to stop when the component leaves.
@@ -250,24 +254,26 @@ export function DeadManJog({ motor }: { motor: MotorSummary }) {
         </div>
         <div className="flex items-center gap-2">
           {jogDisableTip ? (
-            <Tooltip
-              content={jogDisableTip}
-              className="max-w-xs whitespace-normal"
-            >
-              <span className="flex flex-1">
-                <Button
-                  variant="outline"
-                  size="lg"
-                  disabled={!available || !motor.verified || jogBlocked}
-                  onPointerDown={() => startJog(-1)}
-                  onPointerUp={stopJog}
-                  onPointerLeave={stopJog}
-                  onPointerCancel={stopJog}
-                  className="flex-1"
-                >
-                  <ChevronLeft className="h-5 w-5" /> Hold to jog -
-                </Button>
-              </span>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="flex flex-1">
+                  <Button
+                    variant="outline"
+                    size="lg"
+                    disabled={!available || !motor.verified || jogBlocked}
+                    onPointerDown={() => startJog(-1)}
+                    onPointerUp={stopJog}
+                    onPointerLeave={stopJog}
+                    onPointerCancel={stopJog}
+                    className="flex-1"
+                  >
+                    <ChevronLeft className="h-5 w-5" /> Hold to jog -
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs whitespace-normal">
+                {jogDisableTip}
+              </TooltipContent>
             </Tooltip>
           ) : (
             <Button
@@ -284,24 +290,26 @@ export function DeadManJog({ motor }: { motor: MotorSummary }) {
             </Button>
           )}
           {jogDisableTip ? (
-            <Tooltip
-              content={jogDisableTip}
-              className="max-w-xs whitespace-normal"
-            >
-              <span className="flex flex-1">
-                <Button
-                  variant="outline"
-                  size="lg"
-                  disabled={!available || !motor.verified || jogBlocked}
-                  onPointerDown={() => startJog(1)}
-                  onPointerUp={stopJog}
-                  onPointerLeave={stopJog}
-                  onPointerCancel={stopJog}
-                  className="flex-1"
-                >
-                  Hold to jog + <ChevronRight className="h-5 w-5" />
-                </Button>
-              </span>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="flex flex-1">
+                  <Button
+                    variant="outline"
+                    size="lg"
+                    disabled={!available || !motor.verified || jogBlocked}
+                    onPointerDown={() => startJog(1)}
+                    onPointerUp={stopJog}
+                    onPointerLeave={stopJog}
+                    onPointerCancel={stopJog}
+                    className="flex-1"
+                  >
+                    Hold to jog + <ChevronRight className="h-5 w-5" />
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs whitespace-normal">
+                {jogDisableTip}
+              </TooltipContent>
             </Tooltip>
           ) : (
             <Button

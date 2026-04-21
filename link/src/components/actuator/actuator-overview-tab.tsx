@@ -12,7 +12,11 @@ import { HomingProgressBar } from "@/components/actuator/homing-progress";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MotorChart, type MotorMetric } from "@/components/motor-chart";
-import { Tooltip } from "@/components/ui/tooltip";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { UrdfViewer } from "@/components/viz/urdf-viewer";
 import { useLimbHealth } from "@/lib/hooks/useLimbHealth";
 import { formatAngleDeg, radToDeg } from "@/lib/units";
@@ -150,18 +154,23 @@ function GoHomeBar({ motor }: { motor: MotorSummary }) {
             </Link>
           )}
           {homed && !autoHoming && homeTip ? (
-            <Tooltip content={homeTip} className="max-w-xs whitespace-normal">
-              <span className="inline-flex">
-                <Button
-                  variant="default"
-                  size="sm"
-                  disabled={home.isPending || homeBlocked}
-                  onClick={() => home.mutate()}
-                >
-                  <Home className="mr-1.5 h-3.5 w-3.5" />
-                  {home.isPending ? "Homing..." : "Go to 0°"}
-                </Button>
-              </span>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="inline-flex">
+                  <Button
+                    variant="default"
+                    size="sm"
+                    disabled={home.isPending || homeBlocked}
+                    onClick={() => home.mutate()}
+                  >
+                    <Home className="mr-1.5 h-3.5 w-3.5" />
+                    {home.isPending ? "Homing..." : "Go to 0°"}
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs whitespace-normal">
+                {homeTip}
+              </TooltipContent>
             </Tooltip>
           ) : (
             <Button

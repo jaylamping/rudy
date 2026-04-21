@@ -11,10 +11,8 @@
 import {
   createContext,
   forwardRef,
-  useCallback,
   useContext,
   useEffect,
-  useMemo,
   useState,
   type ReactNode,
 } from "react";
@@ -49,15 +47,12 @@ export function Dialog({
   const [uncontrolled, setUncontrolled] = useState(defaultOpen ?? false);
   const isControlled = open !== undefined;
   const current = isControlled ? open : uncontrolled;
-  const setOpen = useCallback(
-    (next: boolean) => {
-      if (!isControlled) setUncontrolled(next);
-      onOpenChange?.(next);
-    },
-    [isControlled, onOpenChange],
-  );
+  const setOpen = (next: boolean) => {
+    if (!isControlled) setUncontrolled(next);
+    onOpenChange?.(next);
+  };
 
-  const ctx = useMemo(() => ({ open: current, setOpen }), [current, setOpen]);
+  const ctx = { open: current, setOpen };
   return <DialogContext.Provider value={ctx}>{children}</DialogContext.Provider>;
 }
 
