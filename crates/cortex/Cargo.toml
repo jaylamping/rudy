@@ -72,6 +72,8 @@ serde_yaml = "0.9"
 
 # HTTP / REST
 axum = { version = "0.7", features = ["macros", "json"] }
+# GitHub `latest.json` poll (operator-console deployment card)
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 # Plaintext HTTP only; TLS is terminated upstream by `tailscale serve` on the
 # Pi (see ADR-0004 addendum). WebTransport does its own TLS via wtransport.
 axum-server = { version = "0.7" }

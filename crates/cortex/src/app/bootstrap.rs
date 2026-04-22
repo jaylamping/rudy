@@ -11,8 +11,8 @@ use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{fmt, reload, EnvFilter, Registry};
 
 use crate::{
-    audit, can, config, http, inventory, log_layer, log_store, reminders, spec, state, system,
-    telemetry, types::LogEntry, wt,
+    audit, can, config, deployment, http, inventory, log_layer, log_store, reminders, spec, state,
+    system, telemetry, types::LogEntry, wt,
 };
 
 /// Run the cortex daemon: same behavior as the binary `main`, but callable with
@@ -211,6 +211,7 @@ pub async fn run(args: Vec<String>) -> Result<()> {
 
     telemetry::spawn(app_state.clone());
     system::spawn(app_state.clone());
+    deployment::spawn(app_state.clone());
 
     let (http_ready_tx, http_ready_rx) = tokio::sync::oneshot::channel();
     let mut http_handle = tokio::spawn(http::run(app_state.clone(), Some(http_ready_tx)));

@@ -18,7 +18,8 @@ use crate::reminders::ReminderStore;
 use crate::spec::ActuatorSpec;
 use crate::system::SystemPoller;
 use crate::types::{
-    LogEntry, MotorFeedback, ParamSnapshot, SafetyEvent, SystemSnapshot, TestProgress,
+    DeploymentInfo, LogEntry, MotorFeedback, ParamSnapshot, SafetyEvent, SystemSnapshot,
+    TestProgress,
 };
 
 /// Erased setter for the reload-able `EnvFilter`. Stored in `AppState`
@@ -145,6 +146,9 @@ pub struct AppState {
     /// yesterday is back to Unknown after a power cycle, by design.
     pub boot_state: RwLock<HashMap<String, BootState>>,
 
+    /// Stale / GitHub `latest` / Pi updater: refreshed in `deployment` background task.
+    pub deployment: tokio::sync::RwLock<DeploymentInfo>,
+
     /// Set of motor roles currently believed to be `enabled` on the bus
     /// (i.e. driving — torque allowed). Inserted on a successful `enable`
     /// CAN frame; cleared on a successful `stop` (per-motor stop, e-stop,
@@ -260,6 +264,7 @@ impl AppState {
             log_store: OnceLock::new(),
             log_event_tx,
             filter_reload: OnceLock::new(),
+            deployment: tokio::sync::RwLock::new(DeploymentInfo::initial()),
         }
     }
 

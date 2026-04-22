@@ -123,9 +123,14 @@ async function main() {
       const r = await http("GET", "/api/config");
       try {
         if (r.status !== 200) throw new Error(`status=${r.status}`);
-        assertHas(r.body, ["version", "actuator_models", "webtransport", "features"], "ServerConfig");
+        assertHas(r.body, ["version", "actuator_models", "webtransport", "features", "paths", "deployment"], "ServerConfig");
         assertHas(r.body.webtransport, ["enabled", "url"], "WebTransportAdvert");
         assertHas(r.body.features, ["mock_can", "require_verified"], "ServerFeatures");
+        assertHas(r.body.paths, ["inventory"], "ServerPaths");
+        assertHas(r.body.deployment, ["build", "latest", "is_stale", "latest_manifest_ok", "updater"], "DeploymentInfo");
+        assertHas(r.body.deployment.build, ["commit_sha", "short_sha", "built_at", "package_version"], "BuildIdentity");
+        assertHas(r.body.deployment.latest, ["commit_sha", "short_sha", "built_at", "manifest_error"], "ChannelLatest");
+        assertHas(r.body.deployment.updater, ["systemd_probed", "last_check", "last_applied", "timer_active", "service_failed", "healthy"], "UpdaterStatus");
         if (r.body.webtransport.enabled) {
           if (typeof r.body.webtransport.url !== "string") {
             throw new Error("webtransport.enabled=true but url is not a string");

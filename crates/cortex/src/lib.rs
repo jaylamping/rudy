@@ -12,6 +12,7 @@ pub mod api;
 pub mod app;
 pub mod can;
 pub mod config;
+mod deployment;
 pub mod hardware;
 pub mod http;
 pub mod motion;

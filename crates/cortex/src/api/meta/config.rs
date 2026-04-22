@@ -51,6 +51,7 @@ pub async fn get_config(
     actuator_models.sort();
 
     let inventory = state.cfg.paths.inventory.to_string_lossy().into_owned();
+    let deployment = state.deployment.read().await.clone();
 
     Json(ServerConfig {
         version: env!("CARGO_PKG_VERSION").to_string(),
@@ -64,5 +65,6 @@ pub async fn get_config(
             require_verified: state.cfg.safety.require_verified,
         },
         paths: ServerPaths { inventory },
+        deployment,
     })
 }

@@ -17,8 +17,10 @@ import { queryKeys } from "./queryKeys";
 // ---------------------------------------------------------------------------
 // /api/config
 // ---------------------------------------------------------------------------
-// `ServerConfig` is essentially static for the lifetime of the daemon
-// (URL adverts, feature flags, capability bits). Default `staleTime: 2_000`
+// `ServerConfig` is mostly static (URL adverts, feature flags). The nested
+// `deployment` object changes on the Pi as the background poller refreshes
+// GitHub `latest.json` + systemd state — 60s stale here lines up with that
+// poll. Default `staleTime: 2_000`
 // from `lib/query.ts` is wrong for it: every component that mounts
 // (`ConnectionCard`, `OnboardingWizard`, the viz route, the WT bridge)
 // would re-fetch within seconds of each other on a cold cache.
@@ -35,18 +37,34 @@ export const configQueryOptions = () =>
   });
 
 /**
- * `/api/config`. Effectively static during a session — see `CONFIG_STALE_MS`.
+ * `/api/config`. Mostly static — see `CONFIG_STALE_MS` — except
+ * `deployment` (stale release / Pi updater) which the server refreshes
+ * on its own cadence. Pass `refetchInterval` (e.g. 30_000) when you want
+ * the browser to re-query often while mounted (Connection card on Overview).
  *
  * Use this everywhere instead of `useQuery({ queryKey: ['config'], ... })`
  * so the daemon doesn't see four near-simultaneous refetches every time
  * the dashboard cold-mounts.
  *
- * `enabled` is the only option call sites may override — staleTime and
- * the queryFn are intentionally locked so the resource has one canonical
- * cadence across the app.
+ * `enabled`, `refetchInterval`, and `refetchIntervalInBackground` are the
+ * call-site overrides; staleTime and the queryFn stay canonical.
  */
-export function useConfigQuery(opts?: { enabled?: boolean }) {
-  return useQuery({ ...configQueryOptions(), enabled: opts?.enabled });
+export function useConfigQuery(
+  opts?: {
+    enabled?: boolean;
+    refetchInterval?: number | false;
+    refetchIntervalInBackground?: boolean;
+  },
+) {
+  const o = opts ?? {};
+  return useQuery({
+    ...configQueryOptions(),
+    ...(o.enabled !== undefined && { enabled: o.enabled }),
+    ...(o.refetchInterval !== undefined && { refetchInterval: o.refetchInterval }),
+    ...(o.refetchIntervalInBackground !== undefined && {
+      refetchIntervalInBackground: o.refetchIntervalInBackground,
+    }),
+  });
 }
 
 // ---------------------------------------------------------------------------

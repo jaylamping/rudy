@@ -59,6 +59,15 @@ async fn get_config_returns_server_config_shape() {
         "expected test fixture path to end with inventory.yaml, got {:?}",
         cfg.paths.inventory
     );
+
+    assert!(!cfg.deployment.build.commit_sha.is_empty());
+    assert!(!cfg.deployment.build.short_sha.is_empty());
+    assert!(!cfg.deployment.build.package_version.is_empty());
+    assert!(!cfg.deployment.build.built_at.is_empty());
+    assert!(!cfg.deployment.is_stale);
+    assert!(!cfg.deployment.latest_manifest_ok);
+    assert!(!cfg.deployment.updater.systemd_probed);
+    assert!(cfg.deployment.updater.healthy);
 }
 
 #[tokio::test]
