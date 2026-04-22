@@ -52,6 +52,13 @@ async fn get_config_returns_server_config_shape() {
     } = cfg.features;
     assert!(mock_can);
     assert!(require_verified);
+
+    assert!(!cfg.paths.inventory.is_empty());
+    assert!(
+        cfg.paths.inventory.ends_with("inventory.yaml"),
+        "expected test fixture path to end with inventory.yaml, got {:?}",
+        cfg.paths.inventory
+    );
 }
 
 #[tokio::test]

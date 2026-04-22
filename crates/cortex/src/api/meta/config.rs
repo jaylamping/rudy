@@ -8,7 +8,7 @@ use axum::{
 
 use crate::inventory::RobstrideModel;
 use crate::state::SharedState;
-use crate::types::{ServerConfig, ServerFeatures, WebTransportAdvert};
+use crate::types::{ServerConfig, ServerFeatures, ServerPaths, WebTransportAdvert};
 
 pub async fn get_config(
     State(state): State<SharedState>,
@@ -50,6 +50,8 @@ pub async fn get_config(
         .collect();
     actuator_models.sort();
 
+    let inventory = state.cfg.paths.inventory.to_string_lossy().into_owned();
+
     Json(ServerConfig {
         version: env!("CARGO_PKG_VERSION").to_string(),
         actuator_models,
@@ -61,5 +63,6 @@ pub async fn get_config(
             mock_can: state.cfg.can.mock,
             require_verified: state.cfg.safety.require_verified,
         },
+        paths: ServerPaths { inventory },
     })
 }

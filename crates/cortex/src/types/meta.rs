@@ -3,6 +3,17 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+/// Filesystem paths the daemon uses for read/write (operator transparency).
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "./")]
+pub struct ServerPaths {
+    /// Path cortex reads and writes for live inventory (same file as
+    /// `PUT`/`DELETE` that mutate the catalog). On the Pi this is usually
+    /// `/var/lib/rudy/inventory.yaml`, not the read-only seed under
+    /// `/opt/rudy/config/actuators/`.
+    pub inventory: String,
+}
+
 /// GET /api/config — what the UI needs to bootstrap.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "./")]
@@ -12,6 +23,7 @@ pub struct ServerConfig {
     pub actuator_models: Vec<String>,
     pub webtransport: WebTransportAdvert,
     pub features: ServerFeatures,
+    pub paths: ServerPaths,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

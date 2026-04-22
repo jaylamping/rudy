@@ -16,7 +16,7 @@ mod tests;
 mod wt;
 
 pub use logs::{LogEntry, LogFilterDirective, LogFilterState, LogLevel, LogSource};
-pub use meta::{ServerConfig, ServerFeatures, WebTransportAdvert};
+pub use meta::{ServerConfig, ServerFeatures, ServerPaths, WebTransportAdvert};
 pub use motor::{
     ApiError, LimbQuarantineMotor, MotorFeedback, MotorSummary, ParamDrift, ParamSnapshot,
     ParamSyncRequest, ParamValue, ParamWrite,

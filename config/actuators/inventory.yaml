@@ -169,31 +169,3 @@ devices:
   family:
     kind: robstride
     model: rs03
-- kind: actuator
-  role: shoulder_actuator_b
-  can_bus: can0
-  can_id: 9
-  present: false
-  verified: false
-  commissioned_at: null
-  firmware_version: unknown
-  travel_limits: null
-  commissioned_zero_offset: null
-  active_report_persisted: false
-  predefined_home_rad: null
-  limb: null
-  joint_kind: null
-  notes_yaml: |
-    can_status: unknown
-    limits_saved_to_flash: false
-    limits_written:
-      limit_torque_nm: null
-      limit_spd_rad_s: null
-      limit_cur_a: null
-      can_timeout_counts: null
-    mech_offset_rad: unknown
-    notes: Placeholder — fill in during Motor Assistant commissioning.
-    sourced_from: unknown
-  family:
-    kind: robstride
-    model: rs03

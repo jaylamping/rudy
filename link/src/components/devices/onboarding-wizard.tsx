@@ -166,8 +166,12 @@ export function OnboardingWizard({
         <DialogHeader>
           <DialogTitle>Onboard device</DialogTitle>
           <DialogDescription>
-            Add this CAN node to <code className="text-xs">inventory.yaml</code> as a RobStride
-            actuator. Position the joint, then commission flash zero when ready.
+            Add this CAN node to the live inventory file
+            {configQ.data ? (
+              <code className="text-xs break-all block my-1">{configQ.data.paths.inventory}</code>
+            ) : null}{" "}
+            as a RobStride actuator. Position the joint, then commission flash zero
+            when ready.
           </DialogDescription>
         </DialogHeader>
 

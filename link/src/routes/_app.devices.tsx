@@ -25,7 +25,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, RefreshCw, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { ConfirmDialog } from "@/components/params";
-import { queryKeys } from "@/api";
+import { queryKeys, useConfigQuery } from "@/api";
 import { ApiError, api } from "@/lib/api";
 import { DevicesSection } from "@/components/devices/devices-section";
 import { OnboardingWizard } from "@/components/devices/onboarding-wizard";
@@ -123,6 +123,7 @@ function peripheralGroup(p: PeripheralDevice): PeripheralGroupId {
 
 function DevicesPage() {
   const qc = useQueryClient();
+  const configQ = useConfigQuery();
   const poll = useLiveInterval({ live: 30_000, fallback: 2_000 });
   const [onboardTarget, setOnboardTarget] = useState<UnassignedDevice | null>(
     null,
@@ -248,10 +249,15 @@ function DevicesPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Devices</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Everything in <code className="text-xs">inventory.yaml</code>, grouped
-          by actuators, sensors, and power. Newly discovered CAN nodes show up
-          under
-          <em> Unassigned</em> at the bottom.
+          Inventory file the daemon is using:{" "}
+          <code className="text-xs break-all">
+            {configQ.data?.paths.inventory ?? "…"}
+          </code>
+          . On the Pi this is usually{" "}
+          <code className="text-xs">/var/lib/rudy/inventory.yaml</code> (not the
+          read-only <code className="text-xs">/opt/rudy/.../config</code> copy).
+          Grouped by actuators, sensors, and power. New CAN nodes: <em>Unassigned</em>{" "}
+          below.
         </p>
       </div>
 
@@ -294,8 +300,15 @@ function DevicesPage() {
               <p>
                 Remove <code className="font-mono">{removeTarget.role}</code> (
                 {removeTarget.can_bus} / 0x
-                {removeTarget.can_id.toString(16).padStart(2, "0")}) from{" "}
-                <code className="font-mono">inventory.yaml</code>?
+                {removeTarget.can_id.toString(16).padStart(2, "0")}) from the
+                on-disk live inventory?
+                {configQ.data ? (
+                  <code className="text-xs break-all block mt-1 text-foreground">
+                    {configQ.data.paths.inventory}
+                  </code>
+                ) : (
+                  <span className="text-xs"> Path appears here once loaded…</span>
+                )}
               </p>
               <p>
                 This motor will disappear from the limb view and must be
