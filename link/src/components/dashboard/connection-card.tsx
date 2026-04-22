@@ -1,5 +1,5 @@
 // Small "what am I talking to?" card. Shows version, build stamp, GitHub
-// staleness, actuator model, CAN mode (live/mock), and WebTransport advert.
+// staleness, CAN mode (live/mock), and WebTransport advert.
 
 import { useConfigQuery } from "@/api";
 import { cn } from "@/lib/utils";
@@ -107,7 +107,6 @@ export function ConnectionCard({ className }: { className?: string }) {
               </Field>
             </>
           )}
-          <Field label="Actuator">{cfg.actuator_models.join(", ")}</Field>
           <Field label="CAN">
             <span
               className={cn(
@@ -131,17 +130,6 @@ export function ConnectionCard({ className }: { className?: string }) {
             ) : (
               <span className="text-muted-foreground">disabled</span>
             )}
-          </Field>
-          <Field label="Verification">
-            <span
-              className={cn(
-                cfg.features.require_verified
-                  ? "text-emerald-400"
-                  : "text-muted-foreground",
-              )}
-            >
-              {cfg.features.require_verified ? "required" : "optional"}
-            </span>
           </Field>
         </dl>
       )}
