@@ -3,12 +3,14 @@
 //! `GET /api/hardware/unassigned` lists `(bus, can_id)` in `state.seen_can_ids`
 //! that are not in inventory. Passive traffic and `POST /api/hardware/scan`
 //! both populate that map (with `source` and optional probe metadata).
+//! Stale entries (older than `AppState::SEEN_CAN_ID_TTL_MS`) are pruned on
+//! every read so a long-unplugged device doesn't linger in the operator UI.
 
 use axum::{extract::State, Json};
 use serde::{Deserialize, Serialize};
 
 use crate::can;
-use crate::discovery::{DiscoveredDevice, ScanAttempt};
+use crate::discovery::{DiscoveredDevice, ScanAttempt, ScanDiagnostics};
 use crate::state::SharedState;
 
 /// A CAN ID seen on the bus (or reported by a scan) that is not in inventory.
@@ -27,6 +29,10 @@ pub struct UnassignedDevice {
 }
 
 pub async fn list_unassigned(State(state): State<SharedState>) -> Json<Vec<UnassignedDevice>> {
+    // Lazy TTL eviction: cheap (one pass over the map under a write
+    // lock) and avoids a separate background pruner thread for the
+    // small number of entries we accumulate.
+    let _pruned = state.prune_stale_seen_can_ids();
     let seen = state
         .seen_can_ids
         .read()
@@ -53,7 +59,6 @@ pub async fn list_unassigned(State(state): State<SharedState>) -> Json<Vec<Unass
 }
 
 #[derive(Debug, Default, Deserialize)]
-#[allow(dead_code)] // Accepted for forward compatibility; scan implementation pending.
 pub struct ScanBody {
     #[serde(default)]
     pub bus: Option<String>,
@@ -65,6 +70,16 @@ pub struct ScanBody {
     pub timeout_ms: Option<u64>,
 }
 
+/// Per-id type-17 timeout, in ms. The previous default of 50 ms was too
+/// tight for a real bus where the worker has to share send/recv with the
+/// per-bus telemetry stream; raising the floor cuts false-negative scans
+/// dramatically. The cap is bumped from 500 ms → 2000 ms so the operator
+/// can run a deliberately patient scan from the SPA when chasing a flaky
+/// device.
+const SCAN_DEFAULT_TIMEOUT_MS: u64 = 150;
+const SCAN_MIN_TIMEOUT_MS: u64 = 20;
+const SCAN_MAX_TIMEOUT_MS: u64 = 2_000;
+
 #[derive(Debug, Serialize)]
 pub struct ScanResponse {
     pub ok: bool,
@@ -73,6 +88,17 @@ pub struct ScanResponse {
     pub attempts: Vec<ScanAttempt>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
+    #[serde(skip_serializing_if = "is_default_diag")]
+    pub diagnostics: ScanDiagnostics,
+}
+
+fn is_default_diag(d: &ScanDiagnostics) -> bool {
+    d.buses_scanned == 0
+        && d.broadcast_responses == 0
+        && d.targeted_probes_sent == 0
+        && d.targeted_probes_succeeded == 0
+        && d.targeted_probes_timed_out == 0
+        && d.elapsed_ms == 0
 }
 
 pub async fn scan(
@@ -81,7 +107,10 @@ pub async fn scan(
 ) -> Json<ScanResponse> {
     let id_min = body.id_min.unwrap_or(1);
     let id_max = body.id_max.unwrap_or(0x7F);
-    let timeout_ms = body.timeout_ms.unwrap_or(50).clamp(10, 500);
+    let timeout_ms = body
+        .timeout_ms
+        .unwrap_or(SCAN_DEFAULT_TIMEOUT_MS)
+        .clamp(SCAN_MIN_TIMEOUT_MS, SCAN_MAX_TIMEOUT_MS);
     let timeout = std::time::Duration::from_millis(timeout_ms);
     let bus = body.bus.clone();
 
@@ -96,18 +125,21 @@ pub async fn scan(
             discovered: r.discovered,
             attempts: r.attempts,
             message: r.message,
+            diagnostics: r.diagnostics,
         }),
         Ok(Err(e)) => Json(ScanResponse {
             ok: false,
             discovered: vec![],
             attempts: vec![],
             message: Some(e.to_string()),
+            diagnostics: ScanDiagnostics::default(),
         }),
         Err(e) => Json(ScanResponse {
             ok: false,
             discovered: vec![],
             attempts: vec![],
             message: Some(format!("scan task failed: {e}")),
+            diagnostics: ScanDiagnostics::default(),
         }),
     }
 }

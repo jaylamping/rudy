@@ -266,6 +266,59 @@ async fn post_hardware_onboard_rejects_duplicate_can_id() {
 }
 
 #[tokio::test]
+async fn get_hardware_unassigned_evicts_stale_seen_entries() {
+    let (state, _dir) = common::make_state();
+
+    // Inject a "seen 10 minutes ago" entry directly. The TTL
+    // (`SEEN_CAN_ID_TTL_MS = 5min`) means this should be pruned on the
+    // next read of `/api/hardware/unassigned`.
+    let stale_t_ms = chrono::Utc::now().timestamp_millis() - 10 * 60 * 1_000;
+    {
+        let mut map = state.seen_can_ids.write().expect("seen_can_ids poisoned");
+        map.insert(
+            (String::from("can1"), 0x77),
+            cortex::state::SeenInfo {
+                first_seen_ms: stale_t_ms,
+                last_seen_ms: stale_t_ms,
+                source: "passive".into(),
+                family_hint: None,
+                identification_payload: None,
+            },
+        );
+    }
+
+    // Plus a fresh one that should survive the prune.
+    state.record_passive_seen("can1", 0x10);
+
+    let app = cortex::build_app(state.clone());
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/hardware/unassigned")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let v: serde_json::Value = body_json(resp).await;
+    let arr = v.as_array().unwrap();
+    assert_eq!(
+        arr.len(),
+        1,
+        "stale entry must be pruned, only fresh one remains"
+    );
+    assert_eq!(arr[0]["can_id"], json!(0x10));
+
+    // And the underlying map should also have lost the stale row.
+    let map = state.seen_can_ids.read().expect("seen_can_ids poisoned");
+    assert!(
+        !map.contains_key(&(String::from("can1"), 0x77)),
+        "stale entry must be removed from seen_can_ids itself, not just hidden in the response",
+    );
+}
+
+#[tokio::test]
 async fn post_hardware_scan_noops_on_mock_can_with_message() {
     let (state, _dir) = common::make_state();
     let app = cortex::build_app(state);

@@ -10,7 +10,11 @@ pub(super) const CMD_DRAIN_BATCH: usize = 8;
 
 /// Receive-side timeout. Sets the minimum wakeup cadence of the worker
 /// loop (so it can service queued commands when no frames are arriving).
-pub(super) const RECV_POLL_TIMEOUT: Duration = Duration::from_millis(5);
+///
+/// `pub(crate)` so the scan path (`can::handle::scan`) can re-arm this
+/// value on the socket after temporarily widening it for the broadcast
+/// drain in `driver::rs03::session::broadcast_device_id_scan`.
+pub(crate) const RECV_POLL_TIMEOUT: Duration = Duration::from_millis(5);
 
 /// Default round-trip timeout for type-17 reads / writes that expect a
 /// reply. Slightly larger than the previous synchronous `PARAM_TIMEOUT`

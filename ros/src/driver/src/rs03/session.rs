@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use super::comm_types::CommType;
 use super::feedback::{decode_motor_feedback, MotorFeedback};
-use super::frame::{self, strip_eff_flag};
+use super::frame::{self, passive_observer_node_id, strip_eff_flag};
 use super::params;
 
 use crate::socketcan_bus::CanBus;
@@ -211,6 +211,97 @@ pub fn read_param_u32(
     timeout: Duration,
 ) -> io::Result<Option<u32>> {
     Ok(read_param_raw(bus, host_id, motor_id, index, timeout)?.map(u32::from_le_bytes))
+}
+
+/// One responder seen during a [`broadcast_device_id_scan`] sweep.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BroadcastResponse {
+    /// Node id (1..=127) of the responder.
+    pub motor_id: u8,
+    /// Comm type that carried the reply (informational; useful when the
+    /// firmware answers with a `MotorFeedback` heartbeat instead of a
+    /// `GetDeviceId` reply).
+    pub comm_type: u8,
+    /// Raw 8-byte payload from the reply frame.
+    pub data: [u8; 8],
+}
+
+/// Broadcast-style discovery sweep.
+///
+/// Sends a single `GetDeviceId` (type-0) frame addressed to `0xFF` (the
+/// RobStride broadcast slot) and then drains *every* extended frame the
+/// bus delivers for `total_listen` time, returning one entry per unique
+/// responder node id. Caller is responsible for whatever else they want
+/// to do with those node ids (record in `seen_can_ids`, follow up with a
+/// targeted type-17 read for firmware version, etc.).
+///
+/// `restore_read_timeout` is re-applied to the socket before returning,
+/// regardless of whether we exited via the deadline or an error. The
+/// per-bus worker (`crates/cortex/src/can/worker`) installs a 5 ms read
+/// timeout at startup; callers running this helper while holding
+/// `BusHandle::with_exclusive_bus` should pass that same value back so
+/// the worker resumes its tight poll cadence as soon as the lock is
+/// released.
+///
+/// Why not call `cmd_stop` / `read_param` per id? On a 6-DOF arm we'd
+/// burn `127 * timeout` per bus before knowing whether anything was
+/// alive. A single broadcast lets a quiet powered RS03 announce itself
+/// in tens of milliseconds — matching the official RobStride tool's
+/// behavior.
+pub fn broadcast_device_id_scan(
+    bus: &CanBus,
+    host_id: u8,
+    total_listen: Duration,
+    restore_read_timeout: Duration,
+) -> io::Result<Vec<BroadcastResponse>> {
+    // Per ADR-0002 / RobStride manual: type-0 broadcast uses motor_id =
+    // 0xFF as the wildcard recipient. The firmware replies with its real
+    // node id in the high byte (bits 16..23).
+    send_frame(bus, CommType::GetDeviceId, host_id, 0xFF, &[])?;
+
+    // Use a per-recv read timeout small enough to not block past the
+    // overall deadline if the bus is silent, but large enough to coalesce
+    // bursty replies into one syscall.
+    let _ = bus.set_read_timeout(Duration::from_millis(20));
+
+    let deadline = Instant::now() + total_listen;
+    let mut seen: std::collections::BTreeMap<u8, BroadcastResponse> =
+        std::collections::BTreeMap::new();
+    let mut last_err: Option<io::Error> = None;
+
+    while Instant::now() < deadline {
+        match bus.recv() {
+            Ok((can_id, data, _dlc)) => {
+                let Some(node) = passive_observer_node_id(can_id) else {
+                    continue;
+                };
+                let comm = frame::comm_type_from_id(can_id);
+                seen.entry(node).or_insert(BroadcastResponse {
+                    motor_id: node,
+                    comm_type: comm,
+                    data,
+                });
+            }
+            Err(e)
+                if e.kind() == io::ErrorKind::TimedOut || e.kind() == io::ErrorKind::WouldBlock =>
+            {
+                continue;
+            }
+            Err(e) => {
+                // Hold onto the last bus error but still try to restore
+                // the worker's read timeout below.
+                last_err = Some(e);
+                break;
+            }
+        }
+    }
+
+    let _ = bus.set_read_timeout(restore_read_timeout);
+
+    if let Some(e) = last_err {
+        return Err(e);
+    }
+    Ok(seen.into_values().collect())
 }
 
 pub fn defang_motor(bus: &CanBus, host_id: u8, motor_id: u8) -> io::Result<()> {

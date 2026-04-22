@@ -33,20 +33,47 @@ pub fn comm_type_from_id(id: u32) -> u8 {
 }
 
 /// Motor CAN node id (1..=127) for passive bus observation, when the arbitration field
-/// layout is unambiguous (ADR-0002 type-2 and type-17 reply layouts).
+/// layout is unambiguous (ADR-0002).
 ///
-/// Other comm types (e.g. MIT op-control) are ignored so torque bytes in bits 16..23 are
-/// not mistaken for a node address.
+/// Recognized comm types (RS03 / RobStride):
+///
+/// | comm  | name                       | node bits | notes                              |
+/// |-------|----------------------------|-----------|------------------------------------|
+/// | 0x00  | `GetDeviceId` reply        | 16..23    | device-info / boot announce        |
+/// | 0x02  | `MotorFeedback`            | 16..23    | streaming type-2                   |
+/// | 0x11  | `ReadParam` reply          | 8..15     | type-17 read response              |
+/// | 0x15  | `FaultFeedback`            | 8..15     | unsolicited fault frames           |
+/// | 0x16  | `SaveParams` ack           | 8..15     | echoed by some firmware revs       |
+/// | 0x18  | `ActiveReport`             | 16..23    | runtime-state push (type-24)       |
+///
+/// Comm types with operator-supplied bytes in the source-id slot
+/// (`OperationCtrl`, `Enable`, `Stop`, `WriteParam`, …) are deliberately
+/// ignored so MIT-control torque bytes in bits 16..23 are never mistaken
+/// for a node address. Outbound frames the host TXs are also not the
+/// observer's job; the worker filters its own TX via
+/// `CAN_RAW_RECV_OWN_MSGS=0`.
 #[inline]
 pub fn passive_observer_node_id(can_id: u32) -> Option<u8> {
     let raw = strip_eff_flag(can_id);
     let comm = comm_type_from_id(can_id);
-    let node = if comm == CommType::MotorFeedback as u8 {
-        ((raw >> 16) & 0xFF) as u8
-    } else if comm == CommType::ReadParam as u8 {
-        ((raw >> 8) & 0xFF) as u8
-    } else {
-        return None;
+    let node = match comm {
+        // Source id is in bits 16..23 (device → host frames whose layout
+        // mirrors the type-2 motor feedback header).
+        c if c == CommType::GetDeviceId as u8
+            || c == CommType::MotorFeedback as u8
+            || c == CommType::ActiveReport as u8 =>
+        {
+            ((raw >> 16) & 0xFF) as u8
+        }
+        // Source id is in bits 8..15 (type-17 reply convention reused by
+        // fault and save-params acks).
+        c if c == CommType::ReadParam as u8
+            || c == CommType::FaultFeedback as u8
+            || c == CommType::SaveParams as u8 =>
+        {
+            ((raw >> 8) & 0xFF) as u8
+        }
+        _ => return None,
     };
     if node == 0 || node > 0x7F {
         None
@@ -89,5 +116,61 @@ mod tests {
     fn passive_observer_skips_mit_op_control() {
         let raw = (CommType::OperationCtrl as u32) << 24;
         assert_eq!(passive_observer_node_id(with_eff_flag(raw)), None);
+    }
+
+    #[test]
+    fn passive_observer_get_device_id_reply() {
+        // Type-0 device-info reply: source node id in bits 16..23.
+        let raw = (CommType::GetDeviceId as u32) << 24 | (0x42u32 << 16) | 0xFD;
+        assert_eq!(passive_observer_node_id(with_eff_flag(raw)), Some(0x42));
+    }
+
+    #[test]
+    fn passive_observer_fault_feedback() {
+        // Type-21 fault frame: source node id in bits 8..15 (reply layout).
+        let raw = (CommType::FaultFeedback as u32) << 24 | (0x21u32 << 8) | 0xFD;
+        assert_eq!(passive_observer_node_id(with_eff_flag(raw)), Some(0x21));
+    }
+
+    #[test]
+    fn passive_observer_active_report() {
+        // Type-24 active-report push: same source-id layout as type-2.
+        let raw = (CommType::ActiveReport as u32) << 24 | (0x33u32 << 16) | 0xFD;
+        assert_eq!(passive_observer_node_id(with_eff_flag(raw)), Some(0x33));
+    }
+
+    #[test]
+    fn passive_observer_save_params_ack() {
+        let raw = (CommType::SaveParams as u32) << 24 | (0x55u32 << 8) | 0xFD;
+        assert_eq!(passive_observer_node_id(with_eff_flag(raw)), Some(0x55));
+    }
+
+    #[test]
+    fn passive_observer_rejects_zero_and_overflow() {
+        // node id == 0 (broadcast slot) is not a real device
+        let raw = (CommType::MotorFeedback as u32) << 24;
+        assert_eq!(passive_observer_node_id(with_eff_flag(raw)), None);
+        // node id > 0x7F is reserved
+        let raw = (CommType::MotorFeedback as u32) << 24 | (0x80u32 << 16);
+        assert_eq!(passive_observer_node_id(with_eff_flag(raw)), None);
+    }
+
+    #[test]
+    fn passive_observer_skips_host_originated_writes() {
+        for c in [
+            CommType::OperationCtrl,
+            CommType::Enable,
+            CommType::Stop,
+            CommType::SetZero,
+            CommType::SetCanId,
+            CommType::WriteParam,
+        ] {
+            let raw = (c as u32) << 24 | (0x42u32 << 16) | 0xFD;
+            assert!(
+                passive_observer_node_id(with_eff_flag(raw)).is_none(),
+                "comm 0x{:02x} must not fire passive observer",
+                c as u8,
+            );
+        }
     }
 }

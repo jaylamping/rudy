@@ -343,6 +343,12 @@ impl AppState {
             .contains(role)
     }
 
+    /// Default TTL for `seen_can_ids` entries. An id that hasn't been seen
+    /// (passively or via an active scan) for this long is evicted on the
+    /// next read so a long-unplugged device doesn't pollute the
+    /// "Unassigned" list forever.
+    pub const SEEN_CAN_ID_TTL_MS: i64 = 5 * 60 * 1_000;
+
     /// Record a node ID seen on `iface` from passive bus traffic (type-2 or
     /// type-17 reply layout). Idempotent per key; refreshes `last_seen_ms`.
     pub fn record_passive_seen(&self, iface: &str, can_id: u8) {
@@ -356,6 +362,11 @@ impl AppState {
                 if info.source == "active_scan" {
                     info.source = "both".into();
                 }
+                // Family hint and payload are not touched here on
+                // purpose — passive frames don't carry enough context to
+                // assert a family, and overwriting an existing
+                // `Some("robstride")` from an earlier scan with `None`
+                // would silently degrade the operator's view.
             }
             Entry::Vacant(e) => {
                 e.insert(SeenInfo {
@@ -371,6 +382,12 @@ impl AppState {
 
     /// Record a device discovered via `POST /api/hardware/scan`. Merges with
     /// passive entries (`both` when both paths have seen this ID).
+    ///
+    /// Always overwrites `family_hint` and `identification_payload` — a
+    /// fresh active probe is the highest-confidence source we have, and
+    /// keeping an entry whose payload describes the *previous* device
+    /// living at this id (after a swap) would be worse than no payload at
+    /// all.
     pub fn record_active_scan_seen(
         &self,
         iface: &str,
@@ -403,6 +420,19 @@ impl AppState {
                 });
             }
         }
+    }
+
+    /// Drop `seen_can_ids` entries whose `last_seen_ms` is older than
+    /// `SEEN_CAN_ID_TTL_MS`. Called lazily by `GET /api/hardware/unassigned`
+    /// so the listing always reflects what the bus has shown us recently.
+    /// Returns the number of entries pruned, for diagnostics / tests.
+    pub fn prune_stale_seen_can_ids(&self) -> usize {
+        let now_ms = chrono::Utc::now().timestamp_millis();
+        let cutoff = now_ms - Self::SEEN_CAN_ID_TTL_MS;
+        let mut map = self.seen_can_ids.write().expect("seen_can_ids poisoned");
+        let before = map.len();
+        map.retain(|_, info| info.last_seen_ms >= cutoff);
+        before - map.len()
     }
 
     /// Cooperative single-operator gate. Called by every mutating handler
