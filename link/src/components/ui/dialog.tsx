@@ -16,6 +16,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 
 interface DialogContextValue {
@@ -108,7 +109,12 @@ export const DialogContent = forwardRef<HTMLDivElement, DialogContentProps>(
 
     if (!ctx.open) return null;
 
-    return (
+    // Portals avoid `position: fixed` being trapped by scroll/sticky
+    // ancestors with `transform` / `backdrop-filter` (e.g. the app shell
+    // header’s `backdrop-blur`), which would pin the overlay to the top.
+    if (typeof document === "undefined") return null;
+
+    return createPortal(
       <div
         className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
         onClick={(e) => {
@@ -127,7 +133,8 @@ export const DialogContent = forwardRef<HTMLDivElement, DialogContentProps>(
         >
           {children}
         </div>
-      </div>
+      </div>,
+      document.body,
     );
   },
 );
