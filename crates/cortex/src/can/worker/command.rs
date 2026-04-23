@@ -16,10 +16,14 @@ pub(super) const CMD_DRAIN_BATCH: usize = 8;
 /// drain in `driver::rs03::session::broadcast_device_id_scan`.
 pub(crate) const RECV_POLL_TIMEOUT: Duration = Duration::from_millis(5);
 
-/// Default round-trip timeout for type-17 reads / writes that expect a
-/// reply. Slightly larger than the previous synchronous `PARAM_TIMEOUT`
-/// to absorb the extra hop through the channel.
-pub const REPLY_TIMEOUT: Duration = Duration::from_millis(50);
+/// Default round-trip timeout for worker commands that expect a reply
+/// on the per-bus `mpsc` channel (`BusHandle::enable`, `set_velocity`,
+/// etc.). Must exceed the worst-case handler duration: `Cmd::SetVelocity`
+/// re-arm deliberately sleeps ~60 ms (two 30 ms firmware settle windows)
+/// plus several CAN round-trips before `reply.send`, so 50 ms was too
+/// tight and surfaced as `can_command_failed: timed out waiting on
+/// channel` with `ticks=1` / `total_can_sends=0` in `home_ramp`.
+pub const REPLY_TIMEOUT: Duration = Duration::from_millis(200);
 
 /// Type-17 reply value bytes (little-endian). `None` means the motor
 /// returned a read-fail status byte.

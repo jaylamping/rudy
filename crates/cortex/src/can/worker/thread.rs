@@ -5,7 +5,7 @@ use std::io;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::sync::{Arc, Mutex, Weak};
 use std::thread;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use chrono::Utc;
@@ -386,43 +386,51 @@ fn handle_cmd(
                 None => true,
             };
 
-            let result: io::Result<()> = {
-                let guard = bus.lock().expect("bus mutex poisoned");
-                (|| {
-                    let dev = Rs03::new(host_id, motor_id);
-                    if need_rearm {
-                        // Re-arm: same order as `bench_enable_disable.py` (stop, mode, spd_ref, enable).
-                        //
-                        // RS03 firmware quirk: a `RUN_MODE` write only
-                        // commits if the motor's enable bit is genuinely
-                        // off when the write arrives. After certain
-                        // hold modes — notably MIT (`run_mode = 0`,
-                        // post-`finish_home_success`) — a single
-                        // `cmd_stop` propagates through the firmware
-                        // state machine in ~20-30 ms; firing the
-                        // `RUN_MODE` write in the same millisecond
-                        // sometimes lands while the prior enable is
-                        // still latched, the write is silently
-                        // rejected, and the subsequent `cmd_enable`
-                        // resumes the previous mode (PP or MIT) which
-                        // ignores `SPD_REF` entirely. Symptom is a
-                        // velocity command stream where every frame
-                        // sends successfully but the motor doesn't
-                        // move — exact failure mode hit by the boot
-                        // orchestrator after a cortex restart while a
-                        // motor was held.
-                        //
-                        // Belt-and-braces: cmd_stop, settle, RUN_MODE,
-                        // cmd_stop again (to swallow a re-enable race
-                        // from the prior latched state), settle,
-                        // SPD_REF, cmd_enable. The two extra ~30 ms
-                        // sleeps add ~60 ms to the very first jog after
-                        // a hold (or first home_ramp tick after boot)
-                        // and are no-cost on every subsequent
-                        // SetVelocity (fast path skips this branch
-                        // entirely once `state.enabled` is set).
+            // Do **not** hold `bus` across the firmware settle sleeps: (1)
+            // `REPLY_TIMEOUT` must cover wall-clock handler time (see
+            // `command::REPLY_TIMEOUT`); (2) releasing the mutex during
+            // sleeps lets `with_exclusive_bus` contend instead of blocking
+            // for the full settle window.
+            let result: io::Result<()> = (|| {
+                let dev = Rs03::new(host_id, motor_id);
+                if need_rearm {
+                    // Re-arm: same order as `bench_enable_disable.py` (stop, mode, spd_ref, enable).
+                    //
+                    // RS03 firmware quirk: a `RUN_MODE` write only
+                    // commits if the motor's enable bit is genuinely
+                    // off when the write arrives. After certain
+                    // hold modes — notably MIT (`run_mode = 0`,
+                    // post-`finish_home_success`) — a single
+                    // `cmd_stop` propagates through the firmware
+                    // state machine in ~20-30 ms; firing the
+                    // `RUN_MODE` write in the same millisecond
+                    // sometimes lands while the prior enable is
+                    // still latched, the write is silently
+                    // rejected, and the subsequent `cmd_enable`
+                    // resumes the previous mode (PP or MIT) which
+                    // ignores `SPD_REF` entirely. Symptom is a
+                    // velocity command stream where every frame
+                    // sends successfully but the motor doesn't
+                    // move — exact failure mode hit by the boot
+                    // orchestrator after a cortex restart while a
+                    // motor was held.
+                    //
+                    // Belt-and-braces: cmd_stop, settle, RUN_MODE,
+                    // cmd_stop again (to swallow a re-enable race
+                    // from the prior latched state), settle,
+                    // SPD_REF, cmd_enable. The two extra ~30 ms
+                    // sleeps add ~60 ms to the very first jog after
+                    // a hold (or first home_ramp tick after boot)
+                    // and are no-cost on every subsequent
+                    // SetVelocity (fast path skips this branch
+                    // entirely once `state.enabled` is set).
+                    {
+                        let guard = bus.lock().expect("bus mutex poisoned");
                         session::cmd_stop(&guard, dev.host_id(), dev.motor_id(), false)?;
-                        std::thread::sleep(std::time::Duration::from_millis(30));
+                    }
+                    thread::sleep(Duration::from_millis(30));
+                    {
+                        let guard = bus.lock().expect("bus mutex poisoned");
                         session::write_param_u8(
                             &guard,
                             dev.host_id(),
@@ -430,8 +438,14 @@ fn handle_cmd(
                             dev.param_index_run_mode(),
                             dev.run_mode_velocity(),
                         )?;
+                    }
+                    {
+                        let guard = bus.lock().expect("bus mutex poisoned");
                         session::cmd_stop(&guard, dev.host_id(), dev.motor_id(), false)?;
-                        std::thread::sleep(std::time::Duration::from_millis(30));
+                    }
+                    thread::sleep(Duration::from_millis(30));
+                    {
+                        let guard = bus.lock().expect("bus mutex poisoned");
                         session::write_param_f32(
                             &guard,
                             dev.host_id(),
@@ -440,18 +454,19 @@ fn handle_cmd(
                             vel_rad_s,
                         )?;
                         session::cmd_enable(&guard, dev.host_id(), dev.motor_id())?;
-                    } else {
-                        session::write_param_f32(
-                            &guard,
-                            dev.host_id(),
-                            dev.motor_id(),
-                            dev.param_index_spd_ref(),
-                            vel_rad_s,
-                        )?;
                     }
-                    Ok(())
-                })()
-            };
+                } else {
+                    let guard = bus.lock().expect("bus mutex poisoned");
+                    session::write_param_f32(
+                        &guard,
+                        dev.host_id(),
+                        dev.motor_id(),
+                        dev.param_index_spd_ref(),
+                        vel_rad_s,
+                    )?;
+                }
+                Ok(())
+            })();
             log_send_result(iface, "set_velocity", motor_id, &result);
             if result.is_ok() && !role.is_empty() {
                 if let Some(state) = state.upgrade() {
