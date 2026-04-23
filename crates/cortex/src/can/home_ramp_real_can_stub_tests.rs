@@ -431,9 +431,18 @@ async fn motor_landing_in_tolerance_breaks_immediately_no_bounce() {
         ticks <= 60,
         "expected early break within ~60 ticks, got {ticks} (suggests bounce regression)"
     );
+    // The home-ramp now floors the success tolerance at 2.5 × step_size
+    // (see `effective_tolerance_rad` in `home_ramp.rs`) to keep the dwell
+    // gate satisfiable at high homing speeds. With this fixture's
+    // step_size_rad = 0.02, the effective tolerance is 0.05, so the early
+    // break fires at the first measured sample whose distance from target
+    // (0.10) is < 0.05 — i.e. anywhere in [0.05, 0.099]. The updater
+    // ramps in 0.02 increments capped at 0.099, so `final_pos` lands
+    // somewhere in that band depending on tick timing. Pin the property
+    // (in-band, below the cap) rather than the exact value.
     assert!(
-        (final_pos - 0.099_f32).abs() < 1e-3,
-        "expected final_pos ~= 0.099 (the in-tolerance measured value), got {final_pos}"
+        final_pos >= 0.05 && final_pos <= 0.099,
+        "expected final_pos in the effective tolerance window [0.05, 0.099], got {final_pos}"
     );
 }
 

@@ -450,6 +450,44 @@ pub async fn run_with_overrides(
     let nominal_speed = homing_speed_rad_s.min(MAX_HOMER_VEL_RAD_S);
     let step_size_rad = nominal_speed * tick_secs;
 
+    // Effective success tolerance: at least 2.5× the active per-tick step
+    // so the dwell gate can actually be satisfied at high homing speeds.
+    //
+    // `cfg.target_tolerance_rad` (default 0.010 rad) was sized against the
+    // default `cfg.step_size_rad` (0.004 rad) — comfortably 2.5× as the
+    // docstring on `target_tolerance_rad` calls out. But the active step
+    // here is `nominal_speed * tick_secs`, which scales with the operator's
+    // per-actuator `homing_speed_rad_s` override. At a 1.2 rad/s override
+    // and 10 ms tick, step = 0.012 rad — already LARGER than the static
+    // 0.010 rad tolerance, so the natural firmware-lag overshoot of
+    // ~step_size_rad lands the motor outside the success window every
+    // tick, the next tick recomputes `direction` from the post-overshoot
+    // sample, flips it, commands tapered velocity the OTHER way, and the
+    // joint ping-pongs around target until something else (timeout,
+    // gravity decay) lets it park. Operators see this as the "weird
+    // oscillation during homing" reported on 2026-04-23.
+    //
+    // Floor the tolerance at 2.5× the active step so the invariant from
+    // the `target_tolerance_rad` docstring holds across every speed
+    // override. The static config value still wins when it's already
+    // larger (operator-tightened tolerance on a slow home), so this only
+    // widens — never tightens — the success window.
+    let effective_tolerance_rad = cfg.target_tolerance_rad.max(step_size_rad * 2.5);
+
+    // Brake window: the velocity command is tapered linearly across the
+    // last `brake_distance_rad` of remaining travel toward whichever
+    // boundary (target or band edge) is closer. Sized at ~5× step_size
+    // so the taper covers ~5 ticks (~50 ms with default tick) of
+    // deceleration — long enough for the firmware velocity loop to
+    // actually slew commanded velocity down before the motor arrives.
+    // The pre-existing single-tick `step_size_rad` window only worked
+    // at the default 0.4 rad/s nominal; at the 1.2 rad/s operator
+    // override the firmware-lag overshoot exceeded one tick of taper
+    // and the motor coasted past target at full speed before reactive
+    // direction flip. Five ticks of taper keeps overshoot well under
+    // `effective_tolerance_rad` at every speed up to MAX_HOMER_VEL_RAD_S.
+    let brake_distance_rad = step_size_rad * 5.0;
+
     // Resolve the operator's target into the same unwrapped frame the
     // multi-turn encoder reports. The principal-angle delta is the
     // shortest signed path from current to wrap-to-pi(target); adding
@@ -512,6 +550,8 @@ pub async fn run_with_overrides(
         homing_speed_source,
         nominal_speed_rad_s = nominal_speed,
         target_tolerance_rad = cfg.target_tolerance_rad,
+        effective_tolerance_rad,
+        brake_distance_rad,
         homer_timeout_ms = cfg.homer_timeout_ms,
         tracking_freshness_max_age_ms = cfg.tracking_freshness_max_age_ms,
         has_real_can = homer_has_real_can,
@@ -609,7 +649,7 @@ pub async fn run_with_overrides(
         };
 
         let in_tolerance =
-            shortest_signed_delta(last_measured, unwrapped_target).abs() < cfg.target_tolerance_rad;
+            shortest_signed_delta(last_measured, unwrapped_target).abs() < effective_tolerance_rad;
         if is_fresh {
             if in_tolerance {
                 consec_in_tolerance = consec_in_tolerance.saturating_add(1);
@@ -757,7 +797,7 @@ pub async fn run_with_overrides(
         // and the no-limits short-circuit.
         let dist_to_edge = band_edge_distance(limits_snapshot.as_ref(), last_measured, direction);
         let governing_capped = governing.abs().min(dist_to_edge);
-        let approach_scale = (governing_capped / step_size_rad.max(1e-6)).min(1.0);
+        let approach_scale = (governing_capped / brake_distance_rad.max(1e-6)).min(1.0);
         // Symmetric companion to `approach_scale`: when the motor is
         // racing ahead of the home-ramp trajectory (gravity assist on
         // a payload-loaded joint), taper commanded velocity toward
@@ -787,7 +827,7 @@ pub async fn run_with_overrides(
         // shortest-signed-delta the success check uses so a measured
         // value on the other side of a wrap from `unwrapped_target`
         // still counts as in-tolerance.
-        if shortest_signed_delta(last_measured, unwrapped_target).abs() < cfg.target_tolerance_rad {
+        if shortest_signed_delta(last_measured, unwrapped_target).abs() < effective_tolerance_rad {
             vel = 0.0;
         }
 
