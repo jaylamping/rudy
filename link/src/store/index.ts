@@ -1,13 +1,9 @@
-import { useEffect, useState } from "react";
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { useShallow } from "zustand/react/shallow";
 
-import { DEVICE_LIVE_STALE_MS } from "@/lib/deviceLiveness";
-
 import { createSelectors } from "./createSelectors";
 import { createAuthSlice } from "./slices/authSlice";
-import { createDeviceSlice } from "./slices/deviceSlice";
 import { createUiSlice } from "./slices/uiSlice";
 import type { RootState } from "./types";
 
@@ -31,7 +27,6 @@ const useStoreBase = create<RootState>()(
     (...a) => ({
       ...createAuthSlice(...a),
       ...createUiSlice(...a),
-      ...createDeviceSlice(...a),
     }),
     {
       name: "cortex-console", // localStorage key
@@ -131,38 +126,17 @@ export const useUiActions = () =>
   );
 
 // ---------------------------------------------------------------------------
-// Device liveness (keyed by motor `role`) — see `useDeviceLivenessSync`.
+// Motor liveness — shared `queryKeys.motors.all()` cache (see
+// `useDeviceLivenessGating`); no device state in zustand.
 // ---------------------------------------------------------------------------
 
-export const useDeviceLive = (role: string): boolean =>
-  useStore((s) => s.devices[role]?.isOnline ?? false);
-
-export const useDeviceLastSeen = (role: string): number | null =>
-  useStore((s) => s.devices[role]?.lastSeenMs ?? null);
-
-/**
- * Human-readable reason for gating; updates every second while offline so
- * the stale age stays accurate in tooltips.
- */
-export const useDeviceOfflineTip = (role: string): string => {
-  const last = useDeviceLastSeen(role);
-  const isLive = useDeviceLive(role);
-  const [tick, setTick] = useState(0);
-  useEffect(() => {
-    if (isLive) return;
-    const id = setInterval(() => setTick((n) => n + 1), 1_000);
-    return () => clearInterval(id);
-  }, [isLive]);
-  void tick;
-  if (last == null) {
-    return "No telemetry from this actuator yet — actions are disabled until it answers.";
-  }
-  const ageS = (Date.now() - last) / 1_000;
-  return `No frame in ${ageS.toFixed(1)}s (live threshold ${DEVICE_LIVE_STALE_MS / 1_000}s).`;
-};
+export {
+  useDeviceLive,
+  useDeviceOfflineTip,
+  useMotorLastSeenMs,
+} from "@/lib/hooks/useDeviceLivenessGating";
 
 // Re-export types for ergonomic imports from `@/store`.
 export type { RootState } from "./types";
 export type { AuthSlice, User } from "./slices/authSlice";
-export type { DeviceSlice, DeviceLiveness } from "./slices/deviceSlice";
 export type { UiSlice, Theme } from "./slices/uiSlice";

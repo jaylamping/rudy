@@ -9,7 +9,6 @@ import {
   View,
 } from "lucide-react";
 import { useState } from "react";
-import { useDeviceLivenessSync } from "@/lib/hooks/useDeviceLivenessSync";
 import { cn } from "@/lib/utils";
 import { EstopButton } from "@/components/estop-button";
 import { GlobalActuatorHealthBar } from "@/components/global-actuator-health-bar";
@@ -76,7 +75,6 @@ function NavLinks({
 }
 
 export function AppShell() {
-  useDeviceLivenessSync();
   const { location } = useRouterState();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 

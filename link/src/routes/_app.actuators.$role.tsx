@@ -8,7 +8,7 @@
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Home, Lock, LockOpen, Radio, WifiOff } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { queryKeys } from "@/api";
 import { api } from "@/lib/api";
 import { HomingProgressBar } from "@/components/actuator/homing-progress";
@@ -31,9 +31,8 @@ import { ActuatorTestsTab } from "@/components/actuator/actuator-tests-tab";
 import { ActuatorInventoryTab } from "@/components/actuator/actuator-inventory-tab";
 import { PingDeviceButton } from "@/components/actuator/ping-device-button";
 import { radToDeg } from "@/lib/units";
-import { useDeviceLive } from "@/store";
+import { useDeviceLive, useMotorLastSeenMs } from "@/store";
 
-const STALE_MS = 3_000;
 const HOT_DEGC = 65;
 
 const TABS = [
@@ -159,9 +158,22 @@ function ActuatorDetailPage() {
 
 function ActuatorHeader({ motor }: { motor: MotorSummary }) {
   const isLive = useDeviceLive(motor.role);
+  const lastSeenMs = useMotorLastSeenMs(motor.role);
+  const [staleTick, setStaleTick] = useState(0);
+  useEffect(() => {
+    if (isLive || lastSeenMs == null) return;
+    const id = setInterval(() => setStaleTick((n) => n + 1), 1_000);
+    return () => clearInterval(id);
+  }, [isLive, lastSeenMs]);
+  void staleTick;
+
   const fb = motor.latest;
-  const ageS = fb ? (Date.now() - Number(fb.t_ms)) / 1000 : null;
-  const stale = ageS != null && ageS * 1000 > STALE_MS;
+  const hasTelemetry = lastSeenMs != null;
+  const stale = hasTelemetry && !isLive;
+  const ageS =
+    hasTelemetry && lastSeenMs != null
+      ? (Date.now() - lastSeenMs) / 1_000
+      : null;
   const hot = fb ? fb.temp_c >= HOT_DEGC : false;
 
   return (
@@ -199,17 +211,19 @@ function ActuatorHeader({ motor }: { motor: MotorSummary }) {
           <Tooltip>
             <TooltipTrigger asChild>
               <Badge
-                variant={fb ? (stale ? "warning" : "success") : "outline"}
+                variant={
+                  hasTelemetry ? (stale ? "warning" : "success") : "outline"
+                }
                 className="inline-flex size-7 items-center justify-center p-0"
                 aria-label={
-                  fb
+                  hasTelemetry
                     ? stale
                       ? `Stale telemetry, ${ageS?.toFixed(1)} seconds old`
                       : "Live telemetry"
                     : "No telemetry"
                 }
               >
-                {fb ? (
+                {hasTelemetry ? (
                   <Radio className="size-3.5" strokeWidth={2.25} />
                 ) : (
                   <WifiOff className="size-3.5 text-muted-foreground" strokeWidth={2.25} />
@@ -217,7 +231,7 @@ function ActuatorHeader({ motor }: { motor: MotorSummary }) {
               </Badge>
             </TooltipTrigger>
             <TooltipContent side="bottom">
-              {fb
+              {hasTelemetry
                 ? stale
                   ? `Stale — ${ageS?.toFixed(1)}s since last frame`
                   : "Live telemetry"

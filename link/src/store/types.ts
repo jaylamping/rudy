@@ -1,6 +1,5 @@
 import type { StateCreator } from "zustand";
 import type { AuthSlice } from "./slices/authSlice";
-import type { DeviceSlice } from "./slices/deviceSlice";
 import type { UiSlice } from "./slices/uiSlice";
 
 /**
@@ -8,7 +7,7 @@ import type { UiSlice } from "./slices/uiSlice";
  * `set`/`get` inside any slice are typed against this union — that's what lets
  * one slice safely read/update fields owned by another.
  */
-export type RootState = AuthSlice & UiSlice & DeviceSlice;
+export type RootState = AuthSlice & UiSlice;
 
 /**
  * Middleware stack we apply to the root store, listed outer-most first.
