@@ -201,12 +201,25 @@ async fn hold_verification_fails_when_telemetry_missing() {
 #[test]
 fn mit_hold_defaults_are_conservative_spring() {
     // Sanity-check the `[safety]` defaults wired into `finish_home_success`.
-    // Conservative spring: stiff enough to resist droop on a gravity-loaded
-    // RS03 joint, soft enough for an operator to push by hand. If you change
-    // these defaults, make sure the operator-guide commissioning notes still
-    // describe the behavior accurately.
+    // Spring stiffness must be:
+    //   - high enough to resist gravity droop on the loaded shoulder/elbow
+    //     joints during the 500 ms post-home verification window
+    //     (empirically kp >= ~30 on shoulder_pitch with arm payload — see
+    //     2026-04-23 bump from 10→40 captured in `default_hold_kp_nm_per_rad`),
+    //   - low enough that an operator can still push the joint by hand
+    //     without the firmware fighting back hard enough to feel locked
+    //     (~80-100 Nm/rad starts to feel notchy on the RS03 by hand;
+    //     keep the cap well below that).
+    // Damping ratio should track kp via sqrt; if kp moves a lot, kd needs
+    // to follow or the spring will ring.
     let kp = crate::config::default_hold_kp_nm_per_rad();
     let kd = crate::config::default_hold_kd_nm_s_per_rad();
-    assert!(kp > 0.0 && kp < 50.0, "kp out of sane range: {kp}");
-    assert!(kd > 0.0 && kd < 5.0, "kd out of sane range: {kd}");
+    assert!(
+        (10.0..=80.0).contains(&kp),
+        "kp out of sane range for an RS03 hand-pushable spring: {kp}"
+    );
+    assert!(
+        (0.5..=4.0).contains(&kd),
+        "kd out of sane range relative to kp: {kd}"
+    );
 }
