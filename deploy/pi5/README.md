@@ -228,7 +228,7 @@ Empirically on **our** Pi 5 with the overlays in `config.txt.example` (`mcp2515-
 | silkscreen label | SPI CE | interrupt GPIO | **Linux iface** |
 | ---------------- | ------ | -------------- | --------------- |
 | `CAN0`           | CE0    | GPIO 23        | `**can1`**      |
-| `CAN1`           | CE1    | GPIO 25        | `**can0**`      |
+| `CAN1`           | CE1    | GPIO 25        | `**can0`**      |
 
 
 **Translation: if you plug your wires into the screw terminals labeled "CAN0" on the board, talk to `can1` in software.** This is counter-intuitive but matches what a `candump` sanity test confirmed 2026-04-17 (full RobStride RS03 parameter export received on `can1`, nothing on `can0`, with wires in the silkscreen-"CAN0" terminal).

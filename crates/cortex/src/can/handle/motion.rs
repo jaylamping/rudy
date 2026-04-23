@@ -24,23 +24,40 @@ impl LinuxCanCore {
     /// the firmware guard via the REST layer.
     pub fn set_velocity_setpoint(&self, motor: &Actuator, vel_rad_s: f32) -> Result<()> {
         let handle = self.handle_for(&motor.common.can_bus)?;
+        // `vel_rad_s` is in cortex's logical frame (positive vel grows
+        // positive position). Negate before write for motors whose
+        // mechanical encoder reads opposite to the firmware command
+        // sign — see `ActuatorCommon::direction_sign` for the
+        // convention. Sign is applied symmetrically in
+        // `worker/thread.rs::apply_type2` and `handle/poll.rs` on
+        // ingest, so the rest of cortex never sees the
+        // firmware-native frame.
+        let firmware_vel = vel_rad_s * motor.common.direction_sign_f32();
         handle.set_velocity(
             self.host_id,
             motor.common.can_id,
             &motor.common.role,
-            vel_rad_s,
+            firmware_vel,
         )?;
         Ok(())
     }
 
     /// RS03 profile-position hold (`RUN_MODE=1`, `LOC_REF`, enable). `target` is principal-angle.
+    ///
+    /// `target` is in cortex's logical frame; the firmware-frame
+    /// position written into `LOC_REF` is `target.raw() *
+    /// direction_sign_f32()`. Negating a principal-angle in `(-π, π]`
+    /// produces another value in `(-π, π]` (and `-π → -π` rather than
+    /// `π`, but for hold targets within the operator-typical
+    /// travel-limit envelope this is well-behaved).
     pub fn set_position_hold(&self, motor: &Actuator, target: PrincipalAngle) -> Result<()> {
         let handle = self.handle_for(&motor.common.can_bus)?;
+        let firmware_target = target.raw() * motor.common.direction_sign_f32();
         handle.set_position_hold(
             self.host_id,
             motor.common.can_id,
             &motor.common.role,
-            target.raw(),
+            firmware_target,
         )?;
         Ok(())
     }
@@ -49,6 +66,17 @@ impl LinuxCanCore {
     /// Used by [`crate::can::home_ramp::finish_home_success`]; resists droop
     /// and snaps back to `target` based on `kp`/`kd`, with no continuous
     /// servo command from the daemon.
+    ///
+    /// `target` is in the logical frame; sign-translated to the
+    /// firmware frame the same way as [`Self::set_position_hold`] /
+    /// [`Self::set_velocity_setpoint`]. `kp`/`kd` are torque-per-rad
+    /// and torque-per-rad/s respectively — both invariant under
+    /// position sign because torque on a sign-flipped motor flips
+    /// direction in lockstep with the position error fed into the
+    /// MIT control law: `tau = kp * (target_fw - pos_fw) + kd * (0 -
+    /// vel_fw)`. Sign-flipping `target` and `pos` (and `vel`) in the
+    /// firmware-side equation yields the same physical torque
+    /// vector, so kp/kd pass through untouched.
     pub fn set_mit_hold(
         &self,
         motor: &Actuator,
@@ -57,11 +85,12 @@ impl LinuxCanCore {
         kd_nm_s_per_rad: f32,
     ) -> Result<()> {
         let handle = self.handle_for(&motor.common.can_bus)?;
+        let firmware_target = target.raw() * motor.common.direction_sign_f32();
         handle.set_mit_hold(
             self.host_id,
             motor.common.can_id,
             &motor.common.role,
-            target.raw(),
+            firmware_target,
             kp_nm_per_rad,
             kd_nm_s_per_rad,
         )?;

@@ -142,6 +142,13 @@ impl LinuxCanCore {
             Seeded,
         }
 
+        // Apply `direction_sign` to firmware-reported pos/vel here so
+        // the merged row (and every downstream consumer) sees the
+        // logical frame, matching the type-2 ingest path in
+        // `worker/thread.rs::apply_type2`. `aux.vbus` and
+        // `aux.fault_sta` are direction-agnostic and pass through
+        // unchanged.
+        let dir_sign = motor.common.direction_sign_f32();
         let (merged, outcome): (MotorFeedback, MergeOutcome) = {
             let mut latest = state.latest.write().expect("latest poisoned");
             let now_ms = Utc::now().timestamp_millis();
@@ -155,10 +162,10 @@ impl LinuxCanCore {
                     }
                     let outcome = if row.t_ms < poll_started_ms {
                         if let Some(p) = aux.mech_pos {
-                            row.mech_pos_rad = p;
+                            row.mech_pos_rad = p * dir_sign;
                         }
                         if let Some(v) = aux.mech_vel {
-                            row.mech_vel_rad_s = v;
+                            row.mech_vel_rad_s = v * dir_sign;
                         }
                         row.t_ms = now_ms;
                         MergeOutcome::Type17Stamped
@@ -172,8 +179,8 @@ impl LinuxCanCore {
                         t_ms: now_ms,
                         role: motor.common.role.clone(),
                         can_id: motor.common.can_id,
-                        mech_pos_rad: aux.mech_pos.unwrap_or_default(),
-                        mech_vel_rad_s: aux.mech_vel.unwrap_or_default(),
+                        mech_pos_rad: aux.mech_pos.unwrap_or_default() * dir_sign,
+                        mech_vel_rad_s: aux.mech_vel.unwrap_or_default() * dir_sign,
                         torque_nm: 0.0,
                         vbus_v: aux.vbus.unwrap_or_default(),
                         temp_c: 0.0,

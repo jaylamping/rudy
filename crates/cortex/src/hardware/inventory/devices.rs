@@ -13,6 +13,25 @@ fn default_true() -> bool {
     true
 }
 
+fn default_direction_sign() -> i8 {
+    1
+}
+
+fn deserialize_direction_sign<'de, D>(de: D) -> Result<i8, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::{Error, Unexpected};
+    let v = i8::deserialize(de)?;
+    match v {
+        1 | -1 => Ok(v),
+        other => Err(D::Error::invalid_value(
+            Unexpected::Signed(other as i64),
+            &"+1 or -1 (RobStride mech_pos_rad polarity vs cortex's logical frame)",
+        )),
+    }
+}
+
 // --- Polymorphic device ------------------------------------------------------
 
 /// Inventory row: actuator, sensor, battery, or peripheral. JSON/YAML uses `kind` as the tag.
@@ -65,6 +84,42 @@ pub struct ActuatorCommon {
     /// global `cortex.toml` [`crate::config::SafetyConfig::effective_homing_speed_rad_s`].
     #[serde(default)]
     pub homing_speed_rad_s: Option<f32>,
+    /// Polarity of this motor's mechanical encoder relative to the
+    /// firmware velocity command sign — i.e., does commanding a
+    /// positive `vel_rad_s` make `mech_pos_rad` increase (+1) or
+    /// decrease (-1)?
+    ///
+    /// All cortex internal state (home target, travel_limits,
+    /// commissioned_zero_offset, jog vel, telemetry rows in
+    /// `state.latest`) lives in the **logical frame** where positive
+    /// vel always grows positive position. Sign translation happens
+    /// only at the CAN boundary:
+    ///   - `set_velocity_setpoint` multiplies the logical vel by sign
+    ///     before sending RUN_MODE=2 spd_ref;
+    ///   - `set_position_hold` / `set_mit_hold` multiply the logical
+    ///     target by sign before writing LOC_REF / OperationCtrl;
+    ///   - type-2 / type-17 telemetry decode multiplies the
+    ///     firmware-reported `mech_pos_rad` and `mech_vel_rad_s` by
+    ///     sign on ingest.
+    ///
+    /// Only `+1` (encoder agrees with command) and `-1` (encoder
+    /// inverted relative to command — typically a downstream gearbox
+    /// flipping rotation direction, or a mounting orientation that
+    /// makes "logical positive" the operator-meaningful direction
+    /// while the motor was wired the opposite way) are valid.
+    ///
+    /// Defaults to `+1`. Set to `-1` only after a bench test
+    /// (operator jogs at +0.2 rad/s, mech_pos_rad in `state.latest`
+    /// goes DOWN); a misconfigured `-1` will make the home-ramp
+    /// command in the wrong direction and trip its tracking-error
+    /// gate within ~150 ms of the first tick (the symmetric of the
+    /// bug this knob fixes).
+    #[serde(
+        default = "default_direction_sign",
+        deserialize_with = "deserialize_direction_sign"
+    )]
+    #[ts(type = "number")]
+    pub direction_sign: i8,
     #[serde(default)]
     pub limb: Option<String>,
     #[serde(default)]
@@ -327,6 +382,20 @@ pub enum FanModel {
     Placeholder,
 }
 
+impl ActuatorCommon {
+    /// `+1.0` or `-1.0` view of [`Self::direction_sign`] for arithmetic at the
+    /// CAN boundary (telemetry decode, vel/pos command write). Cortex's
+    /// internal state is always in the logical frame; this conversion only
+    /// matters at the firmware-edge translation sites.
+    pub fn direction_sign_f32(&self) -> f32 {
+        if self.direction_sign < 0 {
+            -1.0
+        } else {
+            1.0
+        }
+    }
+}
+
 impl Actuator {
     /// RobStride model for this actuator (inventory is RobStride-only today).
     pub fn robstride_model(&self) -> RobstrideModel {
@@ -342,6 +411,90 @@ impl Actuator {
             self.common.limb.as_ref()?,
             self.common.joint_kind?.as_snake_case()
         ))
+    }
+}
+
+#[cfg(test)]
+mod direction_sign_tests {
+    use super::*;
+
+    fn minimal_common(direction_sign: i8) -> ActuatorCommon {
+        ActuatorCommon {
+            role: "test".into(),
+            can_bus: "can0".into(),
+            can_id: 1,
+            present: true,
+            verified: false,
+            commissioned_at: None,
+            firmware_version: None,
+            travel_limits: None,
+            commissioned_zero_offset: None,
+            active_report_persisted: false,
+            predefined_home_rad: None,
+            homing_speed_rad_s: None,
+            limb: None,
+            joint_kind: None,
+            notes_yaml: None,
+            desired_params: BTreeMap::new(),
+            direction_sign,
+        }
+    }
+
+    #[test]
+    fn direction_sign_f32_maps_minus_one_to_minus_one() {
+        let c = minimal_common(-1);
+        assert_eq!(c.direction_sign_f32(), -1.0);
+    }
+
+    #[test]
+    fn direction_sign_f32_maps_plus_one_to_plus_one() {
+        let c = minimal_common(1);
+        assert_eq!(c.direction_sign_f32(), 1.0);
+    }
+
+    #[test]
+    fn missing_direction_sign_in_yaml_defaults_to_plus_one() {
+        // Mirrors the on-disk inventory.yaml format used by every
+        // pre-direction-sign entry. The serde default must be `+1`
+        // so old inventories migrate without behavior change.
+        let yaml = "role: m\ncan_bus: can0\ncan_id: 1\n";
+        let c: ActuatorCommon = serde_yaml::from_str(yaml).expect("parse defaults");
+        assert_eq!(c.direction_sign, 1);
+        assert_eq!(c.direction_sign_f32(), 1.0);
+    }
+
+    #[test]
+    fn explicit_minus_one_in_yaml_round_trips() {
+        let yaml = "role: m\ncan_bus: can0\ncan_id: 1\ndirection_sign: -1\n";
+        let c: ActuatorCommon = serde_yaml::from_str(yaml).expect("parse explicit -1");
+        assert_eq!(c.direction_sign, -1);
+        assert_eq!(c.direction_sign_f32(), -1.0);
+    }
+
+    #[test]
+    fn invalid_direction_sign_zero_is_rejected_at_parse() {
+        // Guard against the most plausible operator typo (zero
+        // instead of one) that would otherwise silently no-op every
+        // velocity command and every telemetry sample by multiplying
+        // by zero. Better to fail-stop at config-load than to ship
+        // a process that's deaf and dumb to its motors.
+        let yaml = "role: m\ncan_bus: can0\ncan_id: 1\ndirection_sign: 0\n";
+        let err = serde_yaml::from_str::<ActuatorCommon>(yaml)
+            .expect_err("zero direction_sign must reject");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("+1") && msg.contains("-1"),
+            "error must explain valid values; got: {msg}"
+        );
+    }
+
+    #[test]
+    fn invalid_direction_sign_two_is_rejected_at_parse() {
+        let yaml = "role: m\ncan_bus: can0\ncan_id: 1\ndirection_sign: 2\n";
+        assert!(
+            serde_yaml::from_str::<ActuatorCommon>(yaml).is_err(),
+            "out-of-range direction_sign must reject"
+        );
     }
 }
 

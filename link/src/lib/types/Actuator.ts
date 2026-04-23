@@ -11,7 +11,40 @@ export type Actuator = { family: ActuatorFamily, role: string, can_bus: string, 
  * Optional override for home-ramp nominal speed (rad/s). `None` uses
  * global `cortex.toml` [`crate::config::SafetyConfig::effective_homing_speed_rad_s`].
  */
-homing_speed_rad_s: number | null, limb: string | null, joint_kind: JointKind | null, 
+homing_speed_rad_s: number | null, 
+/**
+ * Polarity of this motor's mechanical encoder relative to the
+ * firmware velocity command sign — i.e., does commanding a
+ * positive `vel_rad_s` make `mech_pos_rad` increase (+1) or
+ * decrease (-1)?
+ *
+ * All cortex internal state (home target, travel_limits,
+ * commissioned_zero_offset, jog vel, telemetry rows in
+ * `state.latest`) lives in the **logical frame** where positive
+ * vel always grows positive position. Sign translation happens
+ * only at the CAN boundary:
+ *   - `set_velocity_setpoint` multiplies the logical vel by sign
+ *     before sending RUN_MODE=2 spd_ref;
+ *   - `set_position_hold` / `set_mit_hold` multiply the logical
+ *     target by sign before writing LOC_REF / OperationCtrl;
+ *   - type-2 / type-17 telemetry decode multiplies the
+ *     firmware-reported `mech_pos_rad` and `mech_vel_rad_s` by
+ *     sign on ingest.
+ *
+ * Only `+1` (encoder agrees with command) and `-1` (encoder
+ * inverted relative to command — typically a downstream gearbox
+ * flipping rotation direction, or a mounting orientation that
+ * makes "logical positive" the operator-meaningful direction
+ * while the motor was wired the opposite way) are valid.
+ *
+ * Defaults to `+1`. Set to `-1` only after a bench test
+ * (operator jogs at +0.2 rad/s, mech_pos_rad in `state.latest`
+ * goes DOWN); a misconfigured `-1` will make the home-ramp
+ * command in the wrong direction and trip its tracking-error
+ * gate within ~150 ms of the first tick (the symmetric of the
+ * bug this knob fixes).
+ */
+direction_sign: number, limb: string | null, joint_kind: JointKind | null, 
 /**
  * YAML fragment (string) preserving v1 `extra` map entries so nothing is silently dropped.
  */

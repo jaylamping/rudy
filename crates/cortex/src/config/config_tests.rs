@@ -100,6 +100,7 @@ fn actuator_common_roundtrip_preserves_active_report_persisted_flag() {
         joint_kind: None,
         notes_yaml: None,
         desired_params: std::collections::BTreeMap::new(),
+        direction_sign: 1,
     };
     let json = serde_json::to_string(&common).expect("serialize actuator common");
     let back: crate::inventory::ActuatorCommon =

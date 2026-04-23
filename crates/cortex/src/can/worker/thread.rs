@@ -212,12 +212,23 @@ fn apply_type2(
 ) {
     let Some(state) = state.upgrade() else { return };
 
-    let role = {
+    // Look up role + direction-sign in a single inventory read. Sign
+    // is applied at this CAN→cortex boundary so every downstream
+    // consumer (`state.latest`, boot-state classifier, home-ramp,
+    // jog endpoint, SPA) sees the **logical frame** where positive
+    // commanded vel implies positive measured pos. Default +1 means
+    // motors that don't need inversion behave exactly as before.
+    let (role, dir_sign) = {
         let inv = state.inventory.read().expect("inventory poisoned");
-        inv.by_can_id(iface, src_motor)
-            .map(|d| d.role().to_string())
+        let Some(dev) = inv.by_can_id(iface, src_motor) else {
+            return;
+        };
+        let sign = match dev {
+            crate::inventory::Device::Actuator(a) => a.common.direction_sign_f32(),
+            _ => 1.0,
+        };
+        (dev.role().to_string(), sign)
     };
-    let Some(role) = role else { return };
 
     let now_ms = Utc::now().timestamp_millis();
 
@@ -233,8 +244,8 @@ fn apply_type2(
         t_ms: now_ms,
         role: role.clone(),
         can_id: src_motor,
-        mech_pos_rad: fb.pos_rad,
-        mech_vel_rad_s: fb.vel_rad_s,
+        mech_pos_rad: fb.pos_rad * dir_sign,
+        mech_vel_rad_s: fb.vel_rad_s * dir_sign,
         torque_nm: fb.torque_nm,
         vbus_v: prev_vbus,
         temp_c: fb.temp_c,
