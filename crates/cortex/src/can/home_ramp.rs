@@ -474,6 +474,18 @@ pub async fn run_with_overrides(
     let mut consec_in_tolerance: u32 = 0;
     let dwell_need = cfg.target_dwell_ticks.max(1);
 
+    // Trajectory bounds bookkeeping. Surfaced in the abort line so a
+    // post-mortem can tell at a glance whether the motor (a) moved
+    // toward target at all, (b) overshot, or (c) ran the wrong
+    // direction (sign inversion between encoder and vel command). All
+    // four start pinned to `from_rad` so a zero-tick run still shows
+    // sensible values.
+    let mut min_pos_seen = from_rad;
+    let mut max_pos_seen = from_rad;
+    let mut last_vel_commanded: f32 = 0.0;
+    let mut total_can_sends: u32 = 0;
+    let mut total_can_send_failures: u32 = 0;
+
     // Emit once-per-run: every knob and every starting condition that
     // could matter when post-mortem'ing a failure. Operators looking at
     // a `path_violation` or `tracking_error` later only need this
@@ -504,6 +516,17 @@ pub async fn run_with_overrides(
         tracking_freshness_max_age_ms = cfg.tracking_freshness_max_age_ms,
         has_real_can = homer_has_real_can,
         target_dwell_ticks = dwell_need,
+        // Surface the resolved hold gains in the entry log so a
+        // post-mortem can confirm config edits to
+        // `safety.hold_kp_nm_per_rad` / `hold_kd_nm_s_per_rad` actually
+        // loaded (cortex.toml is read once at process start; a stale
+        // process serves stale gains until restarted). These values are
+        // only consumed by `finish_home_success` after the loop
+        // succeeds, but logging them here keeps the entry line as the
+        // single authoritative dump of "what the homer believed when
+        // it started", which is what operators reach for first.
+        hold_kp_nm_per_rad = cfg.hold_kp_nm_per_rad,
+        hold_kd_nm_s_per_rad = cfg.hold_kd_nm_s_per_rad,
         "home_ramp: starting"
     );
 
@@ -788,14 +811,30 @@ pub async fn run_with_overrides(
             })
             .await;
             match send {
-                Ok(Ok(())) => {}
+                Ok(Ok(())) => {
+                    total_can_sends = total_can_sends.saturating_add(1);
+                }
                 Ok(Err(e)) => {
+                    total_can_send_failures = total_can_send_failures.saturating_add(1);
                     break Err((format!("can_command_failed: {e:#}"), last_measured));
                 }
                 Err(e) => {
                     break Err((format!("internal: spawn_blocking: {e}"), last_measured));
                 }
             }
+        }
+        // Tick bookkeeping for the abort post-mortem. Updated AFTER the
+        // CAN send so `last_vel_commanded` reflects the most recent
+        // value the firmware actually saw (or attempted to see).
+        // `min/max_pos_seen` track the trajectory bounds so the abort
+        // line can answer "which direction did the joint actually
+        // travel?" without needing per-tick debug logs.
+        last_vel_commanded = vel;
+        if last_measured < min_pos_seen {
+            min_pos_seen = last_measured;
+        }
+        if last_measured > max_pos_seen {
+            max_pos_seen = last_measured;
         }
 
         // Per-tick trace at debug. Ten-ish fields is a lot for one
@@ -872,6 +911,43 @@ pub async fn run_with_overrides(
             &mut consec_over,
             &role,
         ) {
+            // Emit a focused info-level snapshot of the failing tick
+            // so a tracking_error post-mortem doesn't need
+            // RUST_LOG=debug. Pairs the in-loop control state with
+            // the trajectory bounds tracked across the whole run, so
+            // the operator can answer at a glance:
+            //   - did the motor move toward or away from target?
+            //     (compare `from_rad`, `min_pos_seen`, `max_pos_seen`,
+            //     `last_measured` against `target_rad` in the
+            //     bookend abort line)
+            //   - was the velocity command sane and non-zero?
+            //     (`last_vel_commanded`, `direction`)
+            //   - is there a sign inversion? (direction toward target
+            //     vs. observed motion direction)
+            //   - did CAN actually send? (`total_can_sends` vs
+            //     `ticks` in the abort line)
+            info!(
+                role = %role,
+                tick = ticks,
+                last_measured,
+                setpoint = setpoint_unwrapped,
+                target = unwrapped_target,
+                from_rad,
+                min_pos_seen,
+                max_pos_seen,
+                signed_err_to_setpoint = -shortest_signed_delta(setpoint_unwrapped, last_measured),
+                err_rad_lag = err_rad,
+                budget = tracking_error_max_rad,
+                vel = last_vel_commanded,
+                direction,
+                approach_scale,
+                lag_scale,
+                overrun,
+                edge_capped,
+                dist_to_edge,
+                total_can_sends,
+                "home_ramp: tracking_error trip — final tick snapshot"
+            );
             break Err(("tracking_error".into(), last_measured));
         }
 
@@ -924,13 +1000,37 @@ pub async fn run_with_overrides(
             );
         }
         Err((reason, last_pos)) => {
+            // Trajectory bounds + CAN send accounting are surfaced
+            // here (alongside the per-trip snapshot at the abort
+            // site) so the abort line by itself answers the most
+            // common post-mortem questions:
+            //   - did the joint move at all? (min/max vs from_rad)
+            //   - which direction? (sign of (last_pos - from_rad)
+            //     vs sign of (target - from_rad); if opposite, suspect
+            //     sign inversion in the encoder/motor pairing)
+            //   - did CAN sends keep up with ticks? (sends vs ticks)
+            //   - what was the last commanded velocity? (vel = 0 at
+            //     exit suggests we deadbanded ourselves silent against
+            //     a stuck encoder)
+            let traveled = last_pos - from_rad;
+            let intended = unwrapped_target - from_rad;
+            let direction_consistent = traveled * intended >= 0.0;
             info!(
                 role = %role,
                 reason = %reason,
                 last_pos_rad = last_pos,
+                from_rad,
                 target_rad = unwrapped_target,
                 setpoint_at_exit = setpoint_unwrapped,
                 distance_remaining = (unwrapped_target - last_pos).abs(),
+                traveled_rad = traveled,
+                intended_rad = intended,
+                direction_consistent,
+                min_pos_seen,
+                max_pos_seen,
+                last_vel_commanded,
+                total_can_sends,
+                total_can_send_failures,
                 limits_min_rad = limits_snapshot.as_ref().map(|l| l.min_rad),
                 limits_max_rad = limits_snapshot.as_ref().map(|l| l.max_rad),
                 ticks,
