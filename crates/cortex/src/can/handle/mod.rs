@@ -33,7 +33,18 @@ pub(crate) use scan::run_single_id_probe;
 use crate::can::backoff::MotorBackoff;
 
 pub(super) const DEFAULT_HOST_ID: u8 = 0xFD;
-pub(super) const PARAM_TIMEOUT: Duration = Duration::from_millis(30);
+/// Upper bound the `BusHandle::read_param` caller waits on the worker
+/// reply channel (`recv_blocking(..., timeout + 20ms)` in `handle.rs`).
+///
+/// Must exceed worst-case **queue stall** before the worker dequeues a
+/// `ReadParam`: another in-flight command can hold the worker first — in
+/// particular `Cmd::SetVelocity` re-arm sleeps **~60 ms** (two 30 ms
+/// firmware settle windows) plus CAN I/O. When this was 30 ms, the aux
+/// telemetry poll (`poll_once` → `read_named_f32`) routinely timed out with
+/// `timed out waiting on channel` while `home_ramp` was on tick 1,
+/// tripping `real-CAN telemetry poll failed` / backoff and briefly
+/// starving merged telemetry for that role.
+pub(super) const PARAM_TIMEOUT: Duration = Duration::from_millis(150);
 
 /// Two-phase lifecycle:
 ///

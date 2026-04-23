@@ -19,7 +19,8 @@
 //! are removed from the set when leaving the orchestrator's "in-band"
 //! flight envelope (OutOfBand transition) so a future re-entry can
 //! retrigger. After a successful auto-home, the motor stays **in**
-//! band in RS03 profile-position hold (`state.position_hold`); the joint
+//! band under RS03 MIT spring-damper hold (`finish_home_success` in
+//! `home_ramp`); `state.position_hold` still gates jog re-arm. The joint
 //! does not droop back `OutOfBand`, so oscillation from `InBand → OutOfBand
 //! → InBand` replays is avoided.
 //!
@@ -429,7 +430,7 @@ pub async fn maybe_run(state: SharedState, role: String) {
                 role = %role,
                 final_pos_rad,
                 ticks,
-                "boot_orchestrator: auto-home succeeded (PP position hold engaged)",
+                "boot_orchestrator: auto-home succeeded (MIT spring-damper hold engaged)",
             );
         }
         Err((reason, last_pos_rad)) => {
