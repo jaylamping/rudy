@@ -14,13 +14,74 @@ git push to main
     builds the link/ SPA
     publishes a GitHub Release with a tarball + latest.json manifest
     ↓
-Pi: cortex-update.timer fires every 60s
-    cortex-update.sh checks latest.json, downloads tarball, verifies sha256
-    apply-release.sh installs into /opt/rudy, re-renders /etc/rudy/cortex.toml,
-        re-asserts `tailscale serve`, restarts cortex
+    ├─ (push path) notify-pi job joins tailnet as tag:ci, runs
+    │      `tailscale ssh rudy-pi -- sudo systemctl start cortex-update`
+    │      → Pi pulls + applies the release within seconds of the build.
+    │
+    └─ (poll fallback) cortex-update.timer fires every 60s anyway,
+           so a missed push (Pi offline, tailnet hiccup, fork/PR build
+           with no secrets) still rolls forward on its own.
     ↓
-new build live in ~60–90s, no SSH required
+cortex-update.sh checks latest.json, downloads tarball, verifies sha256
+apply-release.sh installs into /opt/rudy, re-renders /etc/rudy/cortex.toml,
+    re-asserts `tailscale serve`, restarts cortex
+    ↓
+new build live within seconds (push path) or ≤60s (poll fallback)
 ```
+
+### CI push: required GitHub config
+
+The `notify-pi` job in `release.yaml` runs only when these are set on the repo:
+
+
+| Kind     | Name                     | Value                                                         |
+| -------- | ------------------------ | ------------------------------------------------------------- |
+| Variable | `TAILSCALE_PUSH_ENABLED` | `true` (gate; absent = skip the job, fall back to poll only)  |
+| Variable | `PI_TAILNET_HOST`        | optional override, defaults to `rudy-pi`                      |
+| Variable | `PI_SSH_USER`            | optional override, defaults to `jaylamping`                   |
+| Secret   | `TS_OAUTH_CLIENT_ID`     | Tailscale OAuth client id (scope: `auth_keys`, tag: `tag:ci`) |
+| Secret   | `TS_OAUTH_SECRET`        | matching OAuth client secret                                  |
+
+
+Generate the OAuth client at [https://login.tailscale.com/admin/settings/oauth](https://login.tailscale.com/admin/settings/oauth) with **Devices → Auth Keys → Write** and tag `tag:ci`.
+
+### CI push: required tailnet ACL
+
+In the tailnet policy file (Tailscale admin → Access Controls), add:
+
+```jsonc
+{
+  "tagOwners": {
+    "tag:ci": ["autogroup:admin"],
+    "tag:pi": ["autogroup:admin"],
+  },
+  "ssh": [
+    {
+      "action": "accept",
+      "src":    ["tag:ci"],
+      "dst":    ["tag:pi"],
+      "users":  ["jaylamping", "root"],
+    },
+  ],
+}
+```
+
+Then tag the Pi once: `sudo tailscale up --advertise-tags=tag:pi --ssh --hostname rudy-pi` (re-running `up` with extra flags is non-destructive). Confirm with `tailscale status --json | jq '.Self.Tags'`.
+
+### CI push: passwordless sudo for the trigger
+
+The job runs `sudo systemctl start cortex-update.service` as the SSH user, which must succeed without a TTY prompt. Add a sudoers drop-in once on the Pi:
+
+```bash
+sudo install -m 0440 /dev/stdin /etc/sudoers.d/rudy-ci-update <<'EOF'
+jaylamping ALL=(root) NOPASSWD: /bin/systemctl start cortex-update.service, /bin/systemctl start cortex-update
+EOF
+sudo visudo -c
+```
+
+Scoped to that one unit start so it doesn't widen the SSH user's privileges.
+
+If the push job ever fails (Pi offline, tailnet down, ACL drift, sudoers missing), it's marked `continue-on-error: true` — the release still publishes and the 60s poll picks it up. Watch `journalctl -u cortex-update -f` either way.
 
 The Pi never compiles anything. After the one-time bootstrap, you can leave it alone — every `git push` to `main` rolls out automatically.
 
@@ -109,8 +170,7 @@ pidof cortex | xargs -I{} grep -H Cpus_allowed_list /proc/{}/task/*/status \
 If the IRQ pin row shows `0-3` (i.e. unpinned), `bootstrap.sh` either
 couldn't find the IRQ row in `/proc/interrupts` (uncommon, only happens
 if the iface name moved between bootstrap and the IRQ scan) or the
-filesystem isn't writable from the script's UID. Re-running `sudo bash
-deploy/pi5/bootstrap.sh` is the easiest fix.
+filesystem isn't writable from the script's UID. Re-running `sudo bash deploy/pi5/bootstrap.sh` is the easiest fix.
 
 ## Day-to-day
 
@@ -134,27 +194,29 @@ curl -sS http://127.0.0.1:8443/api/health | jq
 
 ## Files
 
-| File                       | Purpose                                                              |
-| -------------------------- | -------------------------------------------------------------------- |
-| `bootstrap.sh`             | **One-time Pi setup** (apt, CAN, updater timer). Run once after flash. |
-| `cortex-update.sh`         | Polls GitHub for new releases; downloads + verifies + applies.       |
-| `apply-release.sh`         | Installs a staged tarball into `/opt/rudy` and restarts `cortex`.     |
-| `cortex-update.service`    | systemd unit for the updater (oneshot).                              |
-| `cortex-update.timer`      | systemd timer; polls every 60s.                                      |
-| `cortex-watchdog.sh`       | Health probe script; restarts `cortex` after repeated failures.       |
-| `cortex-watchdog.service`  | systemd oneshot unit that runs the watchdog probe.                   |
-| `cortex-watchdog.timer`    | systemd timer; runs watchdog probe every 15s.                        |
-| `render-cortex-toml.sh`     | Renders `/etc/rudy/cortex.toml` from live system state.               |
-| `cortex.service`            | systemd unit for the daemon itself.                                  |
-| `robot-can.service`        | systemd unit that brings `can0`/`can1` up at 1 Mbps.                 |
-| `can_setup.sh`             | Helper invoked by `robot-can.service`.                               |
-| `install_can_overlays.sh`  | Idempotent append of MCP2515 overlays to `/boot/firmware/config.txt`. |
-| `config.txt.example`       | Reference SPI + MCP2515 overlay snippet.                             |
-| `tailscale-cert.md`        | Tailscale HTTPS cert provisioning runbook.                           |
-| `Dockerfile.pi5`           | Local cross-compilation image (CI uses a faster runner-native build).|
-| `setup_pi5.sh`             | _Deprecated_; superseded by `bootstrap.sh`. Kept for reference.      |
-| `install.sh`               | _Deprecated_; superseded by CI release + `apply-release.sh`. Kept for emergencies (build-on-Pi). |
-| `deploy.sh`                | _Deprecated_; superseded by CI. Kept for offline iteration.          |
+
+| File                      | Purpose                                                                                          |
+| ------------------------- | ------------------------------------------------------------------------------------------------ |
+| `bootstrap.sh`            | **One-time Pi setup** (apt, CAN, updater timer). Run once after flash.                           |
+| `cortex-update.sh`        | Polls GitHub for new releases; downloads + verifies + applies.                                   |
+| `apply-release.sh`        | Installs a staged tarball into `/opt/rudy` and restarts `cortex`.                                |
+| `cortex-update.service`   | systemd unit for the updater (oneshot).                                                          |
+| `cortex-update.timer`     | systemd timer; polls every 60s as a fallback for the CI push path.                               |
+| `cortex-watchdog.sh`      | Health probe script; restarts `cortex` after repeated failures.                                  |
+| `cortex-watchdog.service` | systemd oneshot unit that runs the watchdog probe.                                               |
+| `cortex-watchdog.timer`   | systemd timer; runs watchdog probe every 15s.                                                    |
+| `render-cortex-toml.sh`   | Renders `/etc/rudy/cortex.toml` from live system state.                                          |
+| `cortex.service`          | systemd unit for the daemon itself.                                                              |
+| `robot-can.service`       | systemd unit that brings `can0`/`can1` up at 1 Mbps.                                             |
+| `can_setup.sh`            | Helper invoked by `robot-can.service`.                                                           |
+| `install_can_overlays.sh` | Idempotent append of MCP2515 overlays to `/boot/firmware/config.txt`.                            |
+| `config.txt.example`      | Reference SPI + MCP2515 overlay snippet.                                                         |
+| `tailscale-cert.md`       | Tailscale HTTPS cert provisioning runbook.                                                       |
+| `Dockerfile.pi5`          | Local cross-compilation image (CI uses a faster runner-native build).                            |
+| `setup_pi5.sh`            | *Deprecated*; superseded by `bootstrap.sh`. Kept for reference.                                  |
+| `install.sh`              | *Deprecated*; superseded by CI release + `apply-release.sh`. Kept for emergencies (build-on-Pi). |
+| `deploy.sh`               | *Deprecated*; superseded by CI. Kept for offline iteration.                                      |
+
 
 ## Gotcha: `can0` / `can1` vs silkscreen labels
 
@@ -162,10 +224,12 @@ On the Waveshare 2-CH CAN HAT, the **silkscreen labels on the PCB** ("CAN0" / "C
 
 Empirically on **our** Pi 5 with the overlays in `config.txt.example` (`mcp2515-can0,interrupt=23` + `mcp2515-can1,interrupt=25`), the mapping is:
 
+
 | silkscreen label | SPI CE | interrupt GPIO | **Linux iface** |
 | ---------------- | ------ | -------------- | --------------- |
-| `CAN0`           | CE0    | GPIO 23        | **`can1`**      |
-| `CAN1`           | CE1    | GPIO 25        | **`can0`**      |
+| `CAN0`           | CE0    | GPIO 23        | `**can1`**      |
+| `CAN1`           | CE1    | GPIO 25        | `**can0**`      |
+
 
 **Translation: if you plug your wires into the screw terminals labeled "CAN0" on the board, talk to `can1` in software.** This is counter-intuitive but matches what a `candump` sanity test confirmed 2026-04-17 (full RobStride RS03 parameter export received on `can1`, nothing on `can0`, with wires in the silkscreen-"CAN0" terminal).
 

@@ -196,3 +196,42 @@ jobs:
           files: |
             ${{ steps.stage.outputs.tar }}
             ${{ steps.manifest.outputs.path }}
+
+  notify-pi:
+    name: Kick Pi cortex-update over Tailscale SSH
+    needs: build
+    runs-on: ubuntu-24.04
+    # Don't fail the whole workflow if the Pi happens to be offline; the
+    # 60s poll on the Pi is still in place as a fallback.
+    continue-on-error: true
+    # Only attempt the push when Tailscale OAuth secrets are configured.
+    # Forks / preview branches without secrets just skip this job.
+    if: ${{ vars.TAILSCALE_PUSH_ENABLED == 'true' }}
+    timeout-minutes: 5
+    steps:
+      - name: Join tailnet as ephemeral CI node
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          # Tag must exist in the tailnet ACL and be permitted to SSH the Pi.
+          # See deploy/pi5/README.md → "CI push" for the exact ACL snippet.
+          tags: tag:ci
+          version: latest
+
+      - name: Trigger cortex-update on Pi
+        env:
+          PI_HOST: ${{ vars.PI_TAILNET_HOST || 'rudy-pi' }}
+          PI_USER: ${{ vars.PI_SSH_USER || 'jaylamping' }}
+        run: |
+          set -euo pipefail
+          # Tailscale SSH handles auth via tailnet identity (tag:ci → user@pi).
+          # No SSH key material lives in GitHub. StrictHostKeyChecking is off
+          # because the host key is bound to the tailnet node identity, which
+          # is already authenticated by Tailscale.
+          tailscale ssh \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            "${PI_USER}@${PI_HOST}" \
+            -- sudo systemctl start cortex-update.service
+          echo "kicked cortex-update on ${PI_HOST}"
