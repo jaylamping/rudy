@@ -117,8 +117,17 @@ target_dwell_ticks = 5
 #
 # Defaults are deliberately conservative; per-joint overrides will land on
 # the inventory `Actuator` once we have bench data.
-hold_kp_nm_per_rad = 10.0
-hold_kd_nm_s_per_rad = 0.5
+#
+# Bumped 10.0 -> 40.0 (kp) and 0.5 -> 1.0 (kd) on 2026-04-23 because the
+# original gains let shoulder_pitch sag ~2deg under arm-payload gravity
+# during the 500ms post-home verification window, tripping
+# `hold_verification_failed`. At kp=10 the restoring torque at the verify
+# limit (0.02 rad) is only 0.2 Nm -- well below shoulder_pitch's static
+# gravity load. kp=40 gives 0.8 Nm at the same limit; kd=1.0 added in
+# tandem to keep the stiffer spring damped (rule of thumb: scale kd with
+# sqrt(kp_ratio) to preserve damping ratio -- here ~2x).
+hold_kp_nm_per_rad = 40.0
+hold_kd_nm_s_per_rad = 1.0
 
 # Tolerance for the boot orchestrator's add_offset readback check
 # (commissioned-zero quick-home plan, Phase C). On every boot the
