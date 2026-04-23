@@ -28,6 +28,7 @@ use crate::inventory::Inventory;
 use crate::state::{AppState, SharedState};
 
 pub(crate) use scan::run_hardware_scan;
+pub(crate) use scan::run_single_id_probe;
 
 use crate::can::backoff::MotorBackoff;
 

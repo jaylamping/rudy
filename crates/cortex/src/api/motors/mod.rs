@@ -12,6 +12,7 @@ mod commission;
 mod control;
 mod homing_speed;
 mod params;
+mod ping;
 mod predefined_home;
 mod restore_offset;
 mod travel;
@@ -46,5 +47,6 @@ pub fn router() -> Router<SharedState> {
             "/motors/:role/homing_speed",
             put(homing_speed::put_homing_speed),
         )
+        .route("/motors/:role/ping", post(ping::ping_motor))
         .route("/motors/:role/tests/:name", post(bench::run_test))
 }

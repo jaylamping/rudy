@@ -22,8 +22,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { ConfirmDialog } from "@/components/params";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { OfflineActionTooltip } from "./offline-action-tooltip";
 import type { JointKind } from "@/lib/types/JointKind";
 import type { MotorSummary } from "@/lib/types/MotorSummary";
+import { useDeviceLive, useDeviceOfflineTip } from "@/store";
 
 // SCAFFOLD: temporary inventory-tab-based limb assignment.
 // Future UX: drag-and-drop kinematic-tree assignment in a dedicated
@@ -82,6 +89,8 @@ const LIMB_JOINTS: Record<string, JointKind[]> = {
 };
 
 export function ActuatorInventoryTab({ motor }: { motor: MotorSummary }) {
+  const isLive = useDeviceLive(motor.role);
+  const offlineTip = useDeviceOfflineTip(motor.role);
   const qc = useQueryClient();
   const detail = useQuery({
     queryKey: queryKeys.inventory.byRole(motor.role),
@@ -108,7 +117,11 @@ export function ActuatorInventoryTab({ motor }: { motor: MotorSummary }) {
 
   return (
     <div className="space-y-4">
-      <LimbAssignmentCard motor={motor} />
+      <LimbAssignmentCard
+        motor={motor}
+        isLive={isLive}
+        offlineTip={offlineTip}
+      />
       <Card>
         <CardHeader className="flex flex-row items-baseline justify-between space-y-0">
           <div className="space-y-1">
@@ -118,11 +131,29 @@ export function ActuatorInventoryTab({ motor }: { motor: MotorSummary }) {
               unverified to lock down a motor under maintenance.
             </CardDescription>
           </div>
-          <Switch
-            checked={verified}
-            disabled={!supported || setVerified.isPending}
-            onCheckedChange={() => setConfirm(true)}
-          />
+          {!isLive ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="inline-flex">
+                  <Switch
+                    checked={verified}
+                    disabled
+                    onCheckedChange={() => setConfirm(true)}
+                    aria-label="Verified (offline)"
+                  />
+                </span>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs whitespace-normal" side="left">
+                {offlineTip}
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            <Switch
+              checked={verified}
+              disabled={!supported || setVerified.isPending}
+              onCheckedChange={() => setConfirm(true)}
+            />
+          )}
         </CardHeader>
       </Card>
 
@@ -204,7 +235,15 @@ export function ActuatorInventoryTab({ motor }: { motor: MotorSummary }) {
 // `role`, `limb`, and `joint_kind` together. Using `/rename` here was wrong
 // for already-assigned motors because rename only changes `role`, which
 // breaks inventory validation when the operator changes limb or joint.
-function LimbAssignmentCard({ motor }: { motor: MotorSummary }) {
+function LimbAssignmentCard({
+  motor,
+  isLive,
+  offlineTip,
+}: {
+  motor: MotorSummary;
+  isLive: boolean;
+  offlineTip: string;
+}) {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const [limb, setLimb] = useState<string>(motor.limb ?? "");
@@ -297,7 +336,7 @@ function LimbAssignmentCard({ motor }: { motor: MotorSummary }) {
                 setLimb(e.target.value);
                 setJoint("");
               }}
-              disabled={assign.isPending}
+              disabled={assign.isPending || !isLive}
             >
               <option value="">(unassigned)</option>
               {LIMB_OPTIONS.map((l) => (
@@ -313,7 +352,7 @@ function LimbAssignmentCard({ motor }: { motor: MotorSummary }) {
               className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
               value={joint}
               onChange={(e) => setJoint(e.target.value as JointKind | "")}
-              disabled={!limb || assign.isPending}
+              disabled={!limb || assign.isPending || !isLive}
             >
               <option value="">(unassigned)</option>
               {allowedJoints.map((j) => (
@@ -329,21 +368,24 @@ function LimbAssignmentCard({ motor }: { motor: MotorSummary }) {
           <code className="font-mono">{previewRole}</code>
         </div>
         <div className="flex justify-end">
-          <Button
-            disabled={
-              !limb ||
-              !joint ||
-              assign.isPending ||
-              previewRole === motor.role
-            }
-            onClick={() => assign.mutate()}
-          >
-            {assign.isPending
-              ? "Saving..."
-              : isAssigned
-                ? "Update assignment"
-                : "Assign"}
-          </Button>
+          <OfflineActionTooltip isLive={isLive} offlineTip={offlineTip}>
+            <Button
+              disabled={
+                !limb ||
+                !joint ||
+                assign.isPending ||
+                previewRole === motor.role ||
+                !isLive
+              }
+              onClick={() => assign.mutate()}
+            >
+              {assign.isPending
+                ? "Saving..."
+                : isAssigned
+                  ? "Update assignment"
+                  : "Assign"}
+            </Button>
+          </OfflineActionTooltip>
         </div>
         {assign.isError && (() => {
           const e = assign.error as ApiError;

@@ -23,8 +23,10 @@ import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { ConfirmDialog } from "@/components/params";
 import { MotionTestsCard } from "./motion-tests-card";
+import { OfflineActionTooltip } from "./offline-action-tooltip";
 import type { MotorSummary } from "@/lib/types/MotorSummary";
 import type { TravelLimits } from "@/lib/types/TravelLimits";
+import { useDeviceLive, useDeviceOfflineTip } from "@/store";
 
 // Reasonable outer rail when the daemon hasn't been told a tighter cap
 // (matches the RS03 spec.protocol.position_min/max_rad, which is +/- 2 turns).
@@ -36,6 +38,8 @@ const MIN_HOMING_DEG_S = 1;
 const MAX_HOMING_DEG_S = 100;
 
 export function ActuatorTravelTab({ motor }: { motor: MotorSummary }) {
+  const isLive = useDeviceLive(motor.role);
+  const offlineTip = useDeviceOfflineTip(motor.role);
   const qc = useQueryClient();
   const limitsQ = useQuery({
     queryKey: queryKeys.travelLimits.byRole(motor.role),
@@ -157,7 +161,7 @@ export function ActuatorTravelTab({ motor }: { motor: MotorSummary }) {
 
   return (
     <div className="space-y-4">
-      <VerifyAndHomeCard motor={motor} />
+      <VerifyAndHomeCard motor={motor} isLive={isLive} offlineTip={offlineTip} />
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Soft travel limits</CardTitle>
@@ -190,7 +194,7 @@ export function ActuatorTravelTab({ motor }: { motor: MotorSummary }) {
             min={-RAIL_DEG}
             max={RAIL_DEG}
             onChange={setMinDeg}
-            disabled={endpointMissing || save.isPending}
+            disabled={endpointMissing || save.isPending || !isLive}
           />
           <LimitRow
             label="Maximum"
@@ -198,7 +202,7 @@ export function ActuatorTravelTab({ motor }: { motor: MotorSummary }) {
             min={-RAIL_DEG}
             max={RAIL_DEG}
             onChange={setMaxDeg}
-            disabled={endpointMissing || save.isPending}
+            disabled={endpointMissing || save.isPending || !isLive}
           />
 
           <div className="space-y-1.5 rounded-md border border-border/60 bg-muted/20 p-3">
@@ -217,7 +221,8 @@ export function ActuatorTravelTab({ motor }: { motor: MotorSummary }) {
                 endpointMissing ||
                 needsConfig ||
                 saveHome.isPending ||
-                bandForHome == null
+                bandForHome == null ||
+                !isLive
               }
             />
             {!homeInBand && bandForHome != null && (
@@ -232,33 +237,41 @@ export function ActuatorTravelTab({ motor }: { motor: MotorSummary }) {
               </p>
             )}
             <div className="flex flex-wrap justify-end gap-2">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                disabled={
-                  !homeDirty || saveHome.isPending || bandForHome == null
-                }
-                onClick={() => setHomeDeg(baselineHomeDeg)}
-              >
-                Reset
-              </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                disabled={
-                  endpointMissing ||
-                  needsConfig ||
-                  !homeDirty ||
-                  !homeInBand ||
-                  saveHome.isPending ||
-                  bandForHome == null
-                }
-                onClick={() => saveHome.mutate()}
-              >
-                {saveHome.isPending ? "Saving…" : "Save predefined home"}
-              </Button>
+              <OfflineActionTooltip isLive={isLive} offlineTip={offlineTip}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={
+                    !homeDirty ||
+                    saveHome.isPending ||
+                    bandForHome == null ||
+                    !isLive
+                  }
+                  onClick={() => setHomeDeg(baselineHomeDeg)}
+                >
+                  Reset
+                </Button>
+              </OfflineActionTooltip>
+              <OfflineActionTooltip isLive={isLive} offlineTip={offlineTip}>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  disabled={
+                    endpointMissing ||
+                    needsConfig ||
+                    !homeDirty ||
+                    !homeInBand ||
+                    saveHome.isPending ||
+                    bandForHome == null ||
+                    !isLive
+                  }
+                  onClick={() => saveHome.mutate()}
+                >
+                  {saveHome.isPending ? "Saving…" : "Save predefined home"}
+                </Button>
+              </OfflineActionTooltip>
             </div>
             {saveHome.isError && (
               <p className="text-xs text-destructive">
@@ -296,37 +309,48 @@ export function ActuatorTravelTab({ motor }: { motor: MotorSummary }) {
               min={MIN_HOMING_DEG_S}
               max={MAX_HOMING_DEG_S}
               onChange={setHomingDegS}
-              disabled={endpointMissing || saveHomingSpeed.isPending || clearHomingSpeed.isPending}
+              disabled={
+                endpointMissing ||
+                saveHomingSpeed.isPending ||
+                clearHomingSpeed.isPending ||
+                !isLive
+              }
             />
             <div className="flex flex-wrap justify-end gap-2">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                disabled={
-                  endpointMissing ||
-                  !homingHasOverride ||
-                  clearHomingSpeed.isPending ||
-                  saveHomingSpeed.isPending
-                }
-                onClick={() => clearHomingSpeed.mutate()}
-              >
-                {clearHomingSpeed.isPending ? "Clearing…" : "Reset to global"}
-              </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                disabled={
-                  endpointMissing ||
-                  !homingDirty ||
-                  saveHomingSpeed.isPending ||
-                  clearHomingSpeed.isPending
-                }
-                onClick={() => saveHomingSpeed.mutate()}
-              >
-                {saveHomingSpeed.isPending ? "Saving…" : "Save homing speed"}
-              </Button>
+              <OfflineActionTooltip isLive={isLive} offlineTip={offlineTip}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={
+                    endpointMissing ||
+                    !homingHasOverride ||
+                    clearHomingSpeed.isPending ||
+                    saveHomingSpeed.isPending ||
+                    !isLive
+                  }
+                  onClick={() => clearHomingSpeed.mutate()}
+                >
+                  {clearHomingSpeed.isPending ? "Clearing…" : "Reset to global"}
+                </Button>
+              </OfflineActionTooltip>
+              <OfflineActionTooltip isLive={isLive} offlineTip={offlineTip}>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  disabled={
+                    endpointMissing ||
+                    !homingDirty ||
+                    saveHomingSpeed.isPending ||
+                    clearHomingSpeed.isPending ||
+                    !isLive
+                  }
+                  onClick={() => saveHomingSpeed.mutate()}
+                >
+                  {saveHomingSpeed.isPending ? "Saving…" : "Save homing speed"}
+                </Button>
+              </OfflineActionTooltip>
             </div>
             {saveHomingSpeed.isError && (
               <p className="text-xs text-destructive">
@@ -376,25 +400,35 @@ export function ActuatorTravelTab({ motor }: { motor: MotorSummary }) {
           </div>
 
           <div className="flex flex-wrap items-center justify-end gap-2">
-            <Button
-              variant="ghost"
-              disabled={!dirty || save.isPending}
-              onClick={() => {
-                if (baseline) {
-                  setMinDeg(radToDeg(baseline.min_rad));
-                  setMaxDeg(radToDeg(baseline.max_rad));
+            <OfflineActionTooltip isLive={isLive} offlineTip={offlineTip}>
+              <Button
+                variant="ghost"
+                disabled={!dirty || save.isPending || !isLive}
+                onClick={() => {
+                  if (baseline) {
+                    setMinDeg(radToDeg(baseline.min_rad));
+                    setMaxDeg(radToDeg(baseline.max_rad));
+                  }
+                }}
+              >
+                Reset
+              </Button>
+            </OfflineActionTooltip>
+            <OfflineActionTooltip isLive={isLive} offlineTip={offlineTip}>
+              <Button
+                variant="default"
+                disabled={
+                  endpointMissing ||
+                  !dirty ||
+                  maxDeg <= minDeg ||
+                  save.isPending ||
+                  !isLive
                 }
-              }}
-            >
-              Reset
-            </Button>
-            <Button
-              variant="default"
-              disabled={endpointMissing || !dirty || maxDeg <= minDeg || save.isPending}
-              onClick={() => setConfirm(true)}
-            >
-              {save.isPending ? "Saving..." : "Save travel limits"}
-            </Button>
+                onClick={() => setConfirm(true)}
+              >
+                {save.isPending ? "Saving..." : "Save travel limits"}
+              </Button>
+            </OfflineActionTooltip>
           </div>
 
           {save.isError && (
@@ -410,7 +444,7 @@ export function ActuatorTravelTab({ motor }: { motor: MotorSummary }) {
         </CardContent>
       </Card>
 
-      <MotionTestsCard motor={motor} />
+      <MotionTestsCard motor={motor} isLive={isLive} offlineTip={offlineTip} />
 
       {confirm && (
         <ConfirmDialog
@@ -592,7 +626,15 @@ function errorCode(e: ApiError | undefined): string | undefined {
 // Verify & Home: the operator-initiated home-ramp homing ritual. Disabled
 // unless boot_state is `in_band` AND a per-motor torque limit has been
 // written to flash (cortex refuses without `limits_written.limit_torque_nm`).
-function VerifyAndHomeCard({ motor }: { motor: MotorSummary }) {
+function VerifyAndHomeCard({
+  motor,
+  isLive,
+  offlineTip,
+}: {
+  motor: MotorSummary;
+  isLive: boolean;
+  offlineTip: string;
+}) {
   const qc = useQueryClient();
   const [target, setTarget] = useState<number>(0); // degrees
   const home = useMutation({
@@ -644,19 +686,21 @@ function VerifyAndHomeCard({ motor }: { motor: MotorSummary }) {
                 if (Number.isFinite(n)) setTarget(n);
               }}
               className="w-32 text-right font-mono"
-              disabled={!ready || home.isPending}
+              disabled={!ready || home.isPending || !isLive}
             />
             <span className="text-xs text-muted-foreground">°</span>
           </div>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <Button
-            variant="default"
-            disabled={!ready || home.isPending || orchestratorHoming}
-            onClick={() => home.mutate()}
-          >
-            {home.isPending ? "Homing..." : "Verify & Home"}
-          </Button>
+          <OfflineActionTooltip isLive={isLive} offlineTip={offlineTip}>
+            <Button
+              variant="default"
+              disabled={!ready || home.isPending || orchestratorHoming || !isLive}
+              onClick={() => home.mutate()}
+            >
+              {home.isPending ? "Homing..." : "Verify & Home"}
+            </Button>
+          </OfflineActionTooltip>
         </div>
         {home.isError && (
           <p className="text-xs text-destructive">

@@ -205,6 +205,31 @@ pub(crate) fn run_hardware_scan(
     })
 }
 
+/// Targeted per-id probe on one bus (no broadcast). Used by `POST /api/motors/:role/ping`.
+pub(crate) fn run_single_id_probe(
+    core: &LinuxCanCore,
+    state: &SharedState,
+    bus: &str,
+    can_id: u8,
+    timeout: Duration,
+) -> Result<(Option<DiscoveredDevice>, Vec<ScanAttempt>)> {
+    if !core.cfg.can.buses.iter().any(|c| c.iface == bus) {
+        anyhow::bail!("bus {bus:?} is not configured in [[can.buses]]");
+    }
+    let can_id = can_id.clamp(1, 0x7F);
+    let registry = DeviceProbeRegistry::with_default_probes();
+    let (dev, attempts) = registry.probe_one_id(core, bus, can_id, timeout);
+    if let Some(ref d) = dev {
+        state.record_active_scan_seen(
+            &d.bus,
+            d.can_id,
+            d.family_hint.clone(),
+            d.identification_payload.clone(),
+        );
+    }
+    Ok((dev, attempts))
+}
+
 /// One-line human-readable summary appended to every scan response so the
 /// operator never has to guess why a scan came back empty.
 fn build_message(

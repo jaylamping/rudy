@@ -31,9 +31,11 @@ import {
 } from "@/components/ui/tooltip";
 import { useLimbHealth } from "@/lib/hooks/useLimbHealth";
 import { DeadManJog } from "./dead-man-jog";
+import { OfflineActionTooltip } from "./offline-action-tooltip";
 import type { MotorSummary } from "@/lib/types/MotorSummary";
 import type { Motor } from "@/lib/types/Motor";
 import { RAD_TO_DEG } from "@/lib/units";
+import { useDeviceLive, useDeviceOfflineTip } from "@/store";
 
 type Action = "enable" | "stop" | "save";
 
@@ -41,8 +43,11 @@ export function ActuatorControlsTab({ motor }: { motor: MotorSummary }) {
   const qc = useQueryClient();
   const [confirm, setConfirm] = useState<Action | null>(null);
   const limb = useLimbHealth(motor.role);
-  const enableTip =
-    !motor.verified
+  const isLive = useDeviceLive(motor.role);
+  const offlineTip = useDeviceOfflineTip(motor.role);
+  const enableTip = !isLive
+    ? offlineTip
+    : !motor.verified
       ? "Enable requires a verified motor (Inventory tab)."
       : !limb.healthy && limb.blockReason
         ? limb.blockReason
@@ -86,7 +91,10 @@ export function ActuatorControlsTab({ motor }: { motor: MotorSummary }) {
                   <Button
                     variant="default"
                     disabled={
-                      mutate.isPending || !motor.verified || !limb.healthy
+                      mutate.isPending ||
+                      !motor.verified ||
+                      !limb.healthy ||
+                      !isLive
                     }
                     onClick={() => setConfirm("enable")}
                   >
@@ -102,27 +110,34 @@ export function ActuatorControlsTab({ motor }: { motor: MotorSummary }) {
             <Button
               variant="default"
               disabled={
-                mutate.isPending || !motor.verified || !limb.healthy
+                mutate.isPending ||
+                !motor.verified ||
+                !limb.healthy ||
+                !isLive
               }
               onClick={() => setConfirm("enable")}
             >
               Enable
             </Button>
           )}
-          <Button
-            variant="destructive"
-            disabled={mutate.isPending}
-            onClick={() => setConfirm("stop")}
-          >
-            Stop
-          </Button>
-          <Button
-            variant="outline"
-            disabled={mutate.isPending}
-            onClick={() => setConfirm("save")}
-          >
-            Save to flash
-          </Button>
+          <OfflineActionTooltip isLive={isLive} offlineTip={offlineTip}>
+            <Button
+              variant="destructive"
+              disabled={mutate.isPending || !isLive}
+              onClick={() => setConfirm("stop")}
+            >
+              Stop
+            </Button>
+          </OfflineActionTooltip>
+          <OfflineActionTooltip isLive={isLive} offlineTip={offlineTip}>
+            <Button
+              variant="outline"
+              disabled={mutate.isPending || !isLive}
+              onClick={() => setConfirm("save")}
+            >
+              Save to flash
+            </Button>
+          </OfflineActionTooltip>
           {!limb.healthy && motor.verified && (
             <p className="w-full text-xs text-amber-400">{limb.blockReason}</p>
           )}
@@ -140,7 +155,11 @@ export function ActuatorControlsTab({ motor }: { motor: MotorSummary }) {
         </CardContent>
       </Card>
 
-      <CommissioningCard motor={motor} />
+      <CommissioningCard
+        motor={motor}
+        isLive={isLive}
+        offlineTip={offlineTip}
+      />
 
       <DeadManJog motor={motor} />
 
@@ -217,7 +236,15 @@ function describe(action: Action, role: string) {
 // itself can't fire it — but the layout makes the dangerous thing the
 // hidden thing.
 
-function CommissioningCard({ motor }: { motor: MotorSummary }) {
+function CommissioningCard({
+  motor,
+  isLive,
+  offlineTip,
+}: {
+  motor: MotorSummary;
+  isLive: boolean;
+  offlineTip: string;
+}) {
   const qc = useQueryClient();
   const [confirm, setConfirm] = useState<"commission" | "set_zero" | null>(
     null,
@@ -280,17 +307,19 @@ function CommissioningCard({ motor }: { motor: MotorSummary }) {
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex flex-wrap items-center gap-3">
-            <Button
-              variant="default"
-              disabled={commission.isPending || !motor.present}
-              onClick={() => setConfirm("commission")}
-            >
-              {commission.isPending
-                ? "Commissioning..."
-                : isCommissioned
-                  ? "Re-commission zero"
-                  : "Commission zero (saves to flash)"}
-            </Button>
+            <OfflineActionTooltip isLive={isLive} offlineTip={offlineTip}>
+              <Button
+                variant="default"
+                disabled={commission.isPending || !motor.present || !isLive}
+                onClick={() => setConfirm("commission")}
+              >
+                {commission.isPending
+                  ? "Commissioning..."
+                  : isCommissioned
+                    ? "Re-commission zero"
+                    : "Commission zero (saves to flash)"}
+              </Button>
+            </OfflineActionTooltip>
             <CommissionStatus
               isCommissioned={isCommissioned}
               commissionedOffset={commissionedOffset}
@@ -332,14 +361,16 @@ function CommissioningCard({ motor }: { motor: MotorSummary }) {
                 don't want to persist; for everything else, use Commission
                 zero above.
               </p>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={setZero.isPending || !motor.present}
-                onClick={() => setConfirm("set_zero")}
-              >
-                {setZero.isPending ? "Setting..." : "Set zero (RAM only)"}
-              </Button>
+              <OfflineActionTooltip isLive={isLive} offlineTip={offlineTip}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={setZero.isPending || !motor.present || !isLive}
+                  onClick={() => setConfirm("set_zero")}
+                >
+                  {setZero.isPending ? "Setting..." : "Set zero (RAM only)"}
+                </Button>
+              </OfflineActionTooltip>
               {setZero.isError && (
                 <p className="text-destructive">
                   {(setZero.error as ApiError).message}

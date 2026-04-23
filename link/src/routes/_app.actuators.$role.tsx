@@ -29,7 +29,9 @@ import { ActuatorControlsTab } from "@/components/actuator/actuator-controls-tab
 import { ActuatorTravelTab } from "@/components/actuator/actuator-travel-tab";
 import { ActuatorTestsTab } from "@/components/actuator/actuator-tests-tab";
 import { ActuatorInventoryTab } from "@/components/actuator/actuator-inventory-tab";
+import { PingDeviceButton } from "@/components/actuator/ping-device-button";
 import { radToDeg } from "@/lib/units";
+import { useDeviceLive } from "@/store";
 
 const STALE_MS = 3_000;
 const HOT_DEGC = 65;
@@ -156,6 +158,7 @@ function ActuatorDetailPage() {
 }
 
 function ActuatorHeader({ motor }: { motor: MotorSummary }) {
+  const isLive = useDeviceLive(motor.role);
   const fb = motor.latest;
   const ageS = fb ? (Date.now() - Number(fb.t_ms)) / 1000 : null;
   const stale = ageS != null && ageS * 1000 > STALE_MS;
@@ -231,7 +234,14 @@ function ActuatorHeader({ motor }: { motor: MotorSummary }) {
               <Badge variant="warning">needs travel limits</Badge>
             </Link>
           )}
-          <BootStateBadge motor={motor} />
+          {!isLive ? (
+            <div className="flex max-w-[22rem] flex-col items-end gap-1 sm:flex-row sm:items-center sm:gap-2">
+              <Badge variant="destructive">offline</Badge>
+              <PingDeviceButton role={motor.role} />
+            </div>
+          ) : (
+            <BootStateBadge motor={motor} />
+          )}
         </div>
       </div>
 
@@ -302,9 +312,10 @@ function BootStateBadge({ motor }: { motor: MotorSummary }) {
         to="/actuators/$role"
         params={{ role: motor.role }}
         search={{ tab: "travel" }}
-        title="In band but not yet homed; click to run Verify & Home."
+        className="text-xs text-amber-400 underline-offset-2 hover:underline"
+        title="In band but not yet homed; open Travel to run Verify & Home."
       >
-        <Badge variant="warning">{pre}needs verify &amp; home</Badge>
+        {pre}needs verify &amp; home
       </Link>
     );
   }

@@ -73,7 +73,15 @@ interface LiveStatus {
   reason: string | null;
 }
 
-export function MotionTestsCard({ motor }: { motor: MotorSummary }) {
+export function MotionTestsCard({
+  motor,
+  isLive,
+  offlineTip,
+}: {
+  motor: MotorSummary;
+  isLive: boolean;
+  offlineTip: string;
+}) {
   const limb = useLimbHealth(motor.role);
   const [waveAmpDeg, setWaveAmpDeg] = useState<[number]>([15]);
   const [waveSpeedDeg, setWaveSpeedDeg] = useState<[number]>([
@@ -289,6 +297,7 @@ export function MotionTestsCard({ motor }: { motor: MotorSummary }) {
   const limbBlocked = !limb.healthy;
   const patternStartTip =
     limbBlocked && limb.blockReason ? limb.blockReason : undefined;
+  const gatedStartTip = !isLive ? offlineTip : patternStartTip;
 
   return (
     <Card>
@@ -347,9 +356,10 @@ export function MotionTestsCard({ motor }: { motor: MotorSummary }) {
             !available ||
             !safetyReady ||
             limbBlocked ||
-            (active !== null && active !== "wave")
+            (active !== null && active !== "wave") ||
+            !isLive
           }
-          startTooltip={patternStartTip}
+          startTooltip={gatedStartTip}
           onStart={() => void startPattern("wave")}
           onStop={() => void stopMotion()}
           controls={
@@ -362,7 +372,7 @@ export function MotionTestsCard({ motor }: { motor: MotorSummary }) {
                 max={45}
                 step={1}
                 onChange={setWaveAmpDeg}
-                disabled={active === "wave"}
+                disabled={active === "wave" || !isLive}
                 fmt={(n) => n.toFixed(0)}
               />
               <SliderRow
@@ -373,7 +383,7 @@ export function MotionTestsCard({ motor }: { motor: MotorSummary }) {
                 max={radToDeg(MAX_VEL_RAD_S)}
                 step={1}
                 onChange={setWaveSpeedDeg}
-                disabled={active === "wave"}
+                disabled={active === "wave" || !isLive}
                 fmt={(n) => n.toFixed(1)}
               />
             </div>
@@ -393,9 +403,10 @@ export function MotionTestsCard({ motor }: { motor: MotorSummary }) {
             !available ||
             !safetyReady ||
             limbBlocked ||
-            (active !== null && active !== "sweep")
+            (active !== null && active !== "sweep") ||
+            !isLive
           }
-          startTooltip={patternStartTip}
+          startTooltip={gatedStartTip}
           onStart={() => void startPattern("sweep")}
           onStop={() => void stopMotion()}
           controls={
@@ -407,7 +418,7 @@ export function MotionTestsCard({ motor }: { motor: MotorSummary }) {
               max={radToDeg(MAX_VEL_RAD_S)}
               step={1}
               onChange={setSweepSpeedDeg}
-              disabled={active === "sweep"}
+              disabled={active === "sweep" || !isLive}
               fmt={(n) => n.toFixed(1)}
             />
           }

@@ -113,6 +113,15 @@ export const api = {
     }),
   listMotors: () =>
     apiFetch<import("@/lib/types/MotorSummary").MotorSummary[]>("/api/motors"),
+  /** Targeted CAN probe (type-17) for one inventory motor. */
+  pingMotor: (role: string) =>
+    apiFetch<{
+      ok: boolean;
+      bus: string;
+      can_id: number;
+      firmware_version?: string | null;
+      elapsed_ms: number;
+    }>(`/api/motors/${encodeURIComponent(role)}/ping`, { method: "POST" }),
   getMotor: (role: string) =>
     apiFetch<import("@/lib/types/MotorSummary").MotorSummary>(`/api/motors/${encodeURIComponent(role)}`),
   getParams: (role: string) =>

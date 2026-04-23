@@ -30,7 +30,7 @@ pub use math as motion;
 pub mod home_ramp;
 pub mod travel;
 
-use discovery::HardwareScanReport;
+use discovery::{DiscoveredDevice, HardwareScanReport, ScanAttempt};
 
 #[cfg(target_os = "linux")]
 pub mod worker;
@@ -109,4 +109,23 @@ pub fn hardware_active_scan(
     Ok(HardwareScanReport::empty(
         "mock or non-Linux build — active scan did not touch the bus",
     ))
+}
+
+/// Targeted per-id CAN probe. No response on mock / non-Linux.
+pub fn hardware_probe_one(
+    state: &SharedState,
+    bus: &str,
+    can_id: u8,
+    timeout: Duration,
+) -> anyhow::Result<(Option<DiscoveredDevice>, Vec<ScanAttempt>)> {
+    #[cfg(target_os = "linux")]
+    {
+        if !state.cfg.can.mock {
+            if let Some(core) = state.real_can.as_deref() {
+                return crate::can::linux::run_single_id_probe(core, state, bus, can_id, timeout);
+            }
+        }
+    }
+    let _ = (state, bus, can_id, timeout);
+    Ok((None, vec![]))
 }

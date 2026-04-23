@@ -17,6 +17,8 @@ import {
   isAngularVelUnit,
   radToDeg,
 } from "@/lib/units";
+import { OfflineActionTooltip } from "@/components/actuator/offline-action-tooltip";
+import { useDeviceLive, useDeviceOfflineTip } from "@/store";
 import { ConfirmDialog } from "./confirm-dialog";
 
 export interface ParamRowProps {
@@ -45,6 +47,8 @@ function wireNumericValue(value: JsonValue): number | null {
 }
 
 export function ParamRow({ role, param }: ParamRowProps) {
+  const isLive = useDeviceLive(role);
+  const offlineTip = useDeviceOfflineTip(role);
   const qc = useQueryClient();
   const { displayInDeg, displayUnit } = paramDisplayMode(param);
   const [draft, setDraft] = useState<string>("");
@@ -114,6 +118,7 @@ export function ParamRow({ role, param }: ParamRowProps) {
           className="w-32 rounded-md border border-input bg-background px-2 py-1 font-mono text-sm"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
+          disabled={!isLive}
         />
       </td>
       <td className="px-3 py-2 font-mono text-muted-foreground">{rangeCell}</td>
@@ -129,32 +134,38 @@ export function ParamRow({ role, param }: ParamRowProps) {
               Drift
             </Badge>
           )}
-          <Button
-            variant="default"
-            size="sm"
-            onClick={() => setConfirmSave(true)}
-            disabled={write.isPending}
-          >
-            Save
-          </Button>
+          <OfflineActionTooltip isLive={isLive} offlineTip={offlineTip}>
+            <Button
+              variant="default"
+              size="sm"
+              onClick={() => setConfirmSave(true)}
+              disabled={write.isPending || !isLive}
+            >
+              Save
+            </Button>
+          </OfflineActionTooltip>
           {param.drift && (
             <>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => push.mutate()}
-                disabled={push.isPending}
-              >
-                Push
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => adopt.mutate()}
-                disabled={adopt.isPending}
-              >
-                Adopt
-              </Button>
+              <OfflineActionTooltip isLive={isLive} offlineTip={offlineTip}>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => push.mutate()}
+                  disabled={push.isPending || !isLive}
+                >
+                  Push
+                </Button>
+              </OfflineActionTooltip>
+              <OfflineActionTooltip isLive={isLive} offlineTip={offlineTip}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => adopt.mutate()}
+                  disabled={adopt.isPending || !isLive}
+                >
+                  Adopt
+                </Button>
+              </OfflineActionTooltip>
             </>
           )}
         </div>

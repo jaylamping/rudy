@@ -18,6 +18,8 @@ import {
   isAngleUnit,
   isAngularVelUnit,
 } from "@/lib/units";
+import { OfflineActionTooltip } from "./offline-action-tooltip";
+import { useDeviceLive, useDeviceOfflineTip } from "@/store";
 
 function observableValueCell(p: ParamValue): string {
   const n =
@@ -37,6 +39,8 @@ function observableUnitCell(p: ParamValue): string {
 }
 
 export function ActuatorFirmwareTab({ role }: { role: string }) {
+  const isLive = useDeviceLive(role);
+  const offlineTip = useDeviceOfflineTip(role);
   const qc = useQueryClient();
   const paramsQ = useQuery({
     queryKey: queryKeys.params.byRole(role),
@@ -158,16 +162,18 @@ export function ActuatorFirmwareTab({ role }: { role: string }) {
         <span className="text-xs text-muted-foreground">
           Saving writes to flash and updates desired values in inventory.
         </span>
-        <Button
-          variant="destructive"
-          size="sm"
-          disabled={driftCount === 0 || syncDrifted.isPending}
-          onClick={() => setConfirmSync(true)}
-        >
-          {syncDrifted.isPending
-            ? "Syncing..."
-            : `Sync all drifted (${driftCount})`}
-        </Button>
+        <OfflineActionTooltip isLive={isLive} offlineTip={offlineTip}>
+          <Button
+            variant="destructive"
+            size="sm"
+            disabled={driftCount === 0 || syncDrifted.isPending || !isLive}
+            onClick={() => setConfirmSync(true)}
+          >
+            {syncDrifted.isPending
+              ? "Syncing..."
+              : `Sync all drifted (${driftCount})`}
+          </Button>
+        </OfflineActionTooltip>
         {syncDrifted.isError && (
           <span className="text-xs text-destructive">
             {(syncDrifted.error as ApiError).message}

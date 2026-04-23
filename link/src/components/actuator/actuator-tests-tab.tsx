@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useLimbHealth } from "@/lib/hooks/useLimbHealth";
 import { useTestProgress } from "@/lib/hooks/useTestProgress";
+import { useDeviceLive, useDeviceOfflineTip } from "@/store";
 import type { MotorSummary } from "@/lib/types/MotorSummary";
 import type { TestName } from "@/lib/types/TestName";
 import type { TestProgress } from "@/lib/types/TestProgress";
@@ -87,6 +88,8 @@ interface RunState {
 }
 
 export function ActuatorTestsTab({ motor }: { motor: MotorSummary }) {
+  const isLive = useDeviceLive(motor.role);
+  const offlineTip = useDeviceOfflineTip(motor.role);
   const limb = useLimbHealth(motor.role);
   const [run, setRun] = useState<RunState | null>(null);
   const [confirm, setConfirm] = useState<TestDef | null>(null);
@@ -168,9 +171,13 @@ export function ActuatorTestsTab({ motor }: { motor: MotorSummary }) {
                   !available ||
                   start.isPending ||
                   run !== null ||
-                  limbGate;
-                const runTip =
-                  limbGate && limb.blockReason ? limb.blockReason : "";
+                  limbGate ||
+                  !isLive;
+                const runTip = !isLive
+                  ? offlineTip
+                  : limbGate && limb.blockReason
+                    ? limb.blockReason
+                    : "";
                 return runTip ? (
                   <Tooltip>
                     <TooltipTrigger asChild>

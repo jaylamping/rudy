@@ -44,6 +44,7 @@ import {
 import type { ClientStreamHandle } from "@/lib/wt/clientStream";
 import type { MotorSummary } from "@/lib/types/MotorSummary";
 import { degToRad, radToDeg } from "@/lib/units";
+import { useDeviceLive, useDeviceOfflineTip } from "@/store";
 
 /**
  * Heartbeat cadence. Must be < `JOG_HEARTBEAT_TTL_MS` (250 ms) on the
@@ -69,9 +70,12 @@ export function DeadManJog({ motor }: { motor: MotorSummary }) {
   const [available, setAvailable] = useState(true);
   const wtConnected = useWtConnected();
   const limb = useLimbHealth(motor.role);
+  const isLive = useDeviceLive(motor.role);
+  const offlineTip = useDeviceOfflineTip(motor.role);
   const jogBlocked = !limb.healthy;
-  const jogDisableTip =
-    jogBlocked && limb.blockReason
+  const jogDisableTip = !isLive
+    ? offlineTip
+    : jogBlocked && limb.blockReason
       ? limb.blockReason
       : !motor.verified
         ? "Jog requires a verified motor (Inventory tab)."
@@ -126,6 +130,10 @@ export function DeadManJog({ motor }: { motor: MotorSummary }) {
       stopJog();
     }
   }, [wtConnected, stopJog]);
+
+  useEffect(() => {
+    if (!isLive) stopJog();
+  }, [isLive, stopJog]);
 
   const startJog = (dir: -1 | 1) => {
     setError(null);
@@ -249,7 +257,7 @@ export function DeadManJog({ motor }: { motor: MotorSummary }) {
             max={MAX_VEL_DEG_S}
             step={1}
             onValueChange={(v) => setVel(v)}
-            disabled={!available}
+            disabled={!available || !isLive}
           />
         </div>
         <div className="flex items-center gap-2">
@@ -260,7 +268,9 @@ export function DeadManJog({ motor }: { motor: MotorSummary }) {
                   <Button
                     variant="outline"
                     size="lg"
-                    disabled={!available || !motor.verified || jogBlocked}
+                    disabled={
+                      !available || !motor.verified || jogBlocked || !isLive
+                    }
                     onPointerDown={() => startJog(-1)}
                     onPointerUp={stopJog}
                     onPointerLeave={stopJog}
@@ -279,7 +289,9 @@ export function DeadManJog({ motor }: { motor: MotorSummary }) {
             <Button
               variant="outline"
               size="lg"
-              disabled={!available || !motor.verified || jogBlocked}
+              disabled={
+                !available || !motor.verified || jogBlocked || !isLive
+              }
               onPointerDown={() => startJog(-1)}
               onPointerUp={stopJog}
               onPointerLeave={stopJog}
@@ -296,7 +308,9 @@ export function DeadManJog({ motor }: { motor: MotorSummary }) {
                   <Button
                     variant="outline"
                     size="lg"
-                    disabled={!available || !motor.verified || jogBlocked}
+                    disabled={
+                      !available || !motor.verified || jogBlocked || !isLive
+                    }
                     onPointerDown={() => startJog(1)}
                     onPointerUp={stopJog}
                     onPointerLeave={stopJog}
@@ -315,7 +329,9 @@ export function DeadManJog({ motor }: { motor: MotorSummary }) {
             <Button
               variant="outline"
               size="lg"
-              disabled={!available || !motor.verified || jogBlocked}
+              disabled={
+                !available || !motor.verified || jogBlocked || !isLive
+              }
               onPointerDown={() => startJog(1)}
               onPointerUp={stopJog}
               onPointerLeave={stopJog}

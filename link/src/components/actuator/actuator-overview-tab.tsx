@@ -22,6 +22,7 @@ import { UrdfViewer } from "@/components/viz/urdf-viewer";
 import { useLimbHealth } from "@/lib/hooks/useLimbHealth";
 import { formatAngleDeg, radToDeg } from "@/lib/units";
 import type { MotorSummary } from "@/lib/types/MotorSummary";
+import { useDeviceLive, useDeviceOfflineTip } from "@/store";
 
 const METRICS: { key: MotorMetric; title: string }[] = [
   { key: "pos", title: "Position" },
@@ -88,6 +89,8 @@ export function ActuatorOverviewTab({ motor }: { motor: MotorSummary }) {
 // tab where the full Verify & Home ritual lives.
 function GoHomeBar({ motor }: { motor: MotorSummary }) {
   const qc = useQueryClient();
+  const isLive = useDeviceLive(motor.role);
+  const offlineTip = useDeviceOfflineTip(motor.role);
   const limb = useLimbHealth(motor.role);
   const home = useMutation({
     mutationFn: () => api.homeMotor(motor.role, 0),
@@ -98,8 +101,11 @@ function GoHomeBar({ motor }: { motor: MotorSummary }) {
   const bs = motor.boot_state;
   const homed = bs.kind === "homed";
   const homeBlocked = !limb.healthy;
-  const homeTip =
-    homeBlocked && limb.blockReason ? limb.blockReason : "";
+  const homeTip = !isLive
+    ? offlineTip
+    : homeBlocked && limb.blockReason
+      ? limb.blockReason
+      : "";
   const live =
     motor.latest != null
       ? radToDeg(motor.latest.mech_pos_rad).toFixed(2)
@@ -161,7 +167,7 @@ function GoHomeBar({ motor }: { motor: MotorSummary }) {
                   <Button
                     variant="default"
                     size="sm"
-                    disabled={home.isPending || homeBlocked}
+                    disabled={home.isPending || homeBlocked || !isLive}
                     onClick={() => home.mutate()}
                   >
                     <Home className="mr-1.5 h-3.5 w-3.5" />
@@ -181,7 +187,8 @@ function GoHomeBar({ motor }: { motor: MotorSummary }) {
                 !homed ||
                 autoHoming ||
                 home.isPending ||
-                homeBlocked
+                homeBlocked ||
+                !isLive
               }
               onClick={() => home.mutate()}
             >
