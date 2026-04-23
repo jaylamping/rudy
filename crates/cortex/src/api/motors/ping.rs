@@ -54,7 +54,7 @@ pub async fn ping_motor(
     };
     let bus = motor.common.can_bus.clone();
     let can_id = motor.common.can_id;
-    let timeout = Duration::from_millis(PING_TIMEOUT_MS.max(PING_MIN_MS).min(PING_MAX_MS));
+    let timeout = Duration::from_millis(PING_TIMEOUT_MS.clamp(PING_MIN_MS, PING_MAX_MS));
 
     let st = state.clone();
     let bus_for_probe = bus.clone();
