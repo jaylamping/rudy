@@ -414,6 +414,35 @@ impl Actuator {
     }
 }
 
+impl Device {
+    pub fn role(&self) -> &str {
+        match self {
+            Device::Actuator(a) => &a.common.role,
+            Device::Sensor(s) => &s.common.role,
+            Device::Battery(b) => &b.common.role,
+            Device::Peripheral(p) => &p.common.role,
+        }
+    }
+
+    pub fn can_bus(&self) -> &str {
+        match self {
+            Device::Actuator(a) => &a.common.can_bus,
+            Device::Sensor(s) => &s.common.can_bus,
+            Device::Battery(b) => &b.common.can_bus,
+            Device::Peripheral(p) => &p.common.can_bus,
+        }
+    }
+
+    pub fn can_id(&self) -> u8 {
+        match self {
+            Device::Actuator(a) => a.common.can_id,
+            Device::Sensor(s) => s.common.can_id,
+            Device::Battery(b) => b.common.can_id,
+            Device::Peripheral(p) => p.common.can_id,
+        }
+    }
+}
+
 #[cfg(test)]
 mod direction_sign_tests {
     use super::*;
@@ -495,34 +524,5 @@ mod direction_sign_tests {
             serde_yaml::from_str::<ActuatorCommon>(yaml).is_err(),
             "out-of-range direction_sign must reject"
         );
-    }
-}
-
-impl Device {
-    pub fn role(&self) -> &str {
-        match self {
-            Device::Actuator(a) => &a.common.role,
-            Device::Sensor(s) => &s.common.role,
-            Device::Battery(b) => &b.common.role,
-            Device::Peripheral(p) => &p.common.role,
-        }
-    }
-
-    pub fn can_bus(&self) -> &str {
-        match self {
-            Device::Actuator(a) => &a.common.can_bus,
-            Device::Sensor(s) => &s.common.can_bus,
-            Device::Battery(b) => &b.common.can_bus,
-            Device::Peripheral(p) => &p.common.can_bus,
-        }
-    }
-
-    pub fn can_id(&self) -> u8 {
-        match self {
-            Device::Actuator(a) => a.common.can_id,
-            Device::Sensor(s) => s.common.can_id,
-            Device::Battery(b) => b.common.can_id,
-            Device::Peripheral(p) => p.common.can_id,
-        }
     }
 }
