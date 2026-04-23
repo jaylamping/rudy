@@ -305,6 +305,56 @@ pub async fn maybe_run(state: SharedState, role: String) {
         "boot_orchestrator: starting auto-home",
     );
 
+    // Pre-home teardown: if cortex restarted while the firmware was still
+    // in MIT hold (`run_mode=0`) or PP hold (`run_mode=1`) — the normal
+    // post-home resting state — the worker thread's `Cmd::SetVelocity`
+    // re-arm sequence (`cmd_stop` → `RUN_MODE=2` → `SPD_REF` →
+    // `cmd_enable`) sometimes fails to switch the firmware out of the
+    // prior mode: the RS03 silently rejects the `RUN_MODE` write when
+    // the disable edge from `cmd_stop` hasn't fully committed yet, so
+    // the subsequent `cmd_enable` resumes the prior mode and ignores
+    // every velocity setpoint the home-ramp issues. Symptom is the
+    // exact log shape seen in the field: `total_can_sends ≈ ticks`,
+    // `last_vel_commanded` non-zero, `traveled_rad ≈ 0`, abort
+    // `reason=timeout`.
+    //
+    // Issue an explicit `cmd_stop` here (idempotent — the worker also
+    // sends one as the first step of its re-arm) and sleep long enough
+    // for the firmware mode-switch to commit before the home-ramp's
+    // first velocity command races the `RUN_MODE` write. Mock-CAN
+    // (`real_can = None`) skips both — the home-ramp's mock path
+    // doesn't issue real frames either.
+    if let Some(core) = state.real_can.clone() {
+        let motor_for_stop = motor.clone();
+        match tokio::task::spawn_blocking(move || core.stop(&motor_for_stop)).await {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                warn!(
+                    role = %role,
+                    error = ?e,
+                    "boot_orchestrator: pre-home cmd_stop failed; proceeding with home_ramp anyway",
+                );
+            }
+            Err(e) => {
+                warn!(
+                    role = %role,
+                    error = ?e,
+                    "boot_orchestrator: pre-home cmd_stop spawn_blocking failed; proceeding",
+                );
+            }
+        }
+        // Clear the runtime hold flag so the worker's `Cmd::SetVelocity`
+        // re-arm path also takes the disable→mode-write→enable branch
+        // unconditionally, in case a previous `mark_position_hold` from
+        // an in-process home is still latched (it isn't on a fresh
+        // process, but is cheap insurance against future call sites).
+        state.mark_stopped(&role);
+        // Firmware mode-switch settle window. RS03 commits a
+        // `cmd_stop`-induced disable edge in ≤ 30 ms in benches; 50 ms
+        // is a comfortable margin, well below the 30 s `homer_timeout_ms`.
+        sleep(Duration::from_millis(50)).await;
+    }
+
     // Spawn a background progress-tracker that polls latest and feeds
     // `update_auto_homing_progress`. This is best-effort — the actual
     // tracking-error and timeout safety lives inside home_ramp::run.
