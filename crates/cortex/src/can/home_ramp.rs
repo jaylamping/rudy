@@ -552,13 +552,12 @@ pub async fn run_with_overrides(
     // (or never) fire depending on direction of NaN comparison; treat those
     // as "disable the gate" so misconfiguration degrades gracefully to the
     // legacy position-only dwell behavior instead of bricking the homer.
-    let dwell_max_vel = if cfg.target_dwell_max_vel_rad_s.is_finite()
-        && cfg.target_dwell_max_vel_rad_s > 0.0
-    {
-        cfg.target_dwell_max_vel_rad_s
-    } else {
-        f32::INFINITY
-    };
+    let dwell_max_vel =
+        if cfg.target_dwell_max_vel_rad_s.is_finite() && cfg.target_dwell_max_vel_rad_s > 0.0 {
+            cfg.target_dwell_max_vel_rad_s
+        } else {
+            f32::INFINITY
+        };
 
     // Trajectory bounds bookkeeping. Surfaced in the abort line so a
     // post-mortem can tell at a glance whether the motor (a) moved
