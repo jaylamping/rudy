@@ -80,6 +80,12 @@ fn state_with_real_can_stub_inner(
             boot_tracking_error_max_rad: 0.05,
             target_tolerance_rad: 0.005,
             target_dwell_ticks: 1,
+            // Stub tests script mech_pos_rad directly and don't drive
+            // mech_vel_rad_s off the simulated position trajectory, so
+            // the default value (0.0) would satisfy any finite threshold.
+            // Kept as a huge value so anyone reading the test can tell
+            // the velocity gate isn't part of what's being pinned here.
+            target_dwell_max_vel_rad_s: f32::INFINITY,
             homer_timeout_ms: 5_000,
             max_feedback_age_ms: 100,
             commission_readback_tolerance_rad: 1e-3,
@@ -105,6 +111,91 @@ fn state_with_real_can_stub_inner(
 
 fn state_with_real_can_stub() -> (crate::state::SharedState, crate::inventory::Actuator) {
     state_with_real_can_stub_inner(None)
+}
+
+/// Velocity-gate variant of the stub fixture. Overrides
+/// `target_dwell_max_vel_rad_s` (default INFINITY disables the gate and
+/// preserves legacy position-only dwell) and tightens `homer_timeout_ms`
+/// so a test that expects the gate to BLOCK success returns inside a
+/// reasonable wall-clock.
+fn state_with_velocity_gate(
+    dwell_max_vel_rad_s: f32,
+    homer_timeout_ms: u32,
+) -> (crate::state::SharedState, crate::inventory::Actuator) {
+    let dir = tempfile::tempdir().unwrap();
+    let spec_path = dir.path().join("robstride_rs03.yaml");
+    std::fs::write(
+        &spec_path,
+        "schema_version: 2\nactuator_model: RS03\nfirmware_limits: {}\nobservables: {}\n",
+    )
+    .unwrap();
+    let inv_path = dir.path().join("inv.yaml");
+    std::fs::write(
+        &inv_path,
+        "schema_version: 2\ndevices:\n  - kind: actuator\n    role: m\n    can_bus: can0\n    can_id: 1\n    present: true\n    family:\n      kind: robstride\n      model: rs03\n    travel_limits:\n      min_rad: -1.0\n      max_rad: 1.0\n",
+    )
+    .unwrap();
+    let cfg = Config {
+        http: HttpConfig {
+            bind: "127.0.0.1:0".into(),
+        },
+        webtransport: WebTransportConfig {
+            bind: "127.0.0.1:0".into(),
+            enabled: false,
+            cert_path: None,
+            key_path: None,
+        },
+        paths: PathsConfig {
+            actuator_spec: spec_path.clone(),
+            inventory: inv_path.clone(),
+            inventory_seed: None,
+            audit_log: dir.path().join("audit.jsonl"),
+        },
+        can: CanConfig {
+            mock: true,
+            buses: vec![],
+        },
+        telemetry: TelemetryConfig {
+            poll_interval_ms: 10,
+        },
+        safety: SafetyConfig {
+            require_verified: false,
+            boot_max_step_rad: 0.087,
+            step_size_rad: 0.02,
+            tick_interval_ms: 5,
+            homing_speed_rad_s: None,
+            tracking_error_max_rad: 0.05,
+            tracking_error_grace_ticks: 0,
+            tracking_freshness_max_age_ms: 100,
+            tracking_error_debounce_ticks: 3,
+            band_violation_debounce_ticks: 3,
+            boot_tracking_error_max_rad: 0.05,
+            target_tolerance_rad: 0.005,
+            target_dwell_ticks: 1,
+            // The whole point of this fixture: exercise the finite-positive
+            // branch of the velocity gate instead of the INFINITY fallback.
+            target_dwell_max_vel_rad_s: dwell_max_vel_rad_s,
+            homer_timeout_ms,
+            max_feedback_age_ms: 100,
+            commission_readback_tolerance_rad: 1e-3,
+            auto_home_on_boot: true,
+            scan_on_boot: true,
+            hold_kp_nm_per_rad: 10.0,
+            hold_kd_nm_s_per_rad: 0.5,
+        },
+        logs: LogsConfig {
+            db_path: dir.path().join("logs.db"),
+            ..LogsConfig::default()
+        },
+    };
+    let specs = spec::load_robstride_specs(dir.path(), Some(&spec_path)).unwrap();
+    let inv = Inventory::load(&inv_path).unwrap();
+    let motor = inv.actuators().next().cloned().expect("fixture actuator");
+    let audit = AuditLog::open(dir.path().join("audit.jsonl")).unwrap();
+    let real_can = Some(Arc::new(can::RealCanHandle));
+    let reminders = ReminderStore::open(dir.path().join("reminders.json")).unwrap();
+    let state = Arc::new(AppState::new(cfg, specs, inv, audit, real_can, reminders));
+    (state, motor)
 }
 
 #[test]
@@ -492,4 +583,147 @@ async fn stale_telemetry_hold_then_fresh_run_completes() {
     let r = run_with_tracking_budget(state.clone(), motor, 0.0, 0.12, 0.05).await;
     updater.abort();
     assert!(r.is_ok(), "expected Ok, got {r:?}");
+}
+
+#[tokio::test]
+async fn velocity_gate_blocks_dwell_when_motor_still_coasting() {
+    // Pin fix for the handoff-coast-then-stiction-trap failure mode
+    // that produced the 0.8-1.2° run-to-run auto-home offset on a
+    // gravity-neutral single-actuator rig:
+    //
+    //   Pre-fix, the dwell gate was position-only. The instant the
+    //   measured position crossed into the `effective_tolerance_rad`
+    //   window the success counter advanced, so after
+    //   `target_dwell_ticks` fresh samples the homer exited Ok even if
+    //   the motor was still moving several rad/s. Inside
+    //   `Cmd::SetMitHold` the driver then runs
+    //   `cmd_stop → write RUN_MODE=0 → cmd_enable → MIT frame`, a
+    //   sequence required by the RS03 manual (Ch.2 item 2 / §4.3) that
+    //   leaves the actuator unpowered for ~20-50 ms. Residual velocity ×
+    //   that disabled window = 2-15 mrad of uncontrolled coast, after
+    //   which static friction traps the motor wherever it lands and the
+    //   spring-damper hold reports that offset as "home".
+    //
+    //   Post-fix the dwell success predicate additionally requires
+    //   `|mech_vel_rad_s| < target_dwell_max_vel_rad_s`, so the homer
+    //   waits for the firmware velocity-command-to-zero to actually
+    //   bleed the motor to rest (the firmware is already commanding
+    //   vel=0 once inside the position deadband) before handing off.
+    //
+    // Setup: park the simulated motor at the home target (so the
+    // POSITION half of the dwell predicate is always true) but report a
+    // velocity of 0.20 rad/s — well above both the fixture's 0.01 rad/s
+    // gate and the 0.05 default. The position gate is satisfied every
+    // fresh tick but the velocity gate never is, so the homer must time
+    // out rather than succeeding. This is the exact property that fails
+    // pre-fix: a pure position-only dwell gate would declare Ok within
+    // `target_dwell_ticks` fresh samples.
+    let gate = 0.01_f32;
+    // `home_ramp.rs` clamps `homer_timeout_ms` to a 1 s floor via
+    // `.max(1_000)`, so any value below 1000 gives a 1 s effective
+    // timeout. That's a reasonable wall-clock for a unit test and still
+    // allows hundreds of 5 ms ticks' worth of dwell-gate evaluation
+    // before the timeout fires.
+    let (state, motor) = state_with_velocity_gate(gate, 1_000);
+    let role = motor.common.role.clone();
+    let target = 0.10_f32;
+    {
+        let mut latest = state.latest.write().unwrap();
+        latest.insert(
+            role.clone(),
+            MotorFeedback {
+                t_ms: chrono::Utc::now().timestamp_millis(),
+                role: role.clone(),
+                can_id: 1,
+                mech_pos_rad: target,
+                mech_vel_rad_s: 0.20,
+                torque_nm: 0.0,
+                vbus_v: 48.0,
+                temp_c: 30.0,
+                fault_sta: 0,
+                warn_sta: 0,
+            },
+        );
+    }
+    let updater = {
+        let state = state.clone();
+        let role = role.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_millis(2)).await;
+                let mut w = state.latest.write().unwrap();
+                if let Some(fb) = w.get_mut(&role) {
+                    // Refresh timestamp so the sample stays fresh, but
+                    // keep position parked at target and velocity above
+                    // the gate — the whole point is to isolate the
+                    // velocity gate.
+                    fb.t_ms = chrono::Utc::now().timestamp_millis();
+                    fb.mech_pos_rad = target;
+                    fb.mech_vel_rad_s = 0.20;
+                }
+            }
+        })
+    };
+    let r = run_with_tracking_budget(state.clone(), motor, 0.0, target, 10.0).await;
+    updater.abort();
+    let Err((reason, _)) = r else {
+        panic!(
+            "expected Err (velocity gate must block dwell despite in-position telemetry), got {r:?}"
+        );
+    };
+    assert_eq!(
+        reason, "timeout",
+        "velocity gate should cause timeout, not some other abort (position is in band and tracking budget is loose)"
+    );
+}
+
+#[tokio::test]
+async fn velocity_gate_passes_when_motor_has_settled() {
+    // Companion to `velocity_gate_blocks_dwell_when_motor_still_coasting`.
+    // Same in-position setup but `mech_vel_rad_s == 0` — proves the gate
+    // isn't spuriously blocking the success path when the motor has
+    // actually come to rest.
+    let gate = 0.05_f32;
+    let (state, motor) = state_with_velocity_gate(gate, 5_000);
+    let role = motor.common.role.clone();
+    let target = 0.10_f32;
+    {
+        let mut latest = state.latest.write().unwrap();
+        latest.insert(
+            role.clone(),
+            MotorFeedback {
+                t_ms: chrono::Utc::now().timestamp_millis(),
+                role: role.clone(),
+                can_id: 1,
+                mech_pos_rad: target,
+                mech_vel_rad_s: 0.0,
+                torque_nm: 0.0,
+                vbus_v: 48.0,
+                temp_c: 30.0,
+                fault_sta: 0,
+                warn_sta: 0,
+            },
+        );
+    }
+    let updater = {
+        let state = state.clone();
+        let role = role.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_millis(2)).await;
+                let mut w = state.latest.write().unwrap();
+                if let Some(fb) = w.get_mut(&role) {
+                    fb.t_ms = chrono::Utc::now().timestamp_millis();
+                    fb.mech_pos_rad = target;
+                    fb.mech_vel_rad_s = 0.0;
+                }
+            }
+        })
+    };
+    let r = run_with_tracking_budget(state.clone(), motor, 0.0, target, 10.0).await;
+    updater.abort();
+    assert!(
+        r.is_ok(),
+        "expected Ok when velocity is below gate and position is in band, got {r:?}"
+    );
 }

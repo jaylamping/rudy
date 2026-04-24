@@ -168,6 +168,45 @@ pub struct SafetyConfig {
     #[serde(default = "default_target_dwell_ticks")]
     pub target_dwell_ticks: u32,
 
+    /// Maximum reported `|mech_vel_rad_s|` permitted while counting an
+    /// in-tolerance tick toward [`target_dwell_ticks`]. Default 0.05 rad/s
+    /// (~2.9 deg/s).
+    ///
+    /// Without this gate the homer will declare success the first time the
+    /// motor's *position* lands inside [`target_tolerance_rad`] for
+    /// `target_dwell_ticks` consecutive fresh samples — even if the joint
+    /// is still decelerating through the deadband at the nominal homing
+    /// speed. The handoff to the MIT spring-damper hold (see
+    /// [`Cmd::SetMitHold`] in `can/worker/thread.rs`) then briefly disables
+    /// the drive while writing `cmd_stop → RUN_MODE=0 → cmd_enable` (the
+    /// RS03 manual requires stopping before a mode switch; §4.3 sequences
+    /// and §Ch.2 item 2), so any residual velocity at the moment of handoff
+    /// is integrated into an uncontrolled coast past the target — typically
+    /// 0.5–1.5° at default homing speed. Once the MIT frame lands, static
+    /// friction in the drivetrain holds the motor wherever it coasted to,
+    /// giving a run-to-run parked offset outside the position deadband.
+    ///
+    /// Requiring `|mech_vel_rad_s| < target_dwell_max_vel_rad_s` as a
+    /// precondition for dwell-counter increment forces the homer to wait
+    /// until the firmware velocity loop has actually braked the motor to
+    /// rest (the in-tolerance branch already commands `vel = 0`) before
+    /// declaring success — collapsing coast distance to a few mrad even
+    /// across the ~10–30 ms disabled window of the mode switch.
+    ///
+    /// At 0.05 rad/s the worst-case handoff coast over a 30 ms disabled
+    /// window is 1.5 mrad (~0.09°), well inside `target_tolerance_rad`.
+    /// The firmware's `spd_filt_gain` (0.1 by default) low-pass filters
+    /// reported velocity with ~100 ms time constant, so a tighter threshold
+    /// risks timing out on a motor that has physically come to rest but
+    /// whose filtered readback is still settling. If you need tighter
+    /// parking accuracy, prefer lowering the homing speed (reduces coast
+    /// linearly) over tightening this gate.
+    ///
+    /// Set to `f32::INFINITY` to disable the velocity gate entirely and
+    /// restore the legacy position-only dwell behavior.
+    #[serde(default = "default_target_dwell_max_vel_rad_s")]
+    pub target_dwell_max_vel_rad_s: f32,
+
     /// Hard timeout on the home-ramp loops, in milliseconds. Default 30 s.
     #[serde(default = "default_homer_timeout_ms")]
     pub homer_timeout_ms: u32,
@@ -329,6 +368,13 @@ pub(crate) fn default_target_tolerance_rad() -> f32 {
 
 pub(crate) fn default_target_dwell_ticks() -> u32 {
     5
+}
+
+pub(crate) fn default_target_dwell_max_vel_rad_s() -> f32 {
+    // ~2.9 deg/s — large enough to accommodate the ~100 ms `spd_filt_gain`
+    // lag on the firmware side, small enough that the worst-case coast over
+    // a 30 ms mode-switch disabled window is < 2 mrad.
+    0.05
 }
 
 pub(crate) fn default_homer_timeout_ms() -> u32 {

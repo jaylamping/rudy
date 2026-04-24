@@ -528,6 +528,17 @@ pub async fn run_with_overrides(
     let mut setpoint_unwrapped = from_rad;
     let mut ticks: u32 = 0;
     let mut last_measured = from_rad;
+    // `last_measured_vel` is updated from the same fresh feedback row that
+    // feeds `last_measured`, and gates the dwell counter so the homer
+    // cannot declare success while the motor is still decelerating
+    // through the position tolerance band (see
+    // `SafetyConfig::target_dwell_max_vel_rad_s`). Starts at 0.0 because
+    // the motor is assumed at rest before the homer runs; on real CAN it
+    // is overwritten the first fresh tick anyway. In mock mode it stays 0.0
+    // for the whole loop, which is correct — mock tests do not model
+    // firmware velocity-loop dynamics and their dwell gate should match the
+    // legacy position-only behavior.
+    let mut last_measured_vel: f32 = 0.0;
     let homer_has_real_can = state.real_can.is_some();
     let debounce_ticks = cfg.tracking_error_debounce_ticks;
     let band_debounce_ticks = cfg.band_violation_debounce_ticks;
@@ -537,6 +548,17 @@ pub async fn run_with_overrides(
     let mut consec_band_over: u32 = 0;
     let mut consec_in_tolerance: u32 = 0;
     let dwell_need = cfg.target_dwell_ticks.max(1);
+    // A NaN/inf config value would otherwise make the velocity gate always
+    // (or never) fire depending on direction of NaN comparison; treat those
+    // as "disable the gate" so misconfiguration degrades gracefully to the
+    // legacy position-only dwell behavior instead of bricking the homer.
+    let dwell_max_vel = if cfg.target_dwell_max_vel_rad_s.is_finite()
+        && cfg.target_dwell_max_vel_rad_s > 0.0
+    {
+        cfg.target_dwell_max_vel_rad_s
+    } else {
+        f32::INFINITY
+    };
 
     // Trajectory bounds bookkeeping. Surfaced in the abort line so a
     // post-mortem can tell at a glance whether the motor (a) moved
@@ -582,6 +604,7 @@ pub async fn run_with_overrides(
         tracking_freshness_max_age_ms = cfg.tracking_freshness_max_age_ms,
         has_real_can = homer_has_real_can,
         target_dwell_ticks = dwell_need,
+        target_dwell_max_vel_rad_s = dwell_max_vel,
         // Surface the resolved hold gains in the entry log so a
         // post-mortem can confirm config edits to
         // `safety.hold_kp_nm_per_rad` / `hold_kd_nm_s_per_rad` actually
@@ -630,6 +653,14 @@ pub async fn run_with_overrides(
                     let age_ms = now_ms - fb.t_ms;
                     if age_ms <= freshness_ms {
                         last_measured = fb.mech_pos_rad;
+                        // Same fresh row feeds the dwell velocity gate
+                        // below. Captured atomically with `last_measured`
+                        // so a success tick cannot compare a just-read
+                        // position against a stale velocity from a prior
+                        // fresh sample (which would otherwise declare
+                        // success on a racing motor whose velocity
+                        // hadn't yet settled in this sample's snapshot).
+                        last_measured_vel = fb.mech_vel_rad_s;
                         if stale_stretch_logged {
                             // Bookend the "stale telemetry" debug
                             // line so a post-mortem can measure the
@@ -674,8 +705,21 @@ pub async fn run_with_overrides(
             true
         };
 
-        let in_tolerance =
+        let in_position_tolerance =
             shortest_signed_delta(last_measured, unwrapped_target).abs() < effective_tolerance_rad;
+        // Velocity gate: require the motor to have physically settled, not
+        // just have its current position inside the deadband. Without
+        // this, a motor decelerating through the deadband at nominal
+        // homing speed declares success mid-brake; the handoff to
+        // `set_mit_hold` then disables the drive for ~10-30 ms while
+        // cycling RUN_MODE, and residual velocity at that instant
+        // translates directly into post-handoff coast (0.5-1.5 deg at
+        // default homing speed). Stiction then traps the motor wherever
+        // it coasted to, producing a run-to-run parked offset outside
+        // the position deadband. In mock mode `last_measured_vel` is 0
+        // and this gate is a no-op, preserving existing test behavior.
+        let in_velocity_tolerance = last_measured_vel.abs() < dwell_max_vel;
+        let in_tolerance = in_position_tolerance && in_velocity_tolerance;
         if is_fresh {
             if in_tolerance {
                 consec_in_tolerance = consec_in_tolerance.saturating_add(1);
@@ -927,6 +971,7 @@ pub async fn run_with_overrides(
             tick = ticks,
             is_fresh,
             last_measured,
+            last_measured_vel,
             setpoint = setpoint_unwrapped,
             remaining,
             governing,
@@ -937,6 +982,8 @@ pub async fn run_with_overrides(
             overrun,
             lag_scale,
             vel,
+            in_position_tolerance,
+            in_velocity_tolerance,
             consec_band_over,
             consec_in_tolerance,
             consec_tracking_over = consec_over,

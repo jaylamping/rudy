@@ -94,6 +94,11 @@ pub fn make_state() -> (SharedState, tempfile::TempDir) {
             boot_tracking_error_max_rad: 0.05,
             target_tolerance_rad: 0.005,
             target_dwell_ticks: 5,
+            // Mock stubs don't model velocity-loop dynamics; a huge
+            // threshold disables the gate and preserves legacy
+            // position-only dwell behavior these tests were written
+            // against.
+            target_dwell_max_vel_rad_s: f32::INFINITY,
             homer_timeout_ms: 5_000,
             max_feedback_age_ms: 100,
             commission_readback_tolerance_rad: 1e-3,
@@ -187,6 +192,11 @@ pub fn make_state_commission_can_path_fails() -> (SharedState, tempfile::TempDir
             boot_tracking_error_max_rad: 0.05,
             target_tolerance_rad: 0.005,
             target_dwell_ticks: 5,
+            // Mock stubs don't model velocity-loop dynamics; a huge
+            // threshold disables the gate and preserves legacy
+            // position-only dwell behavior these tests were written
+            // against.
+            target_dwell_max_vel_rad_s: f32::INFINITY,
             homer_timeout_ms: 5_000,
             max_feedback_age_ms: 100,
             commission_readback_tolerance_rad: 1e-3,

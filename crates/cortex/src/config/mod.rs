@@ -24,7 +24,7 @@ pub use safety::SafetyConfig;
 #[cfg(test)]
 pub(crate) use safety::{
     default_hold_kd_nm_s_per_rad, default_hold_kp_nm_per_rad, default_step_size_rad,
-    default_target_dwell_ticks, default_target_tolerance_rad,
+    default_target_dwell_max_vel_rad_s, default_target_dwell_ticks, default_target_tolerance_rad,
 };
 pub use telemetry::TelemetryConfig;
 pub use webtransport::WebTransportConfig;

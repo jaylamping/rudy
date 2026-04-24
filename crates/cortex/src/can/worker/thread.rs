@@ -528,6 +528,28 @@ fn handle_cmd(
             // loop on encoder + the standing kp/kd values, so there is **no**
             // streamed velocity setpoint and (unlike PP / RUN_MODE=1) no
             // continuous current draw or audible servo whine while held.
+            //
+            // The stop -> write RUN_MODE -> enable sequence is **mandatory**
+            // per the RS03 manual (Ch.2 item 2 and §4.3 operation-mode
+            // transition): RUN_MODE can only be rewritten from the disabled
+            // state, so we cannot skip `cmd_stop` or reorder these calls to
+            // shrink the coast window. During this ~20-50 ms stretch the
+            // drive is unpowered — if the motor still has residual velocity
+            // when the sequence begins it coasts uncontrolled and static
+            // friction then holds it wherever it lands, producing the
+            // 0.8-1.2 deg run-to-run auto-home offset that the 2026-04
+            // investigation traced through to this handoff.
+            //
+            // The fix has to live upstream in the homer's dwell predicate:
+            // the homer now refuses to exit until `|mech_vel_rad_s|` is
+            // below `SafetyConfig::target_dwell_max_vel_rad_s` (see
+            // `home_ramp.rs` and `home_ramp_dwell_tests`). That turns the
+            // unavoidable disabled window here into a non-event because
+            // residual velocity at entry is already gated to near zero.
+            // Do not try to "fix" this by collapsing the sequence — the
+            // frames will be NACKed and the motor will end up either
+            // wedged in RUN_MODE=2 with a zero velocity command (no
+            // holding torque) or refusing to accept the next MIT frame.
             let result: io::Result<()> = {
                 let guard = bus.lock().expect("bus mutex poisoned");
                 (|| {

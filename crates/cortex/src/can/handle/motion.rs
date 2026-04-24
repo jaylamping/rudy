@@ -362,6 +362,8 @@ mod tests {
                 boot_tracking_error_max_rad: 0.2,
                 target_tolerance_rad: 0.005,
                 target_dwell_ticks: 5,
+                // Not under test here; disable the velocity gate.
+                target_dwell_max_vel_rad_s: f32::INFINITY,
                 homer_timeout_ms: 30_000,
                 max_feedback_age_ms: 250,
                 commission_readback_tolerance_rad: 1e-3,

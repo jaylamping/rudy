@@ -70,6 +70,9 @@ fn state_with_band(min: f32, max: f32) -> (crate::state::SharedState, tempfile::
             boot_tracking_error_max_rad: 0.05,
             target_tolerance_rad: 0.005,
             target_dwell_ticks: 5,
+            // Stub tests don't model velocity-loop dynamics; disable the
+            // gate so existing position-only dwell assertions still hold.
+            target_dwell_max_vel_rad_s: f32::INFINITY,
             homer_timeout_ms: 5_000,
             max_feedback_age_ms: 100,
             commission_readback_tolerance_rad: 1e-3,
@@ -175,6 +178,9 @@ fn path_check_no_band_returns_nolimit() {
             boot_tracking_error_max_rad: 0.05,
             target_tolerance_rad: 0.005,
             target_dwell_ticks: 5,
+            // Stub tests don't model velocity-loop dynamics; disable the
+            // gate so existing position-only dwell assertions still hold.
+            target_dwell_max_vel_rad_s: f32::INFINITY,
             homer_timeout_ms: 5_000,
             max_feedback_age_ms: 100,
             commission_readback_tolerance_rad: 1e-3,

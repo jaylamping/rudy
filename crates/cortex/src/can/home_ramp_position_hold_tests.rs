@@ -80,6 +80,10 @@ fn fixture_state() -> (
             boot_tracking_error_max_rad: 0.05,
             target_tolerance_rad: tol,
             target_dwell_ticks: 1,
+            // Not exercising the velocity gate; keep it disabled so the
+            // hold-verification paths these tests pin continue to trigger
+            // on position-only dwell.
+            target_dwell_max_vel_rad_s: f32::INFINITY,
             homer_timeout_ms: 5_000,
             max_feedback_age_ms: 100,
             commission_readback_tolerance_rad: 1e-3,

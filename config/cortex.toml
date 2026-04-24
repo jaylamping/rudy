@@ -107,6 +107,35 @@ target_tolerance_rad = 0.010
 # Default 5 (~50 ms at `tick_interval_ms=10`). See `SafetyConfig::target_dwell_ticks`.
 target_dwell_ticks = 5
 
+# Maximum |mechVel| (rad/s) a fresh tick can report and still count toward
+# `target_dwell_ticks`. Default 0.05 rad/s (~2.9 deg/s).
+#
+# The homer declaring position-in-tolerance alone is not sufficient: if the
+# motor is still decelerating through the deadband at nominal homing speed
+# when the 5th fresh tick lands, the handoff to the MIT spring-damper hold
+# (which briefly disables the drive during the stop -> RUN_MODE=0 -> enable
+# mode switch -- the RS03 manual requires stopping before a mode switch,
+# see RS03 user manual v260112 chapter 2 item 2 and section 4.3 mode
+# sequences) integrates the residual velocity into an uncontrolled coast
+# of 0.5-1.5 deg past target. Stiction in the drivetrain then holds the
+# motor wherever it coasted to, producing a run-to-run parked offset
+# *outside* the position deadband even though the homer reported success
+# in-band.
+#
+# Gating dwell on BOTH position-in-tolerance AND velocity-near-zero forces
+# the homer to wait until the firmware velocity loop has actually braked
+# the motor to rest (the in-tolerance branch in `home_ramp` already
+# commands vel=0) before declaring success, so the handoff starts from
+# physical rest and the disabled-window coast collapses to < 2 mrad.
+#
+# Floor of 0.05 rad/s accommodates the firmware's `spd_filt_gain` (0.1,
+# ~100 ms low-pass time constant) so a physically-stopped motor still
+# reports a small filtered velocity for a tick or two. Tightening risks
+# timing out on a motor that has physically come to rest but whose
+# filtered readback is still settling. To restore the legacy
+# position-only dwell gate, set to a very large value (e.g. 1e6).
+target_dwell_max_vel_rad_s = 0.05
+
 # Post-home **MIT** spring-damper hold (operation mode, run_mode = 0). After a
 # successful home-ramp the worker writes a single MIT control frame with
 # vel = 0, torque_ff = 0, and these standing kp/kd values; the firmware then
