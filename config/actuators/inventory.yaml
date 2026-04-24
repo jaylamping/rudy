@@ -14,6 +14,19 @@ devices:
   commissioned_zero_offset: null
   active_report_persisted: false
   predefined_home_rad: null
+  # Override the global post-home MIT spring-damper gains for this
+  # joint specifically. `shoulder_actuator_a` carries the full arm
+  # payload through gravity at most homed poses, and the global
+  # default kp=120 / kd=1.7 was empirically just enough to pass
+  # `hold_verification` -- which leaves no margin once we add a tool.
+  # kp=250 gives ~17.5 Nm of restoring torque at the verify limit
+  # (well clear of static gravity load + ~5x safety margin against
+  # transient disturbance); kd=2.5 keeps the damping ratio in the
+  # same neighborhood as the global pair (sqrt(250/120) ~= 1.44, so
+  # 1.7 * 1.44 ~= 2.45). Bench data lives in the home-ramp logs from
+  # 2026-04-23.
+  hold_kp_nm_per_rad: 250.0
+  hold_kd_nm_s_per_rad: 2.5
   limb: null
   joint_kind: null
   notes_yaml: |

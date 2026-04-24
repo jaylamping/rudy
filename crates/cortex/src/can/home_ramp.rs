@@ -283,10 +283,26 @@ async fn finish_home_success(
     target_rad: f32,
     cfg: &SafetyConfig,
     last_measured: f32,
+    effective_tolerance_rad: f32,
 ) -> Result<(), (String, f32)> {
     let target_p = PrincipalAngle::from_wrapped_rad(target_rad);
-    let kp = cfg.hold_kp_nm_per_rad;
-    let kd = cfg.hold_kd_nm_s_per_rad;
+    // Per-actuator overrides for MIT spring-damper hold gains. When the
+    // operator has bench data showing a joint needs more (or less)
+    // stiffness/damping than the global default — heavily-loaded joints
+    // like shoulder_pitch with arm payload typically need 200-300 vs the
+    // global 120 — `inventory.yaml` carries `hold_kp_nm_per_rad` /
+    // `hold_kd_nm_s_per_rad` per actuator. `None` (the default for
+    // every freshly-onboarded motor) inherits from `cfg.safety.*`.
+    let kp = motor
+        .common
+        .hold_kp_nm_per_rad
+        .filter(|v| v.is_finite() && *v > 0.0)
+        .unwrap_or(cfg.hold_kp_nm_per_rad);
+    let kd = motor
+        .common
+        .hold_kd_nm_s_per_rad
+        .filter(|v| v.is_finite() && *v >= 0.0)
+        .unwrap_or(cfg.hold_kd_nm_s_per_rad);
     if let Some(core) = state.real_can.clone() {
         let motor_owned = motor.clone();
         let t = target_p;
@@ -352,7 +368,17 @@ async fn finish_home_success(
         return Err(("hold_verification_stale_telemetry".into(), mech_pos));
     }
     let err = shortest_signed_delta(mech_pos, target_p.raw()).abs();
-    let limit = cfg.target_tolerance_rad * 2.0;
+    // Verification limit must be at least as wide as the homer's own
+    // success window. Pre-fix this used `cfg.target_tolerance_rad * 2`
+    // (= 0.020 rad at the default), which was tighter than the
+    // operator-speed-scaled `effective_tolerance_rad` (e.g. 0.030 rad
+    // at the 1.2 rad/s shoulder_pitch override) — so a home that
+    // legitimately parked inside the homer's deadband would
+    // instantly fail verification with err > limit even before any
+    // gravity droop. Anchoring the verify gate to `2 ×
+    // effective_tolerance_rad` keeps the gate strictly looser than
+    // the homer's own success criterion at every speed.
+    let limit = effective_tolerance_rad * 2.0;
     if err >= limit {
         warn!(
             role = %role,
@@ -1007,8 +1033,16 @@ pub async fn run_with_overrides(
     // Success: profile-position hold + verification. Failure/timeout: stop + clear enabled.
     match &outcome {
         Ok((final_pos, _ticks_done)) => {
-            if let Err(e) =
-                finish_home_success(&state, &motor, &role, target_rad, &cfg, *final_pos).await
+            if let Err(e) = finish_home_success(
+                &state,
+                &motor,
+                &role,
+                target_rad,
+                &cfg,
+                *final_pos,
+                effective_tolerance_rad,
+            )
+            .await
             {
                 outcome = Err(e);
             }

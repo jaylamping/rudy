@@ -96,6 +96,8 @@ fn actuator_common_roundtrip_preserves_active_report_persisted_flag() {
         active_report_persisted: true,
         predefined_home_rad: None,
         homing_speed_rad_s: None,
+        hold_kp_nm_per_rad: None,
+        hold_kd_nm_s_per_rad: None,
         limb: None,
         joint_kind: None,
         notes_yaml: None,

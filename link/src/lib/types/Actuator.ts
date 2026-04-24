@@ -13,6 +13,28 @@ export type Actuator = { family: ActuatorFamily, role: string, can_bus: string, 
  */
 homing_speed_rad_s: number | null, 
 /**
+ * Per-actuator override for the post-home MIT spring-damper hold
+ * stiffness (Nm/rad). `None` falls back to
+ * [`crate::config::SafetyConfig::hold_kp_nm_per_rad`].
+ *
+ * Heavily-loaded joints (shoulder_pitch with arm payload,
+ * elbow_pitch at full extension) need stiffer springs than
+ * lightly-loaded wrist joints to keep gravity droop inside
+ * `hold_verification`'s 2× effective_tolerance window during the
+ * 500 ms post-MIT settle. Per-joint override here lets each joint
+ * run at the kp it actually needs without forcing every motor to
+ * the worst-case global default.
+ */
+hold_kp_nm_per_rad: number | null, 
+/**
+ * Per-actuator override for the post-home MIT damping
+ * (Nm·s/rad). `None` falls back to
+ * [`crate::config::SafetyConfig::hold_kd_nm_s_per_rad`]. Scale
+ * with `sqrt(kp_ratio)` to preserve the spring-damper damping
+ * ratio when bumping `hold_kp_nm_per_rad`.
+ */
+hold_kd_nm_s_per_rad: number | null, 
+/**
  * Polarity of this motor's mechanical encoder relative to the
  * firmware velocity command sign — i.e., does commanding a
  * positive `vel_rad_s` make `mech_pos_rad` increase (+1) or

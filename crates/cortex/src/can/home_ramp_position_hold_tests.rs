@@ -131,7 +131,7 @@ async fn hold_verification_passes_when_mech_pos_inside_2x_tolerance() {
     let now = Utc::now().timestamp_millis();
     seed_latest(&state, &role, target + 1.5 * tol, now);
 
-    let r = finish_home_success(&state, &motor, &role, target, &safety, 0.0).await;
+    let r = finish_home_success(&state, &motor, &role, target, &safety, 0.0, tol).await;
     assert!(r.is_ok(), "expected Ok, got {r:?}");
     assert!(
         state.is_position_hold(&role),
@@ -149,7 +149,7 @@ async fn hold_verification_fails_when_mech_pos_droops_past_2x_tolerance() {
     let now = Utc::now().timestamp_millis();
     seed_latest(&state, &role, droop, now);
 
-    let r = finish_home_success(&state, &motor, &role, target, &safety, 0.0).await;
+    let r = finish_home_success(&state, &motor, &role, target, &safety, 0.0, tol).await;
     assert_eq!(
         r,
         Err(("hold_verification_failed".into(), droop)),
@@ -170,7 +170,16 @@ async fn hold_verification_fails_when_telemetry_stale() {
     let stale_ms = Utc::now().timestamp_millis() - 2_000;
     seed_latest(&state, &role, 0.0, stale_ms);
 
-    let r = finish_home_success(&state, &motor, &role, target, &safety, 0.0).await;
+    let r = finish_home_success(
+        &state,
+        &motor,
+        &role,
+        target,
+        &safety,
+        0.0,
+        safety.target_tolerance_rad,
+    )
+    .await;
     match r {
         Err((reason, pos)) => {
             assert_eq!(reason, "hold_verification_stale_telemetry");
@@ -189,7 +198,16 @@ async fn hold_verification_fails_when_telemetry_missing() {
     *state.latest.write().expect("latest poisoned") = BTreeMap::new();
 
     let last = 0.05_f32;
-    let r = finish_home_success(&state, &motor, &role, target, &safety, last).await;
+    let r = finish_home_success(
+        &state,
+        &motor,
+        &role,
+        target,
+        &safety,
+        last,
+        safety.target_tolerance_rad,
+    )
+    .await;
     assert_eq!(
         r,
         Err(("hold_verification_stale_telemetry".into(), last)),
@@ -204,18 +222,20 @@ fn mit_hold_defaults_are_conservative_spring() {
     // Spring stiffness must be:
     //   - high enough to resist gravity droop on the loaded shoulder/elbow
     //     joints during the 500 ms post-home verification window
-    //     (empirically kp >= ~30 on shoulder_pitch with arm payload — see
-    //     2026-04-23 bump from 10→40 captured in `default_hold_kp_nm_per_rad`),
+    //     (empirically kp ~= 100-150 on shoulder_pitch with arm payload —
+    //     see the 2026-04-23 bumps 10→40→120 captured in
+    //     `default_hold_kp_nm_per_rad`),
     //   - low enough that an operator can still push the joint by hand
     //     without the firmware fighting back hard enough to feel locked
-    //     (~80-100 Nm/rad starts to feel notchy on the RS03 by hand;
-    //     keep the cap well below that).
+    //     (~250-300 Nm/rad starts to feel notchy on the RS03 by hand;
+    //     keep the global cap well below that — per-joint overrides on
+    //     `ActuatorCommon::hold_kp_nm_per_rad` carry the heavy joints).
     // Damping ratio should track kp via sqrt; if kp moves a lot, kd needs
     // to follow or the spring will ring.
     let kp = crate::config::default_hold_kp_nm_per_rad();
     let kd = crate::config::default_hold_kd_nm_s_per_rad();
     assert!(
-        (10.0..=80.0).contains(&kp),
+        (40.0..=200.0).contains(&kp),
         "kp out of sane range for an RS03 hand-pushable spring: {kp}"
     );
     assert!(

@@ -231,21 +231,17 @@ pub struct SafetyConfig {
     /// there is no audible servo whine and no continuous current draw the
     /// way `run_mode = 1` (PP) would produce.
     ///
-    /// Default **40.0 Nm/rad** — bumped from 10.0 on 2026-04-23 after
-    /// `right_arm.shoulder_pitch` consistently tripped
-    /// `hold_verification_failed` post-home. At kp=10 the restoring
-    /// torque at the verify limit (0.02 rad) was only 0.2 Nm, well
-    /// below shoulder_pitch's static gravity load with arm payload
-    /// attached; the joint sagged ~2° during the 500 ms verification
-    /// window and the orchestrator (correctly) refused to call the
-    /// home good. At kp=40 the same 0.02 rad excursion produces
-    /// 0.8 Nm of restoring torque — enough to fight gravity on every
-    /// arm joint we've benched while still soft enough to push by
-    /// hand. Per-joint overrides will live on the inventory
-    /// `Actuator` once we have bench data showing a joint where 40
-    /// is wrong (likely lighter wrist joints, where 10 may turn out
-    /// to be plenty); until then this global applies to every held
-    /// motor.
+    /// Default **120.0 Nm/rad** — bumped from 40.0 on 2026-04-23 (second
+    /// pass) after `right_arm.shoulder_pitch` continued to trip
+    /// `hold_verification_failed` post-home: at kp=40 the joint drooped
+    /// ~70 mrad (4°) during the 500 ms verification window with the
+    /// arm payload attached, well outside the 2× effective_tolerance
+    /// limit. At kp=120 the same 70 mrad excursion produces 8.4 Nm of
+    /// restoring torque — empirically enough to hold shoulder_pitch
+    /// against gravity on benched poses without a per-joint override.
+    /// Per-joint overrides on `ActuatorCommon::hold_kp_nm_per_rad`
+    /// stack on top of this for the worst-loaded joints
+    /// (shoulder_pitch at full extension typically wants 200-300).
     #[serde(default = "default_hold_kp_nm_per_rad")]
     pub hold_kp_nm_per_rad: f32,
 
@@ -253,13 +249,15 @@ pub struct SafetyConfig {
     /// Pairs with [`hold_kp_nm_per_rad`]; together they form a virtual
     /// spring-damper around the held angle.
     ///
-    /// Default **1.0 Nm·s/rad** — bumped from 0.5 on 2026-04-23 in
-    /// tandem with the kp 10→40 bump. Rule of thumb is to scale kd
-    /// with `sqrt(kp_ratio)` to preserve the damping ratio of the
-    /// virtual spring-damper; here `sqrt(4) = 2` so 0.5→1.0. Without
-    /// this paired bump the stiffer kp=40 spring would ring on
-    /// release. Per-joint overrides land alongside
-    /// `hold_kp_nm_per_rad` once benched.
+    /// Default **1.7 Nm·s/rad** — bumped from 1.0 on 2026-04-23 (second
+    /// pass) in tandem with the kp 40→120 bump. Rule of thumb is to
+    /// scale kd with `sqrt(kp_ratio)` to preserve the damping ratio
+    /// of the virtual spring-damper; here `sqrt(3) ≈ 1.73` so
+    /// 1.0 → ~1.7. Without this paired bump the stiffer kp=120 spring
+    /// would ring on release. Per-joint overrides on
+    /// `ActuatorCommon::hold_kd_nm_s_per_rad` should follow the same
+    /// `sqrt(kp_ratio)` rule when an override `hold_kp_nm_per_rad` is
+    /// set on the same actuator.
     #[serde(default = "default_hold_kd_nm_s_per_rad")]
     pub hold_kd_nm_s_per_rad: f32,
 }
@@ -342,9 +340,9 @@ pub(crate) fn default_max_feedback_age_ms() -> u64 {
 }
 
 pub(crate) fn default_hold_kp_nm_per_rad() -> f32 {
-    40.0
+    120.0
 }
 
 pub(crate) fn default_hold_kd_nm_s_per_rad() -> f32 {
-    1.0
+    1.7
 }
