@@ -1,0 +1,19 @@
+name: Prune old releases
+on:
+  schedule:
+    - cron: '0 6 * * 0'  # Sunday 06:00 UTC
+  workflow_dispatch:
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: dev-drprasad/delete-older-releases@v0.3.4
+        with:
+          keep_latest: 20
+          delete_tags: true
+          delete_tag_pattern: '^pi-'  # only touch Pi build tags
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
