@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { RefreshCw, RotateCcw, ShieldCheck, SlidersHorizontal } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { queryKeys, settingsQueryOptions } from "@/api";
 import { api, ApiError } from "@/lib/api";
 import type { SettingEntry } from "@/lib/types/SettingEntry";
@@ -186,18 +186,20 @@ function SettingsPage() {
 
 function EntryRow({ entry: e }: { entry: SettingEntry }) {
   const qc = useQueryClient();
-  const [draft, setDraft] = useState<string | null>(null);
-  const valStr = useMemo(
-    () => (draft !== null ? draft : valueForEdit(e)),
-    [draft, e],
-  );
+  const [draft, setDraft] = useState(() => valueForEdit(e));
+
+  useEffect(() => {
+    setDraft(valueForEdit(e));
+  }, [e]);
 
   const put = useMutation({
     mutationFn: async () => {
-      const v = parseValue(e, valStr);
+      const v = parseValue(e, draft);
       return api.settings.put(e.key, { value: v });
     },
-    onSuccess: () => void qc.invalidateQueries({ queryKey: queryKeys.settings.all() }),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: queryKeys.settings.all() });
+    },
   });
 
   if (!e.editable) {
@@ -238,7 +240,7 @@ function EntryRow({ entry: e }: { entry: SettingEntry }) {
         </div>
       </td>
       <td className="p-2">
-        <Editor entry={e} value={valStr} onChange={setDraft} />
+        <Editor entry={e} value={draft} onChange={setDraft} />
       </td>
       <td className="p-2">
         <code className="break-all text-xs text-muted-foreground">
@@ -256,6 +258,11 @@ function EntryRow({ entry: e }: { entry: SettingEntry }) {
         >
           Save
         </Button>
+        {put.isError ? (
+          <div className="pt-1 text-[11px] text-destructive">
+            {apiErrorMessage(put.error)}
+          </div>
+        ) : null}
         <div className="pt-1">
           <ResetRowToSeed entry={e} />
         </div>
@@ -291,6 +298,20 @@ function parseValue(e: SettingEntry, s: string): unknown {
   return JSON.parse(s) as unknown;
 }
 
+function apiErrorMessage(error: unknown): string {
+  if (error instanceof ApiError) {
+    const detail =
+      error.body &&
+      typeof error.body === "object" &&
+      "detail" in error.body &&
+      typeof error.body.detail === "string"
+        ? error.body.detail
+        : null;
+    return detail ? `${error.message}: ${detail}` : error.message;
+  }
+  return error instanceof Error ? error.message : "Save failed";
+}
+
 function Editor({
   entry: e,
   value,
@@ -298,10 +319,10 @@ function Editor({
 }: {
   entry: SettingEntry;
   value: string;
-  onChange: (s: string | null) => void;
+  onChange: (s: string) => void;
 }) {
   if (e.value_kind === "bool") {
-    const on = value === "true" || e.effective === true;
+    const on = value === "true";
     return (
       <div className="flex items-center gap-2">
         <Switch
