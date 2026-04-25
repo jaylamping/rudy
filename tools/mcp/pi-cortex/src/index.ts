@@ -5,6 +5,7 @@ import { z } from "zod";
 import { cortexBaseUrl, dryRun, sshTarget } from "./config.js";
 import {
   scriptAuditTail,
+  scriptCanCountersDelta,
   scriptCanBounce,
   scriptCanStatus,
   scriptCortexForceUpdate,
@@ -13,6 +14,11 @@ import {
   scriptCortexStatus,
   scriptCortexUpdateLogs,
   scriptInventorySnapshot,
+  scriptMotionStatus,
+  scriptMotorParams,
+  scriptMotorSnapshot,
+  scriptRecentFaults,
+  scriptRuntimeDbSnapshot,
   scriptRuntimeSnapshot,
   scriptSettingsSnapshot,
 } from "./pi-actions.js";
@@ -87,6 +93,14 @@ const restartSchema = z.object({
 const inventorySchema = z.object({
   include_cortex_toml: z.boolean().optional(),
   max_bytes: z.number().int().min(1024).max(500_000).optional(),
+});
+
+const roleSchema = z.object({
+  role: z.string().min(1).max(128).regex(/^[A-Za-z0-9_.:-]+$/),
+});
+
+const canDeltaSchema = z.object({
+  sample_seconds: z.number().int().min(1).max(30).optional(),
 });
 
 export async function main(): Promise<void> {
@@ -181,6 +195,21 @@ export async function main(): Promise<void> {
   );
 
   server.registerTool(
+    "can_counters_delta",
+    {
+      title: "CAN counters delta",
+      description:
+        "SSH: sample SocketCAN counters, wait N seconds, sample again. Read-only bus diagnostics.",
+      inputSchema: canDeltaSchema,
+    },
+    async (args: z.infer<typeof canDeltaSchema>) => {
+      const seconds = args.sample_seconds ?? 5;
+      const { text, isError } = await runPiScript(scriptCanCountersDelta(seconds), (seconds + 20) * 1000);
+      return textResult(text, isError);
+    },
+  );
+
+  server.registerTool(
     "can_bounce",
     {
       title: "Bounce CAN (runbook)",
@@ -193,6 +222,21 @@ export async function main(): Promise<void> {
       const waitMs = healthWaitMs(args.health_wait_ms);
       const sec = healthMaxWaitSec(waitMs);
       const { text, isError } = await runPiScript(scriptCanBounce(base, sec), waitMs + 60_000);
+      return textResult(text, isError);
+    },
+  );
+
+  server.registerTool(
+    "recent_faults",
+    {
+      title: "Recent motion/fault events",
+      description:
+        "SSH: filtered audit tail + cortex journal for motor faults, warnings, tracking, stale telemetry, timeouts.",
+      inputSchema: linesSchema,
+    },
+    async (args: z.infer<typeof linesSchema>) => {
+      const n = logLines(args.lines);
+      const { text, isError } = await runPiScript(scriptRecentFaults(n), 60_000);
       return textResult(text, isError);
     },
   );
@@ -244,6 +288,46 @@ export async function main(): Promise<void> {
   );
 
   server.registerTool(
+    "motor_snapshot",
+    {
+      title: "Motor runtime snapshot",
+      description:
+        "SSH: GET live cortex APIs for one motor: summary, feedback, motion, params. No seed files.",
+      inputSchema: roleSchema,
+    },
+    async (args: z.infer<typeof roleSchema>) => {
+      const { text, isError } = await runPiScript(scriptMotorSnapshot(base, args.role), 90_000);
+      return textResult(text, isError);
+    },
+  );
+
+  server.registerTool(
+    "motion_status",
+    {
+      title: "Motor motion status",
+      description: "SSH: GET /api/motors/:role/motion for one motor. Read-only.",
+      inputSchema: roleSchema,
+    },
+    async (args: z.infer<typeof roleSchema>) => {
+      const { text, isError } = await runPiScript(scriptMotionStatus(base, args.role), 45_000);
+      return textResult(text, isError);
+    },
+  );
+
+  server.registerTool(
+    "motor_params",
+    {
+      title: "Motor params",
+      description: "SSH: GET /api/motors/:role/params for one motor. Read-only.",
+      inputSchema: roleSchema,
+    },
+    async (args: z.infer<typeof roleSchema>) => {
+      const { text, isError } = await runPiScript(scriptMotorParams(base, args.role), 60_000);
+      return textResult(text, isError);
+    },
+  );
+
+  server.registerTool(
     "settings_snapshot",
     {
       title: "Runtime settings",
@@ -253,6 +337,20 @@ export async function main(): Promise<void> {
     },
     async () => {
       const { text, isError } = await runPiScript(scriptSettingsSnapshot(base), 90_000);
+      return textResult(text, isError);
+    },
+  );
+
+  server.registerTool(
+    "runtime_db_snapshot",
+    {
+      title: "Runtime DB snapshot",
+      description:
+        "Read-only runtime settings snapshot. Prefer /api/settings; if API is down, tries known SQLite runtime DB paths.",
+      inputSchema: z.object({}),
+    },
+    async () => {
+      const { text, isError } = await runPiScript(scriptRuntimeDbSnapshot(base), 90_000);
       return textResult(text, isError);
     },
   );
