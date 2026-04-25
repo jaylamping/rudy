@@ -41,6 +41,10 @@ After editing MCP config, refresh MCP in Cursor.
 | `cortex_restart` | `systemctl restart cortex` + health wait |
 | `cortex_force_update` | `systemctl start cortex-update` + logs |
 | `can_status` | `robot-can` + `ip` CAN details |
+| `can_logs` | `robot-can` journal plus kernel CAN/SPI/MCP251x messages |
+| `can_dump` | Bounded `candump -L` capture on `can0`/`can1`, optional `grep -E` filter |
+| `can_sniff_cortex_restart` | Start bounded `candump`, restart `cortex`, return frames + journal tail |
+| `can_send` | Send one validated `cansend` frame for explicit diagnostics |
 | `can_bounce` | Runbook: stop cortex → restart `robot-can` → start cortex + health wait |
 | `audit_tail` | `tail` `/var/lib/rudy/audit.jsonl` |
 | `inventory_snapshot` | `head` live inventory YAML; optional `cortex.toml` |

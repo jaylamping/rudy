@@ -64,6 +64,16 @@ ip -details -statistics link show can1 || true
 `;
 }
 
+export function scriptCanLogs(lines: number): string {
+  return `set -euo pipefail
+echo "=== robot-can journal ==="
+journalctl -u robot-can -n ${lines} --no-pager || true
+echo
+echo "=== kernel CAN/SPI/MCP251x journal ==="
+journalctl -k -n ${lines} --no-pager | grep -Ei 'can0|can1|mcp251|spi|bus-off|error-passive|error-warning|can state|can:' || true
+`;
+}
+
 export function scriptCanCountersDelta(sampleSeconds: number): string {
   return `set -euo pipefail
 sample() {
@@ -78,6 +88,65 @@ sample() {
 sample before
 sleep ${sampleSeconds}
 sample after
+`;
+}
+
+export function scriptCanDump(iface: string, seconds: number, filter?: string): string {
+  const grepFilter = filter
+    ? ` | grep -E --line-buffered ${shQuote(filter)}`
+    : "";
+  return `set -euo pipefail
+if ! command -v candump >/dev/null 2>&1; then
+  echo "candump missing; install can-utils on Pi"
+  exit 1
+fi
+echo "=== candump ${iface} (${seconds}s) ==="
+timeout ${seconds}s candump -L ${shQuote(iface)}${grepFilter} || rc=$?
+rc=\${rc:-0}
+if [[ "$rc" == "124" ]]; then
+  exit 0
+fi
+exit "$rc"
+`;
+}
+
+export function scriptCanSniffCortexRestart(iface: string, seconds: number, filter?: string): string {
+  const grepFilter = filter
+    ? ` | grep -E --line-buffered ${shQuote(filter)}`
+    : "";
+  return `set -euo pipefail
+if ! command -v candump >/dev/null 2>&1; then
+  echo "candump missing; install can-utils on Pi"
+  exit 1
+fi
+tmp=$(mktemp)
+trap 'rm -f "$tmp"' EXIT
+echo "=== restart cortex while sniffing ${iface} (${seconds}s) ==="
+(timeout ${seconds}s candump -L ${shQuote(iface)}${grepFilter} > "$tmp") &
+sniffer=$!
+sleep 0.25
+sudo systemctl restart cortex.service
+wait "$sniffer" || rc=$?
+rc=\${rc:-0}
+cat "$tmp"
+echo
+echo "=== cortex journal tail ==="
+journalctl -u cortex -n 80 --no-pager || true
+if [[ "$rc" == "124" ]]; then
+  exit 0
+fi
+exit "$rc"
+`;
+}
+
+export function scriptCanSend(iface: string, frame: string): string {
+  return `set -euo pipefail
+if ! command -v cansend >/dev/null 2>&1; then
+  echo "cansend missing; install can-utils on Pi"
+  exit 1
+fi
+echo "=== cansend ${iface} ${frame} ==="
+cansend ${shQuote(iface)} ${shQuote(frame)}
 `;
 }
 

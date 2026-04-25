@@ -5,8 +5,12 @@ import { z } from "zod";
 import { cortexBaseUrl, dryRun, sshTarget } from "./config.js";
 import {
   scriptAuditTail,
+  scriptCanDump,
   scriptCanCountersDelta,
   scriptCanBounce,
+  scriptCanLogs,
+  scriptCanSend,
+  scriptCanSniffCortexRestart,
   scriptCanStatus,
   scriptCortexForceUpdate,
   scriptCortexLogs,
@@ -101,6 +105,19 @@ const roleSchema = z.object({
 
 const canDeltaSchema = z.object({
   sample_seconds: z.number().int().min(1).max(30).optional(),
+});
+
+const canIfaceSchema = z.enum(["can0", "can1"]);
+
+const canDumpSchema = z.object({
+  iface: canIfaceSchema.optional(),
+  seconds: z.number().int().min(1).max(30).optional(),
+  filter: z.string().min(1).max(256).optional(),
+});
+
+const canSendSchema = z.object({
+  iface: canIfaceSchema.optional(),
+  frame: z.string().regex(/^[0-9A-Fa-f]{3,8}#[0-9A-Fa-f]{0,16}$/),
 });
 
 export async function main(): Promise<void> {
@@ -205,6 +222,73 @@ export async function main(): Promise<void> {
     async (args: z.infer<typeof canDeltaSchema>) => {
       const seconds = args.sample_seconds ?? 5;
       const { text, isError } = await runPiScript(scriptCanCountersDelta(seconds), (seconds + 20) * 1000);
+      return textResult(text, isError);
+    },
+  );
+
+  server.registerTool(
+    "can_logs",
+    {
+      title: "CAN system logs",
+      description:
+        "SSH: robot-can journal plus kernel CAN/SPI/MCP251x-related messages.",
+      inputSchema: linesSchema,
+    },
+    async (args: z.infer<typeof linesSchema>) => {
+      const n = logLines(args.lines);
+      const { text, isError } = await runPiScript(scriptCanLogs(n), 60_000);
+      return textResult(text, isError);
+    },
+  );
+
+  server.registerTool(
+    "can_dump",
+    {
+      title: "CAN frame capture",
+      description:
+        "SSH: bounded candump -L capture on can0/can1, optional grep -E filter. Read-only raw bus diagnostics.",
+      inputSchema: canDumpSchema,
+    },
+    async (args: z.infer<typeof canDumpSchema>) => {
+      const seconds = args.seconds ?? 5;
+      const iface = args.iface ?? "can1";
+      const { text, isError } = await runPiScript(scriptCanDump(iface, seconds, args.filter), (seconds + 10) * 1000);
+      return textResult(text, isError);
+    },
+  );
+
+  server.registerTool(
+    "can_sniff_cortex_restart",
+    {
+      title: "Sniff CAN during cortex restart",
+      description:
+        "SSH: start bounded candump, restart cortex, return captured frames plus cortex journal tail.",
+      inputSchema: canDumpSchema,
+      annotations: { readOnlyHint: false, destructiveHint: true },
+    },
+    async (args: z.infer<typeof canDumpSchema>) => {
+      const seconds = args.seconds ?? 10;
+      const iface = args.iface ?? "can1";
+      const { text, isError } = await runPiScript(
+        scriptCanSniffCortexRestart(iface, seconds, args.filter),
+        (seconds + 40) * 1000,
+      );
+      return textResult(text, isError);
+    },
+  );
+
+  server.registerTool(
+    "can_send",
+    {
+      title: "Send one CAN frame",
+      description:
+        "SSH: cansend one validated extended/classic SocketCAN frame on can0/can1. Use only for explicit diagnostics.",
+      inputSchema: canSendSchema,
+      annotations: { readOnlyHint: false, destructiveHint: true },
+    },
+    async (args: z.infer<typeof canSendSchema>) => {
+      const iface = args.iface ?? "can1";
+      const { text, isError } = await runPiScript(scriptCanSend(iface, args.frame), 30_000);
       return textResult(text, isError);
     },
   );
