@@ -225,13 +225,13 @@ jobs:
           PI_USER: ${{ vars.PI_SSH_USER || 'jaylamping' }}
         run: |
           set -euo pipefail
-          # Tailscale SSH handles auth via tailnet identity (tag:ci → user@pi).
+          # Tailscale SSH handles auth via tailnet identity (tag:ci -> user@pi).
           # No SSH key material lives in GitHub. StrictHostKeyChecking is off
           # because the host key is bound to the tailnet node identity, which
           # is already authenticated by Tailscale.
-          tailscale ssh \
+          ssh \
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=/dev/null \
             "${PI_USER}@${PI_HOST}" \
-            -- sudo systemctl start cortex-update.service
+            sudo systemctl start cortex-update.service
           echo "kicked cortex-update on ${PI_HOST}"

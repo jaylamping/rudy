@@ -15,7 +15,7 @@ git push to main
     publishes a GitHub Release with a tarball + latest.json manifest
     ↓
     ├─ (push path) notify-pi job joins tailnet as tag:ci, runs
-    │      `tailscale ssh rudy-pi -- sudo systemctl start cortex-update`
+    │      `ssh jaylamping@rudy-pi sudo systemctl start cortex-update`
     │      → Pi pulls + applies the release within seconds of the build.
     │
     └─ (poll fallback) cortex-update.timer fires every 60s anyway,
