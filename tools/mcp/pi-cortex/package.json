@@ -1,0 +1,25 @@
+{
+  "name": "@rudy/pi-cortex-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MCP server: curated SSH ops for Rudy Pi (cortex systemd, logs, settings)",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "test": "npx tsx src/ssh.test.ts && npx tsx src/validation.test.ts"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.8.0"
+  }
+}
