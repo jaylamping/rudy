@@ -334,6 +334,33 @@ impl PreflightChecks<'_> {
             None => return Err(PreflightFailure::NoTelemetry),
         };
 
+        if self.state.real_can.is_some() {
+            let last_type2 = self
+                .state
+                .last_type2_at
+                .read()
+                .expect("last_type2_at poisoned")
+                .get(self.role)
+                .copied();
+            match last_type2 {
+                Some(t) if now_ms.saturating_sub(t) <= max_age_ms => {}
+                Some(t) => {
+                    return Err(PreflightFailure::StaleTelemetry {
+                        age_ms: now_ms.saturating_sub(feedback.t_ms),
+                        max_age_ms,
+                        last_type2_age_ms: Some(now_ms.saturating_sub(t)),
+                    });
+                }
+                None => {
+                    return Err(PreflightFailure::StaleTelemetry {
+                        age_ms: now_ms.saturating_sub(feedback.t_ms),
+                        max_age_ms,
+                        last_type2_age_ms: None,
+                    });
+                }
+            }
+        }
+
         if has_fatal_fault_or_warning(
             feedback.fault_sta,
             feedback.warn_sta,
