@@ -3,8 +3,8 @@
 //! `stop` are no-op `Ok`). Builds only on non-Linux CI hosts to match
 //! the sibling stub's `#[cfg]` gate.
 //!
-//! These tests stress the *control-flow* of the loop — gates, debounce
-//! counters, success tolerance — by wedging or scripting
+//! These tests stress the *control-flow* of the loop — gates, counters,
+//! success tolerance — by wedging or scripting
 //! `state.latest[role].mech_pos_rad` from a side task. The CAN bus is
 //! never touched, so any test that depends on the firmware actually
 //! responding to the velocity command (e.g. proving `lag_scale` brakes
@@ -301,26 +301,14 @@ async fn stuck_motor_aborts_after_debounced_tracking_error() {
 }
 
 #[tokio::test]
-async fn sustained_out_of_band_aborts_with_path_violation_after_debounce() {
-    // Pin both halves of the band-violation hardening:
-    //
-    //   1. The debounce gate doesn't fire on a single tick of OOB
-    //      telemetry (the motor "just barely" past the edge after a
-    //      single overshoot — exactly the failure mode that
-    //      shoulder_pitch's auto-home tripped).
-    //   2. Sustained OOB still aborts with `path_violation`, not
-    //      `tracking_error` or `timeout`. The whole point of the
-    //      debounce is to give the *reactive* velocity flip a few
-    //      ticks to recover; a motor that genuinely refuses to come
-    //      back into band must still surface as `path_violation` so
-    //      the operator-recovery flow runs the right script.
-    //
+async fn out_of_band_aborts_with_path_violation_immediately() {
+    // Travel limits are hard safety boundaries. First fresh OOB
+    // telemetry must surface as `path_violation`, not `tracking_error`
+    // or `timeout`, so the operator-recovery flow runs the right script.
     // We wedge `mech_pos_rad` at -1.1 (band is [-1.0, +1.0], from the
     // fixture YAML), which is a sustained OOB position. The homer is
-    // asked to drive to 0.0; the home-ramp's velocity cap pulls vel
-    // toward zero (because `dist_to_edge = 0` at this measured
-    // position), the band-debounce counter increments every fresh
-    // tick, and after three consecutive fresh ticks the abort fires.
+    // asked to drive to 0.0; the home-ramp aborts before issuing another
+    // velocity setpoint after observing the fresh band violation.
     let (state, motor) = state_with_real_can_stub();
     let role = motor.common.role.clone();
     {
@@ -550,7 +538,7 @@ async fn motor_landing_in_tolerance_breaks_immediately_no_bounce() {
 }
 
 #[tokio::test]
-async fn stale_telemetry_hold_then_fresh_run_completes() {
+async fn stale_telemetry_aborts_before_motion() {
     let (state, motor) = state_with_real_can_stub();
     let role = motor.common.role.clone();
     let stale_ms = chrono::Utc::now().timestamp_millis() - 60_000;
@@ -572,29 +560,12 @@ async fn stale_telemetry_hold_then_fresh_run_completes() {
             },
         );
     }
-    let state2 = state.clone();
-    let role2 = role.clone();
-    let updater = tokio::spawn(async move {
-        let mut phase2 = false;
-        let t0 = tokio::time::Instant::now();
-        loop {
-            tokio::time::sleep(Duration::from_millis(3)).await;
-            if t0.elapsed() > Duration::from_millis(50) {
-                phase2 = true;
-            }
-            let mut w = state2.latest.write().unwrap();
-            let fb = w.get_mut(&role2).unwrap();
-            if phase2 {
-                fb.t_ms = chrono::Utc::now().timestamp_millis();
-                // Cap at the home target so post-home hold verification (500 ms later)
-                // still sees the joint on the commissioned pose, not an overshoot past it.
-                fb.mech_pos_rad = (fb.mech_pos_rad + 0.03).min(0.12);
-            }
-        }
-    });
     let r = run_with_tracking_budget(state.clone(), motor, 0.0, 0.12, 0.05).await;
-    updater.abort();
-    assert!(r.is_ok(), "expected Ok, got {r:?}");
+    let Err((reason, last_pos)) = r else {
+        panic!("expected stale telemetry abort, got {r:?}");
+    };
+    assert_eq!(reason, "stale_telemetry");
+    assert!((last_pos - 0.0).abs() < 1e-5);
 }
 
 #[tokio::test]

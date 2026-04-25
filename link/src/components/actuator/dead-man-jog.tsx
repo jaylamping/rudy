@@ -187,6 +187,7 @@ export function DeadManJog({ motor }: { motor: MotorSummary }) {
               kind: "motion_jog",
               role: motor.role,
               vel_rad_s: velRadS,
+              session_id: null,
             });
           } catch (e) {
             // Stream errored. Stop locally; daemon's TTL or the

@@ -109,17 +109,15 @@ impl MotionRegistry {
         };
         let pf = preflight.run()?;
 
-        // Tear down any prior motion for this role. Best-effort: we
-        // wait for the join to ensure no two controllers race the bus.
+        // Tear down any prior motion for this role and wait for its final
+        // `cmd_stop` before a replacement can stream commands.
         if let Some(prev) = self.take(role) {
             prev.superseded.store(true, Ordering::Release);
             prev.stop.notify_one();
-            // Best-effort join — bound the wait so a wedged controller
-            // can't deadlock the new request. The controller itself
-            // always issues cmd_stop before exiting, so even if we time
-            // out the bus is safe (the new controller will refresh the
-            // velocity setpoint on its first tick anyway).
-            let _ = tokio::time::timeout(std::time::Duration::from_millis(500), prev.join).await;
+            // Safety invariant: never let two controllers stream to the
+            // same actuator. Wait until the previous task has executed its
+            // exit stop before registering the replacement.
+            let _ = prev.join.await;
         }
 
         let run_id = Uuid::new_v4().to_string();
@@ -166,7 +164,7 @@ impl MotionRegistry {
             return false;
         };
         handle.stop.notify_one();
-        let _ = tokio::time::timeout(std::time::Duration::from_millis(500), handle.join).await;
+        let _ = handle.join.await;
         true
     }
 
@@ -207,6 +205,7 @@ impl MotionRegistry {
     /// Snapshot of the active motion for `role`, if any. The returned
     /// intent is a clone of the most recently-applied value.
     pub fn current(&self, role: &str) -> Option<MotionSnapshot> {
+        self.sweep_finished();
         let guard = self.inner.read().expect("motion registry poisoned");
         let h = guard.get(role)?;
         let intent = h.intent_tx.borrow().clone();
@@ -222,6 +221,7 @@ impl MotionRegistry {
     /// Snapshot of every active motion. Used by the WT bidi router to
     /// replay state into a fresh client.
     pub fn snapshot_all(&self) -> Vec<MotionSnapshot> {
+        self.sweep_finished();
         let guard = self.inner.read().expect("motion registry poisoned");
         guard
             .values()
@@ -236,6 +236,13 @@ impl MotionRegistry {
                 }
             })
             .collect()
+    }
+
+    fn sweep_finished(&self) {
+        self.inner
+            .write()
+            .expect("motion registry poisoned")
+            .retain(|_, h| !h.join.is_finished());
     }
 
     /// Pull a handle out of the map and return it for cleanup. Used

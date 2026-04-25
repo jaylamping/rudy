@@ -353,11 +353,15 @@ fn handle_cmd(
             role: _,
             reply,
         } => {
-            let result: io::Result<()> = {
-                let guard = bus.lock().expect("bus mutex poisoned");
-                (|| {
-                    let dev = Rs03::new(host_id, motor_id);
+            let result: io::Result<()> = (|| {
+                let dev = Rs03::new(host_id, motor_id);
+                {
+                    let guard = bus.lock().expect("bus mutex poisoned");
                     session::cmd_stop(&guard, host_id, motor_id, false)?;
+                }
+                thread::sleep(Duration::from_millis(30));
+                {
+                    let guard = bus.lock().expect("bus mutex poisoned");
                     session::write_param_u8(
                         &guard,
                         dev.host_id(),
@@ -365,6 +369,11 @@ fn handle_cmd(
                         dev.param_index_run_mode(),
                         RUN_MODE_PP,
                     )?;
+                    session::cmd_stop(&guard, dev.host_id(), dev.motor_id(), false)?;
+                }
+                thread::sleep(Duration::from_millis(30));
+                {
+                    let guard = bus.lock().expect("bus mutex poisoned");
                     session::write_param_f32(
                         &guard,
                         dev.host_id(),
@@ -373,9 +382,9 @@ fn handle_cmd(
                         target_principal_rad,
                     )?;
                     session::cmd_enable(&guard, dev.host_id(), dev.motor_id())?;
-                    Ok(())
-                })()
-            };
+                }
+                Ok(())
+            })();
             log_send_result(iface, "set_position_hold", motor_id, &result);
             if result.is_ok() {
                 if let Some(st) = state.upgrade() {
@@ -395,8 +404,8 @@ fn handle_cmd(
             role: _,
             reply,
         } => {
-            // MIT spring-damper hold: cmd_stop -> RUN_MODE=0 (operation/MIT) ->
-            // cmd_enable -> a single OperationCtrl frame carrying
+            // MIT spring-damper hold: cmd_stop -> settle -> RUN_MODE=0
+            // (operation/MIT) -> cmd_stop -> settle -> cmd_enable -> a single OperationCtrl frame carrying
             // (target, vel=0, torque_ff=0, kp, kd). The firmware then closes the
             // loop on encoder + the standing kp/kd values, so there is **no**
             // streamed velocity setpoint and (unlike PP / RUN_MODE=1) no
@@ -423,11 +432,15 @@ fn handle_cmd(
             // frames will be NACKed and the motor will end up either
             // wedged in RUN_MODE=2 with a zero velocity command (no
             // holding torque) or refusing to accept the next MIT frame.
-            let result: io::Result<()> = {
-                let guard = bus.lock().expect("bus mutex poisoned");
-                (|| {
-                    let dev = Rs03::new(host_id, motor_id);
+            let result: io::Result<()> = (|| {
+                let dev = Rs03::new(host_id, motor_id);
+                {
+                    let guard = bus.lock().expect("bus mutex poisoned");
                     session::cmd_stop(&guard, host_id, motor_id, false)?;
+                }
+                thread::sleep(Duration::from_millis(30));
+                {
+                    let guard = bus.lock().expect("bus mutex poisoned");
                     session::write_param_u8(
                         &guard,
                         dev.host_id(),
@@ -435,6 +448,11 @@ fn handle_cmd(
                         dev.param_index_run_mode(),
                         RUN_MODE_OP,
                     )?;
+                    session::cmd_stop(&guard, dev.host_id(), dev.motor_id(), false)?;
+                }
+                thread::sleep(Duration::from_millis(30));
+                {
+                    let guard = bus.lock().expect("bus mutex poisoned");
                     session::cmd_enable(&guard, dev.host_id(), dev.motor_id())?;
                     let codec = RobstrideCodec;
                     let cmd = MitCommand {
@@ -451,9 +469,9 @@ fn handle_cmd(
                         )
                     })?;
                     guard.send_ext(id, &data)?;
-                    Ok(())
-                })()
-            };
+                }
+                Ok(())
+            })();
             log_send_result(iface, "set_mit_hold", motor_id, &result);
             if result.is_ok() {
                 if let Some(st) = state.upgrade() {
@@ -488,19 +506,30 @@ fn handle_cmd(
                 None => true,
             };
             let result: io::Result<()> = {
-                let guard = bus.lock().expect("bus mutex poisoned");
                 (|| {
                     let dev = Rs03::new(host_id, motor_id);
                     if need_entry {
-                        session::cmd_stop(&guard, dev.host_id(), dev.motor_id(), false)?;
-                        session::write_param_u8(
-                            &guard,
-                            dev.host_id(),
-                            dev.motor_id(),
-                            dev.param_index_run_mode(),
-                            RUN_MODE_OP,
-                        )?;
-                        session::cmd_enable(&guard, dev.host_id(), dev.motor_id())?;
+                        {
+                            let guard = bus.lock().expect("bus mutex poisoned");
+                            session::cmd_stop(&guard, dev.host_id(), dev.motor_id(), false)?;
+                        }
+                        thread::sleep(Duration::from_millis(30));
+                        {
+                            let guard = bus.lock().expect("bus mutex poisoned");
+                            session::write_param_u8(
+                                &guard,
+                                dev.host_id(),
+                                dev.motor_id(),
+                                dev.param_index_run_mode(),
+                                RUN_MODE_OP,
+                            )?;
+                            session::cmd_stop(&guard, dev.host_id(), dev.motor_id(), false)?;
+                        }
+                        thread::sleep(Duration::from_millis(30));
+                        {
+                            let guard = bus.lock().expect("bus mutex poisoned");
+                            session::cmd_enable(&guard, dev.host_id(), dev.motor_id())?;
+                        }
                     }
                     let codec = RobstrideCodec;
                     let cmd = MitCommand {
@@ -516,6 +545,7 @@ fn handle_cmd(
                             format!("encode MIT command frame: {e:?}"),
                         )
                     })?;
+                    let guard = bus.lock().expect("bus mutex poisoned");
                     guard.send_ext(id, &data)?;
                     Ok(())
                 })()

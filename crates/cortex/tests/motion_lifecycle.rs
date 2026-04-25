@@ -18,6 +18,7 @@
 
 use std::time::Duration;
 
+use cortex::config::MotionBackend;
 use cortex::inventory::TravelLimits;
 use cortex::motion::{MotionIntent, MotionState};
 use cortex::state::SharedState;
@@ -37,6 +38,27 @@ fn set_travel_limits(state: &SharedState, role: &str, min_rad: f32, max_rad: f32
         max_rad,
         updated_at: None,
     });
+}
+
+async fn wait_for_state(
+    rx: &mut tokio::sync::broadcast::Receiver<cortex::motion::MotionStatus>,
+    run_id: &str,
+    state: MotionState,
+    timeout: Duration,
+) -> cortex::motion::MotionStatus {
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        if remaining.is_zero() {
+            panic!("timed out waiting for {state:?} frame for run {run_id}");
+        }
+        match tokio::time::timeout(remaining, rx.recv()).await {
+            Ok(Ok(frame)) if frame.run_id == run_id && frame.state == state => return frame,
+            Ok(Ok(_)) => continue,
+            Ok(Err(e)) => panic!("motion_status_tx closed unexpectedly: {e}"),
+            Err(_) => panic!("timed out waiting for {state:?} frame for run {run_id}"),
+        }
+    }
 }
 
 #[tokio::test]
@@ -230,4 +252,133 @@ async fn second_start_supersedes_the_first() {
 
     // Stop the survivor cleanly so the test doesn't leak the controller.
     state.motion.stop(role).await;
+}
+
+#[tokio::test]
+async fn running_sweep_stops_on_stale_telemetry() {
+    let (state, _dir) = common::make_state();
+    common::force_homed(&state);
+    common::seed_feedback(&state);
+
+    let role = "shoulder_actuator_a";
+    set_travel_limits(&state, role, -0.5, 0.5);
+    let mut status_rx = state.motion_status_tx.subscribe();
+
+    let run_id = state
+        .motion
+        .start(
+            &state,
+            role,
+            MotionIntent::Sweep {
+                speed_rad_s: 0.1,
+                turnaround_rad: 0.05,
+            },
+        )
+        .await
+        .expect("start");
+
+    let _ = wait_for_state(
+        &mut status_rx,
+        &run_id,
+        MotionState::Running,
+        Duration::from_secs(1),
+    )
+    .await;
+    {
+        let mut latest = state.latest.write().expect("latest poisoned");
+        let fb = latest.get_mut(role).expect("seeded feedback");
+        fb.t_ms = chrono::Utc::now().timestamp_millis() - 10_000;
+    }
+
+    let stopped = wait_for_state(
+        &mut status_rx,
+        &run_id,
+        MotionState::Stopped,
+        Duration::from_secs(2),
+    )
+    .await;
+    assert_eq!(stopped.reason.as_deref(), Some("stale_telemetry"));
+    assert!(state.motion.current(role).is_none());
+}
+
+#[tokio::test]
+async fn jog_stops_when_heartbeat_lapses() {
+    let (state, _dir) = common::make_state();
+    common::force_homed(&state);
+    common::seed_feedback(&state);
+
+    let role = "shoulder_actuator_a";
+    set_travel_limits(&state, role, -0.5, 0.5);
+    let clock = common::spawn_latest_timestamp_refresh(state.clone(), role, 0.0);
+    let mut status_rx = state.motion_status_tx.subscribe();
+
+    let run_id = state
+        .motion
+        .start(&state, role, MotionIntent::Jog { vel_rad_s: 0.1 })
+        .await
+        .expect("start");
+
+    let stopped = wait_for_state(
+        &mut status_rx,
+        &run_id,
+        MotionState::Stopped,
+        Duration::from_secs(2),
+    )
+    .await;
+    clock.abort();
+    assert_eq!(stopped.reason.as_deref(), Some("heartbeat_lapsed"));
+    assert!(state.motion.current(role).is_none());
+}
+
+#[tokio::test]
+async fn mit_backend_sweep_lifecycle_runs_and_stops() {
+    let (state, _dir) = common::make_state();
+    {
+        let mut effective = state.effective.write().expect("effective poisoned");
+        effective.safety.motion_backend = MotionBackend::Mit;
+    }
+    common::force_homed(&state);
+    common::seed_feedback(&state);
+
+    let role = "shoulder_actuator_a";
+    set_travel_limits(&state, role, -0.5, 0.5);
+    let mut status_rx = state.motion_status_tx.subscribe();
+
+    let run_id = state
+        .motion
+        .start(
+            &state,
+            role,
+            MotionIntent::Sweep {
+                speed_rad_s: 0.1,
+                turnaround_rad: 0.05,
+            },
+        )
+        .await
+        .expect("start");
+
+    let running = wait_for_state(
+        &mut status_rx,
+        &run_id,
+        MotionState::Running,
+        Duration::from_secs(1),
+    )
+    .await;
+    assert_eq!(running.kind, "sweep");
+    assert!(
+        running.vel_rad_s.abs()
+            <= state.read_effective().safety.mit_max_angle_step_rad
+                / (state.read_effective().safety.tick_interval_ms as f32 / 1000.0)
+                + 1e-5
+    );
+
+    assert!(state.motion.stop(role).await);
+    let stopped = wait_for_state(
+        &mut status_rx,
+        &run_id,
+        MotionState::Stopped,
+        Duration::from_secs(2),
+    )
+    .await;
+    assert_eq!(stopped.reason.as_deref(), Some("operator"));
 }

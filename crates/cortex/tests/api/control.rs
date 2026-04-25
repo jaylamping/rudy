@@ -26,6 +26,7 @@ async fn control_endpoints_return_ok_envelope_for_verified_motor() {
     // Pre-date the boot-time gate: this test only cares about the envelope
     // shape, not the gate. Force every motor to Homed so enable doesn't
     // trip the new ritual checks.
+    common::seed_feedback(&state);
     common::force_homed(&state);
     let app = cortex::build_app(state);
 
@@ -168,7 +169,7 @@ async fn enable_out_of_band_is_forbidden() {
     assert_eq!(err.error, "out_of_band");
 }
 
-/// Belt-and-suspenders: even if state is forced to Homed, a stale-cached
+/// Belt-and-suspenders: even if state is forced to Homed, a fresh cached
 /// position outside the configured band still blocks enable via Check A.
 #[tokio::test]
 async fn enable_homed_but_drifted_outside_band_is_forbidden() {
@@ -191,7 +192,7 @@ async fn enable_homed_but_drifted_outside_band_is_forbidden() {
         latest.insert(
             "shoulder_actuator_a".into(),
             MotorFeedback {
-                t_ms: 1_700_000_000_000,
+                t_ms: chrono::Utc::now().timestamp_millis(),
                 role: "shoulder_actuator_a".into(),
                 can_id: 0x08,
                 mech_pos_rad: 1.5,
@@ -220,6 +221,59 @@ async fn enable_homed_but_drifted_outside_band_is_forbidden() {
     assert_eq!(resp.status(), StatusCode::CONFLICT);
     let err: ApiError = body_json(resp).await;
     assert_eq!(err.error, "out_of_band");
+}
+
+#[tokio::test]
+async fn enable_homed_but_stale_feedback_is_forbidden() {
+    let (state, _dir) = common::make_state();
+    common::seed_feedback(&state);
+    common::set_boot_state(&state, "shoulder_actuator_a", BootState::Homed);
+    {
+        let mut latest = state.latest.write().expect("latest");
+        let fb = latest.get_mut("shoulder_actuator_a").expect("seeded");
+        fb.t_ms = chrono::Utc::now().timestamp_millis() - 10_000;
+    }
+    let app = cortex::build_app(state);
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/motors/shoulder_actuator_a/enable")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CONFLICT);
+    let err: ApiError = body_json(resp).await;
+    assert_eq!(err.error, "stale_telemetry");
+}
+
+#[tokio::test]
+async fn enable_homed_but_missing_feedback_is_forbidden() {
+    let (state, _dir) = common::make_state();
+    common::set_boot_state(&state, "shoulder_actuator_a", BootState::Homed);
+    state
+        .latest
+        .write()
+        .expect("latest")
+        .remove("shoulder_actuator_a");
+    let app = cortex::build_app(state);
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/motors/shoulder_actuator_a/enable")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CONFLICT);
+    let err: ApiError = body_json(resp).await;
+    assert_eq!(err.error, "stale_telemetry");
 }
 
 /// `set_zero` resets BootState to Unknown so the operator must re-home

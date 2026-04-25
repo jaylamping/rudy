@@ -25,6 +25,7 @@
 import { encode as cborEncode } from "cbor-x/encode";
 import type { ClientFrame } from "@/lib/types/ClientFrame";
 import { prefixWithLength } from "@/lib/hooks/useWebTransport";
+import { sessionId } from "@/lib/session";
 
 /** Live handle to one open bidi stream. */
 export interface ClientStreamHandle {
@@ -54,12 +55,24 @@ export async function openClientStream(
   let closed = false;
   let chain: Promise<unknown> = Promise.resolve();
 
+  const attachSession = (frame: ClientFrame): ClientFrame => {
+    switch (frame.kind) {
+      case "motion_jog":
+      case "motion_heartbeat":
+      case "motion_stop":
+        return { ...frame, session_id: frame.session_id ?? sessionId() };
+      default:
+        return frame;
+    }
+  };
+
   const send = async (frame: ClientFrame): Promise<void> => {
     if (closed) return;
+    const framed = attachSession(frame);
     // Serialize writes through a chained promise so a fast caller can't
     // interleave two `write()` calls on the same writer (which would be
     // a runtime error).
-    chain = chain.then(() => writer.write(prefixWithLength(cborEncode(frame))));
+    chain = chain.then(() => writer.write(prefixWithLength(cborEncode(framed))));
     await chain;
   };
 
@@ -72,7 +85,11 @@ export async function openClientStream(
           await chain.then(() =>
             writer.write(
               prefixWithLength(
-                cborEncode({ kind: "motion_stop", role: stopRole }),
+                cborEncode({
+                  kind: "motion_stop",
+                  role: stopRole,
+                  session_id: sessionId(),
+                }),
               ),
             ),
           );

@@ -198,40 +198,11 @@ commission_readback_tolerance_rad = 1e-3
 # No commissioning state on disk is touched.
 auto_home_on_boot = true
 
-# Number of consecutive fresh telemetry ticks (after
-# `tracking_error_grace_ticks`) with the home-ramp homer's per-tick
-# `enforce_position_with_path` returning a band violation that must
-# elapse before the homer aborts with `path_violation`.
-#
-# The home-ramp is a velocity-feedforward controller, not a position
-# controller. On a gravity-loaded joint (shoulder_pitch, elbow_pitch)
-# whose `predefined_home_rad` sits within ~step_size_rad of a band
-# edge, the firmware velocity loop's deceleration carries the physical
-# position past the edge by ≪ step_size_rad before the home-ramp's
-# *reactive* `governing` flip — observed on the next telemetry tick —
-# can reverse the velocity command. With this debounce at 1 (the
-# legacy single-sample abort) that physically inevitable single-tick
-# excursion landed `right_arm.shoulder_pitch` (and friends) in
-# `BootState::HomeFailed { reason: "path_violation" }` even though the
-# motor was already on its way back into band.
-#
-# At the default of 15 (~150 ms with the default tick_interval_ms) the
-# homer absorbs the one-or-two tick excursion the velocity loop's
-# reaction takes to undo, while still aborting promptly on a motor
-# that genuinely keeps drifting outside the band. Combined with the
-# predictive band-edge velocity taper inside `home_ramp` (which
-# pre-decelerates as `last_measured` approaches the band edge,
-# regardless of where the home target sits in the band), single-tick
-# overshoots now happen at ≪ step_size_rad and the debounce only
-# bites on actual sustained excursions.
-#
-# Set to 1 to restore the legacy single-sample abort (e.g. for a
-# bench-test investigation that wants to prove an overshoot exists).
-# `homer_timeout_ms` and the unconditional motor-stop on every exit
-# path still backstop a motor that genuinely refuses to come back into
-# band — debounce only delays the reason flip, it does not let a
-# runaway joint travel any further than the tracking-error gate would.
-band_violation_debounce_ticks = 15
+# Deprecated compatibility knob. Home-ramp travel-band violations now
+# abort on the first fresh `OutOfBand` / `PathViolation` sample before
+# another velocity frame is sent. Values above 1 may still exist in an
+# old runtime DB, but the current homer intentionally ignores them.
+band_violation_debounce_ticks = 1
 
 # After SocketCAN workers start, run one active discovery scan (type-17
 # probes across 0x01..0x7F on each configured bus). Disable to trim boot

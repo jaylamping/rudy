@@ -84,40 +84,15 @@ pub struct SafetyConfig {
     #[serde(default = "default_tracking_error_debounce_ticks")]
     pub tracking_error_debounce_ticks: u32,
 
-    /// Number of **consecutive** fresh ticks (after `tracking_error_grace_ticks`)
-    /// with the home-ramp's per-tick `enforce_position_with_path` returning
-    /// `OutOfBand`/`PathViolation` required to abort with `path_violation`.
-    /// A single transient overshoot of the band edge — observed once on the
-    /// freshest telemetry tick and reversed by the next velocity command —
-    /// no longer kills the whole home.
+    /// Deprecated compatibility knob for old runtime settings snapshots.
     ///
-    /// The home-ramp is a velocity-feedforward controller, not a position
-    /// controller. It commands a tapered velocity setpoint each tick toward
-    /// the home target, but the firmware's velocity loop on a gravity-loaded
-    /// joint (e.g. shoulder_pitch homing into a low-stop) can carry the
-    /// physical position past the target by a degree or two before the
-    /// `governing = max(|target-setpoint|, |target-measured|)` reactive
-    /// reversal observed on the *next* telemetry tick swings velocity back
-    /// the other way. With this debounce at the legacy value of `1`, that
-    /// physically inevitable single-tick overshoot tripped
-    /// `BootState::HomeFailed { reason: "path_violation" }` and the operator
-    /// had to re-home manually — even though the motor was already
-    /// returning to band on its own.
-    ///
-    /// At the default of `15` (~150 ms with the default `tick_interval_ms`)
-    /// the homer absorbs the one-or-two tick excursion that the velocity
-    /// loop's reaction takes to undo, while still aborting promptly on a
-    /// genuinely runaway motor. Combined with the band-edge velocity taper
-    /// in `home_ramp` (which pre-decelerates as `last_measured` approaches
-    /// `min_rad`/`max_rad`, irrespective of where the home target sits in
-    /// the band), single-tick overshoots now happen at ≪ `step_size_rad` and
-    /// the debounce only bites on actual sustained excursions.
-    ///
-    /// Set to `1` to restore the legacy single-sample abort.
-    /// `homer_timeout_ms` and the unconditional motor-stop on every exit
-    /// path still backstop a motor that genuinely keeps drifting outside
-    /// the band — debounce only delays the reason flip, it does not let a
-    /// runaway joint travel any further than the tracking-error gate would.
+    /// Home-ramp travel-band violations now abort on the first **fresh**
+    /// `OutOfBand`/`PathViolation` result, before another velocity frame is
+    /// sent. Unlike tracking error, a travel-limit crossing is not debounced:
+    /// the physical joint has already crossed the configured safety envelope,
+    /// so the only safe response is an immediate stop. The field remains in
+    /// the wire/settings schema so older SQLite rows and TOML files still
+    /// deserialize, but `home_ramp` does not honor values greater than one.
     #[serde(default = "default_band_violation_debounce_ticks")]
     pub band_violation_debounce_ticks: u32,
 
@@ -388,7 +363,7 @@ pub(crate) fn default_tracking_error_debounce_ticks() -> u32 {
 }
 
 pub(crate) fn default_band_violation_debounce_ticks() -> u32 {
-    15
+    1
 }
 
 pub(crate) fn default_boot_tracking_error_max_rad() -> f32 {

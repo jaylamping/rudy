@@ -54,7 +54,7 @@ fn measured_already_past_edge_clamps_to_zero() {
     // direction of motion (the band check will abort separately), the
     // cap returns 0 so the velocity command goes to zero on this tick
     // — we never want the homer pushing further into the overshoot
-    // while the band-debounce is making up its mind.
+    // before the immediate band abort stops the loop.
     let l = limits(-1.0, 1.0);
     let d = band_edge_distance(Some(&l), 1.1, 1.0);
     assert_eq!(d, 0.0);

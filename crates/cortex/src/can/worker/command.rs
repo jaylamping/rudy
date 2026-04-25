@@ -18,11 +18,11 @@ pub(crate) const RECV_POLL_TIMEOUT: Duration = Duration::from_millis(5);
 
 /// Default round-trip timeout for worker commands that expect a reply
 /// on the per-bus `mpsc` channel (`BusHandle::enable`, `set_velocity`,
-/// etc.). Must exceed the worst-case handler duration: `Cmd::SetVelocity`
-/// re-arm deliberately sleeps ~60 ms (two 30 ms firmware settle windows)
-/// plus several CAN round-trips before `reply.send`, so 50 ms was too
-/// tight and surfaced as `can_command_failed: timed out waiting on
-/// channel` with `ticks=1` / `total_can_sends=0` in `home_ramp`.
+/// etc.). Must exceed the worst-case handler duration: motion-mode entry
+/// deliberately sleeps ~60 ms (two 30 ms firmware settle windows) plus
+/// several CAN round-trips before `reply.send`, so 50 ms was too tight
+/// and surfaced as `can_command_failed: timed out waiting on channel`
+/// with `ticks=1` / `total_can_sends=0` in `home_ramp`.
 pub const REPLY_TIMEOUT: Duration = Duration::from_millis(200);
 
 /// Type-17 reply value bytes (little-endian). `None` means the motor
@@ -110,8 +110,9 @@ pub enum Cmd {
     },
     /// Streaming MIT `OperationCtrl` at control rate. First frame after
     /// velocity / PP / disabled / static MIT hold runs the same stop →
-    /// `RUN_MODE=0` → enable → MIT sequence as [`SetMitHold`]; subsequent
-    /// frames send only `encode_mit` while [`AppState::is_mit_streaming`].
+    /// settle → `RUN_MODE=0` → stop → settle → enable → MIT sequence as
+    /// [`SetMitHold`]; subsequent frames send only `encode_mit` while
+    /// [`AppState::is_mit_streaming`].
     SetMitCommand {
         motor_id: u8,
         host_id: u8,

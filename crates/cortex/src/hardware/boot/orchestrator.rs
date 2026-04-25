@@ -55,22 +55,12 @@
 //! band check on every tick, tracking-error abort, `homer_timeout_ms`
 //! ceiling). It is a thin orchestrator above existing primitives.
 //!
-//! Note on `path_violation` failure mode: the home-ramp is a
-//! velocity-feedforward controller, not a position controller. On a
-//! gravity-loaded joint (shoulder_pitch, elbow_pitch) whose
-//! `predefined_home_rad` sits near a `travel_limits` edge, the
-//! firmware velocity loop's deceleration can carry the physical
-//! position past the edge by ≪ `step_size_rad` for a single tick
-//! before the home-ramp's reactive direction-flip observes the
-//! overshoot and reverses the command. The debounce on
-//! `safety.band_violation_debounce_ticks` (default 3) absorbs that
-//! transient; the predictive band-edge velocity taper in `home_ramp`
-//! (which decelerates as `last_measured` nears whichever boundary —
-//! home target OR band edge — it would hit first) keeps the residual
-//! overshoot small enough that the debounce window is genuinely
-//! sufficient. A motor that genuinely refuses to return to band
-//! still surfaces here as `BootState::HomeFailed { reason:
-//! "path_violation" }` once the debounce trips.
+//! Note on `path_violation` failure mode: travel limits are a hard
+//! safety boundary. The home-ramp still uses predictive band-edge
+//! velocity taper while approaching a limit, but once fresh telemetry
+//! reports `OutOfBand`/`PathViolation`, the loop aborts before another
+//! velocity frame leaves the host and the orchestrator lands in
+//! `BootState::HomeFailed { reason: "path_violation" }`.
 
 use std::time::Duration;
 
@@ -333,18 +323,38 @@ pub async fn maybe_run(state: SharedState, role: String) {
         match tokio::task::spawn_blocking(move || core.stop(&motor_for_stop)).await {
             Ok(Ok(())) => {}
             Ok(Err(e)) => {
+                let reason = format!("pre_home_stop_failed: {e:#}");
+                boot_state::force_set_home_failed(&state, &role, reason.clone(), mech_pos_rad);
+                audit_home_failed(&state, &role, &reason, mech_pos_rad);
+                let _ = state.safety_event_tx.send(SafetyEvent::HomeFailed {
+                    t_ms: Utc::now().timestamp_millis(),
+                    role: role.clone(),
+                    reason: reason.clone(),
+                    last_pos_rad: mech_pos_rad,
+                });
                 warn!(
                     role = %role,
                     error = ?e,
-                    "boot_orchestrator: pre-home cmd_stop failed; proceeding with home_ramp anyway",
+                    "boot_orchestrator: pre-home cmd_stop failed; aborting auto-home",
                 );
+                return;
             }
             Err(e) => {
+                let reason = format!("pre_home_stop_join_failed: {e}");
+                boot_state::force_set_home_failed(&state, &role, reason.clone(), mech_pos_rad);
+                audit_home_failed(&state, &role, &reason, mech_pos_rad);
+                let _ = state.safety_event_tx.send(SafetyEvent::HomeFailed {
+                    t_ms: Utc::now().timestamp_millis(),
+                    role: role.clone(),
+                    reason: reason.clone(),
+                    last_pos_rad: mech_pos_rad,
+                });
                 warn!(
                     role = %role,
                     error = ?e,
-                    "boot_orchestrator: pre-home cmd_stop spawn_blocking failed; proceeding",
+                    "boot_orchestrator: pre-home cmd_stop spawn_blocking failed; aborting auto-home",
                 );
+                return;
             }
         }
         // Clear the runtime hold flag so the worker's `Cmd::SetVelocity`

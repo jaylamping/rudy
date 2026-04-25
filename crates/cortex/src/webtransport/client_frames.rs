@@ -73,21 +73,33 @@ pub enum ClientFrame {
     /// frames update the live velocity setpoint *and* refresh the
     /// dead-man heartbeat.
     ///
-    /// `vel_rad_s` is clamped server-side to `MAX_MOTION_VEL_RAD_S`
-    /// (see [`crate::api::motion`]). The clamp is silent so the SPA
-    /// can ship a slider value as-is without pre-clamping.
-    MotionJog { role: String, vel_rad_s: f32 },
+    /// `vel_rad_s` is clamped server-side to the same ±0.5 rad/s dead-man
+    /// jog cap used by REST `/api/motors/:role/motion/jog`. The clamp is
+    /// silent so the SPA can ship a slider value as-is without pre-clamping.
+    MotionJog {
+        role: String,
+        vel_rad_s: f32,
+        /// Per-tab control-lock session id. Required for motion frames so WT
+        /// cannot bypass the same single-operator gate as REST.
+        session_id: Option<String>,
+    },
 
     /// Refresh the jog dead-man window without changing velocity. The
     /// controller treats this exactly like a re-send of the most recent
     /// [`ClientFrame::MotionJog`] but avoids re-encoding velocity when
     /// the operator's finger isn't moving the slider. Sending one every
     /// 200 ms is plenty for the default 250 ms heartbeat TTL.
-    MotionHeartbeat { role: String },
+    MotionHeartbeat {
+        role: String,
+        session_id: Option<String>,
+    },
 
     /// Stop any active motion for `role`. Idempotent; safe to send from
     /// a stream that didn't start the motion.
-    MotionStop { role: String },
+    MotionStop {
+        role: String,
+        session_id: Option<String>,
+    },
 }
 
 #[cfg(test)]

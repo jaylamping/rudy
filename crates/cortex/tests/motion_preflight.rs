@@ -87,3 +87,38 @@ fn active_fault_blocks_preflight() {
         "{err:?}"
     );
 }
+
+#[test]
+fn boot_failure_states_block_motion_preflight() {
+    let blocked = [
+        BootState::AutoHoming {
+            from_rad: 0.0,
+            target_rad: 0.1,
+            progress_rad: 0.05,
+        },
+        BootState::HomeFailed {
+            reason: "tracking_error".into(),
+            last_pos_rad: 0.1,
+        },
+        BootState::OffsetChanged {
+            stored_rad: 0.0,
+            current_rad: 0.2,
+        },
+    ];
+
+    for bs in blocked {
+        let (state, _dir) = common::make_state();
+        common::seed_feedback(&state);
+        common::set_boot_state(&state, "shoulder_actuator_a", bs);
+
+        let pf = PreflightChecks {
+            state: &state,
+            role: "shoulder_actuator_a",
+            vel_rad_s: 0.0,
+            horizon_ms: 10,
+            target_position_rad: None,
+        };
+        let err = pf.run().expect_err("boot failure state must refuse motion");
+        assert!(matches!(err, PreflightFailure::BootNotReady { .. }));
+    }
+}

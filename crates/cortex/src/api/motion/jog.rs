@@ -110,29 +110,61 @@ pub async fn jog(
     let clamped = body.vel_rad_s.clamp(-MAX_JOG_VEL_RAD_S, MAX_JOG_VEL_RAD_S);
     let ttl_ms = body.ttl_ms.clamp(50, MAX_TTL_MS);
 
-    // Boot-state gate: refuse while Unknown/OutOfBand. InBand is permitted
-    // (operator can jog around for inspection), Homed is permitted.
+    // Boot-state gate: only InBand (inspection) and Homed are permitted.
     let bs = boot_state::current(&state, &role);
-    if matches!(bs, BootState::Unknown) {
-        return Err(err(
-            StatusCode::CONFLICT,
-            "not_ready",
-            Some(format!("no telemetry yet for {role}; cannot jog")),
-        ));
-    }
-    if let BootState::OutOfBand {
-        mech_pos_rad,
-        min_rad,
-        max_rad,
-    } = bs
-    {
-        return Err(err(
-            StatusCode::CONFLICT,
-            "out_of_band",
-            Some(format!(
-                "{role} is at {mech_pos_rad:.3} rad outside [{min_rad:.3}, {max_rad:.3}]; manual recovery required"
-            )),
-        ));
+    match bs {
+        BootState::Unknown => {
+            return Err(err(
+                StatusCode::CONFLICT,
+                "not_ready",
+                Some(format!("no telemetry yet for {role}; cannot jog")),
+            ));
+        }
+        BootState::OutOfBand {
+            mech_pos_rad,
+            min_rad,
+            max_rad,
+        } => {
+            return Err(err(
+                StatusCode::CONFLICT,
+                "out_of_band",
+                Some(format!(
+                    "{role} is at {mech_pos_rad:.3} rad outside [{min_rad:.3}, {max_rad:.3}]; manual recovery required"
+                )),
+            ));
+        }
+        BootState::OffsetChanged {
+            stored_rad,
+            current_rad,
+        } => {
+            return Err(err(
+                StatusCode::CONFLICT,
+                "not_ready",
+                Some(format!(
+                    "{role} commissioned_zero_offset disagrees with firmware (stored={stored_rad:.4}, current={current_rad:.4}); restore or re-commission before jogging"
+                )),
+            ));
+        }
+        BootState::AutoHoming { .. } => {
+            return Err(err(
+                StatusCode::CONFLICT,
+                "not_ready",
+                Some(format!("{role} is auto-homing; wait before jogging")),
+            ));
+        }
+        BootState::HomeFailed {
+            reason,
+            last_pos_rad,
+        } => {
+            return Err(err(
+                StatusCode::CONFLICT,
+                "not_ready",
+                Some(format!(
+                    "{role} home failed ({reason}) at {last_pos_rad:.3} rad; retry /home before jogging"
+                )),
+            ));
+        }
+        BootState::InBand | BootState::Homed => {}
     }
 
     // Fail-closed on stale telemetry. If the per-role feedback row is

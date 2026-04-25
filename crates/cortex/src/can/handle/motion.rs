@@ -122,6 +122,7 @@ impl LinuxCanCore {
         let sign = motor.common.direction_sign_f32();
         let firmware_pos = motor_frame::firmware_scalar_from_logical(position_rad, sign);
         let firmware_vel = motor_frame::firmware_scalar_from_logical(velocity_rad_s, sign);
+        let firmware_torque_ff = motor_frame::firmware_scalar_from_logical(torque_ff_nm, sign);
         handle.set_mit_command(
             self.host_id,
             motor.common.can_id,
@@ -129,7 +130,7 @@ impl LinuxCanCore {
             MitStreamSetpoint {
                 position_rad: firmware_pos,
                 velocity_rad_s: firmware_vel,
-                torque_ff_nm,
+                torque_ff_nm: firmware_torque_ff,
                 kp_nm_per_rad,
                 kd_nm_s_per_rad,
             },

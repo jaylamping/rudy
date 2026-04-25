@@ -116,57 +116,6 @@ pub async fn enable(
 
     crate::limb_health::require_limb_healthy_http(&state, &role)?;
 
-    // Check A (the inviolable physics rule): if travel_limits is set the
-    // motor must currently be inside the band. Fires regardless of
-    // BootState — even if the operator hand-pushed state to Homed, even
-    // if telemetry is stale, if the cached position is outside the band
-    // we refuse. Check B catches the operational discipline gap when
-    // Check A passes.
-    if motor.common.travel_limits.is_some() {
-        let cached = state
-            .latest
-            .read()
-            .expect("latest poisoned")
-            .get(&role)
-            .map(|f| f.mech_pos_rad);
-        if let Some(pos) = cached {
-            let check = enforce_position_with_path(
-                &state,
-                &role,
-                UnwrappedAngle::new(pos),
-                UnwrappedAngle::new(pos),
-            )
-            .map_err(|e| {
-                err(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "internal",
-                    Some(format!("{e:#}")),
-                )
-            })?;
-            if let BandCheck::OutOfBand {
-                min_rad,
-                max_rad,
-                attempted_rad,
-            }
-            | BandCheck::PathViolation {
-                min_rad,
-                max_rad,
-                current_rad: attempted_rad,
-                ..
-            } = check
-            {
-                audit(&state, "enable", &role, AuditResult::Denied);
-                return Err(err(
-                    StatusCode::CONFLICT,
-                    "out_of_band",
-                    Some(format!(
-                        "{role} at {attempted_rad:.3} rad outside [{min_rad:.3}, {max_rad:.3}]"
-                    )),
-                ));
-            }
-        }
-    }
-
     // Check B (operational discipline): operator must have explicitly
     // homed since the last power-cycle.
     let bs = boot_state::current(&state, &role);
@@ -213,6 +162,78 @@ pub async fn enable(
         };
         audit(&state, "enable", &role, AuditResult::Denied);
         return Err(err(StatusCode::CONFLICT, code, Some(detail)));
+    }
+
+    // Check A (the inviolable physics rule): enabling torque requires fresh
+    // telemetry. If travel limits exist, that fresh position must also be
+    // inside the band. `Homed` is sticky across normal classifier updates, so
+    // stale cached position cannot green-light torque.
+    let max_age_ms = state.read_effective().safety.max_feedback_age_ms as i64;
+    let now_ms = Utc::now().timestamp_millis();
+    let fb = match state
+        .latest
+        .read()
+        .expect("latest poisoned")
+        .get(&role)
+        .cloned()
+    {
+        Some(fb) if now_ms.saturating_sub(fb.t_ms) <= max_age_ms => fb,
+        Some(fb) => {
+            let age_ms = now_ms.saturating_sub(fb.t_ms);
+            audit(&state, "enable", &role, AuditResult::Denied);
+            return Err(err(
+                StatusCode::CONFLICT,
+                "stale_telemetry",
+                Some(format!(
+                    "feedback for {role} is {age_ms} ms old (> {max_age_ms} ms); refusing enable"
+                )),
+            ));
+        }
+        None => {
+            audit(&state, "enable", &role, AuditResult::Denied);
+            return Err(err(
+                StatusCode::CONFLICT,
+                "stale_telemetry",
+                Some(format!("no fresh feedback for {role}; refusing enable")),
+            ));
+        }
+    };
+
+    if motor.common.travel_limits.is_some() {
+        let check = enforce_position_with_path(
+            &state,
+            &role,
+            UnwrappedAngle::new(fb.mech_pos_rad),
+            UnwrappedAngle::new(fb.mech_pos_rad),
+        )
+        .map_err(|e| {
+            err(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "internal",
+                Some(format!("{e:#}")),
+            )
+        })?;
+        if let BandCheck::OutOfBand {
+            min_rad,
+            max_rad,
+            attempted_rad,
+        }
+        | BandCheck::PathViolation {
+            min_rad,
+            max_rad,
+            current_rad: attempted_rad,
+            ..
+        } = check
+        {
+            audit(&state, "enable", &role, AuditResult::Denied);
+            return Err(err(
+                StatusCode::CONFLICT,
+                "out_of_band",
+                Some(format!(
+                    "{role} at {attempted_rad:.3} rad outside [{min_rad:.3}, {max_rad:.3}]"
+                )),
+            ));
+        }
     }
 
     if let Some(core) = state.real_can.clone() {

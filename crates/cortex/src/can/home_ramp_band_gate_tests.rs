@@ -1,49 +1,28 @@
-//! Pins the band-violation debounce gate symmetric with the
-//! tracking-error gate. Each test mirrors a tracking-error case so the
-//! two gates stay in sync as we tune defaults.
+//! Pins the band-violation gate. Travel-band violations are fail-closed:
+//! first fresh out-of-band sample aborts before another velocity frame.
 
 use super::band_violation_should_abort;
 
 #[test]
-fn debounce_trips_on_third_consecutive_fresh_violation() {
+fn aborts_on_first_fresh_violation() {
     let mut c = 0;
-    assert!(!band_violation_should_abort(
-        true, true, 4, 3, true, 3, &mut c, "m"
-    ));
+    assert!(band_violation_should_abort(true, true, true, &mut c, "m"));
     assert_eq!(c, 1);
-    assert!(!band_violation_should_abort(
-        true, true, 5, 3, true, 3, &mut c, "m"
-    ));
-    assert_eq!(c, 2);
-    assert!(band_violation_should_abort(
-        true, true, 6, 3, true, 3, &mut c, "m"
-    ));
-    assert_eq!(c, 3);
 }
 
 #[test]
-fn single_in_band_sample_resets_band_debounce() {
+fn single_in_band_sample_resets_band_counter() {
     let mut c = 0;
-    assert!(!band_violation_should_abort(
-        true, true, 4, 3, true, 3, &mut c, "m"
-    ));
+    assert!(band_violation_should_abort(true, true, true, &mut c, "m"));
     assert_eq!(c, 1);
-    assert!(!band_violation_should_abort(
-        true, true, 5, 3, false, 3, &mut c, "m"
-    ));
+    assert!(!band_violation_should_abort(true, true, false, &mut c, "m"));
     assert_eq!(c, 0);
-    assert!(!band_violation_should_abort(
-        true, true, 6, 3, true, 3, &mut c, "m"
-    ));
-    assert_eq!(c, 1);
 }
 
 #[test]
-fn stale_tick_leaves_band_consec_unchanged() {
+fn stale_tick_leaves_band_counter_unchanged() {
     let mut c = 2;
-    assert!(!band_violation_should_abort(
-        true, false, 10, 0, true, 3, &mut c, "m"
-    ));
+    assert!(!band_violation_should_abort(true, false, true, &mut c, "m"));
     assert_eq!(c, 2);
 }
 
@@ -54,17 +33,13 @@ fn mock_mode_skips_band_abort_in_gate() {
     // separately). The gate itself stays inert in mock mode so the
     // call site retains full control of the timing.
     let mut c = 0;
-    assert!(!band_violation_should_abort(
-        false, true, 100, 0, true, 3, &mut c, "m"
-    ));
+    assert!(!band_violation_should_abort(false, true, true, &mut c, "m"));
     assert_eq!(c, 0);
 }
 
 #[test]
-fn grace_suppresses_band_abort() {
+fn no_grace_window_for_fresh_band_violation() {
     let mut c = 0;
-    assert!(!band_violation_should_abort(
-        true, true, 2, 3, true, 1, &mut c, "m"
-    ));
-    assert_eq!(c, 0);
+    assert!(band_violation_should_abort(true, true, true, &mut c, "m"));
+    assert_eq!(c, 1);
 }

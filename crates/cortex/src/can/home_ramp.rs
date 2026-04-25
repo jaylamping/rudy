@@ -15,8 +15,8 @@
 //! Each tick:
 //!   1. Reads the latest type-2 telemetry row from `state.latest` (when
 //!      `real_can` is present) and applies `tracking_freshness_max_age_ms`.
-//!      Stale/missing rows **hold** the ramp setpoint for that tick so the
-//!      setpoint cannot outrun a frozen `mech_pos_rad`.
+//!      Stale/missing rows abort immediately because travel limits cannot
+//!      be enforced without fresh position feedback.
 //!   2. Advances the setpoint by at most `step_size_rad` toward the target
 //!      only when telemetry is fresh (always advances in mock mode).
 //!   3. Re-runs the path-aware band check on the current measured position
@@ -26,11 +26,11 @@
 //!      23 deg/s), in the direction of the remaining signed delta.
 //!   5. Aborts on tracking error after `tracking_error_debounce_ticks`
 //!      consecutive **fresh** over-budget samples (post grace), on
-//!      band/path violation after `band_violation_debounce_ticks`
-//!      consecutive fresh out-of-band samples (post grace) — the
-//!      debounce keeps a single-tick gravity-driven overshoot of a
-//!      home target near the band edge from killing the whole run —
-//!      or on `homer_timeout_ms`.
+//!      the first stale telemetry tick, the first fresh band/path
+//!      violation, or on `homer_timeout_ms`.
+//!      Travel limits are a hard safety boundary: once telemetry shows
+//!      the joint outside the configured band, the homer stops before
+//!      sending another velocity frame.
 //!
 //! Velocity profile: the per-tick velocity command is tapered by the
 //! SMALLER of (a) distance from `last_measured` to the home target,
@@ -128,15 +128,11 @@ fn tracking_error_should_abort(
 
 /// Returns `true` when the homer should abort with `path_violation`.
 ///
-/// Mirrors [`tracking_error_should_abort`] in shape — same flat
-/// argument list, same gate semantics — so the loop body reads as two
-/// parallel one-line decisions rather than two different control
-/// shapes. The "why" is in `safety.band_violation_debounce_ticks`'s
-/// docstring; the short version is that the home-ramp commands
-/// velocity, not position, and a single-tick overshoot of the band
-/// edge under gravity load (shoulder_pitch into a low-stop, etc.) used
-/// to trip an instant abort even though the next velocity command was
-/// already steering the motor back into band.
+/// Unlike tracking error, travel-band violations are fail-closed. A
+/// single fresh out-of-band sample means the motor has already crossed
+/// the configured safety envelope, so the caller must stop before
+/// issuing another velocity frame. Stale telemetry stays inert because
+/// it is not new physical evidence.
 ///
 /// `is_violation` is `true` when this tick's
 /// `enforce_position_with_path` returned `OutOfBand` or
@@ -144,35 +140,24 @@ fn tracking_error_should_abort(
 /// `setpoint_unwrapped` — both feed the same gate because the
 /// caller-visible reason string is the same and the recovery is the
 /// same).
-///
-/// Mock-mode and stale-telemetry semantics match the tracking-error
-/// gate: don't bite in mock mode (those paths are exercised by
-/// hermetic contract tests that pin tick counts), and don't increment
-/// the debounce counter on stale ticks (since `last_measured` is
-/// sticky across stale stretches and the underlying physical evidence
-/// hasn't actually been re-observed).
-#[allow(clippy::too_many_arguments)]
 fn band_violation_should_abort(
     homer_has_real_can: bool,
     is_fresh: bool,
-    ticks: u32,
-    grace_ticks: u32,
     is_violation: bool,
-    debounce_ticks: u32,
     consec_over: &mut u32,
     role: &str,
 ) -> bool {
-    if !homer_has_real_can || !is_fresh || ticks <= grace_ticks {
+    if !homer_has_real_can || !is_fresh {
         return false;
     }
     if is_violation {
         *consec_over = consec_over.saturating_add(1);
-        debug!(
+        warn!(
             role = %role,
             consec_over = *consec_over,
-            "home_ramp: band violation accumulating"
+            "home_ramp: travel-band violation; aborting immediately"
         );
-        *consec_over >= debounce_ticks
+        true
     } else {
         *consec_over = 0;
         false
@@ -542,9 +527,7 @@ pub async fn run_with_overrides(
     let mut last_measured_vel: f32 = 0.0;
     let homer_has_real_can = state.real_can.is_some();
     let debounce_ticks = cfg.tracking_error_debounce_ticks;
-    let band_debounce_ticks = cfg.band_violation_debounce_ticks;
     let freshness_ms = cfg.tracking_freshness_max_age_ms as i64;
-    let mut stale_stretch_logged = false;
     let mut consec_over: u32 = 0;
     let mut consec_band_over: u32 = 0;
     let mut consec_in_tolerance: u32 = 0;
@@ -592,7 +575,7 @@ pub async fn run_with_overrides(
         tracking_error_max_rad,
         tracking_error_grace_ticks = grace_ticks,
         tracking_error_debounce_ticks = debounce_ticks,
-        band_violation_debounce_ticks = band_debounce_ticks,
+        band_violation_abort = "first_fresh_violation",
         step_size_rad,
         tick_interval_ms = cfg.tick_interval_ms,
         homing_speed_source,
@@ -661,49 +644,34 @@ pub async fn run_with_overrides(
                         // success on a racing motor whose velocity
                         // hadn't yet settled in this sample's snapshot).
                         last_measured_vel = fb.mech_vel_rad_s;
-                        if stale_stretch_logged {
-                            // Bookend the "stale telemetry" debug
-                            // line so a post-mortem can measure the
-                            // duration of every stretch from the log
-                            // alone instead of guessing from gaps.
-                            debug!(
-                                role = %role,
-                                tick = ticks,
-                                age_ms,
-                                "home_ramp: telemetry fresh again"
-                            );
-                        }
-                        stale_stretch_logged = false;
                         true
                     } else {
-                        if !stale_stretch_logged {
-                            debug!(
-                                role = %role,
-                                tick = ticks,
-                                age_ms,
-                                max_age_ms = freshness_ms,
-                                "home_ramp: stale telemetry, holding setpoint"
-                            );
-                            stale_stretch_logged = true;
-                        }
+                        warn!(
+                            role = %role,
+                            tick = ticks,
+                            age_ms,
+                            max_age_ms = freshness_ms,
+                            "home_ramp: stale telemetry; aborting"
+                        );
                         false
                     }
                 }
                 None => {
-                    if !stale_stretch_logged {
-                        debug!(
-                            role = %role,
-                            tick = ticks,
-                            "home_ramp: stale telemetry (missing), holding setpoint"
-                        );
-                        stale_stretch_logged = true;
-                    }
+                    warn!(
+                        role = %role,
+                        tick = ticks,
+                        "home_ramp: stale telemetry (missing); aborting"
+                    );
                     false
                 }
             }
         } else {
             true
         };
+
+        if homer_has_real_can && !is_fresh {
+            break Err(("stale_telemetry".into(), last_measured));
+        }
 
         let in_position_tolerance =
             shortest_signed_delta(last_measured, unwrapped_target).abs() < effective_tolerance_rad;
@@ -736,14 +704,9 @@ pub async fn run_with_overrides(
             break Ok((last_measured, ticks));
         }
 
-        // Ramp the setpoint only when telemetry is fresh (real CAN) or in
-        // mock mode, so a stale `mech_pos_rad` cannot accumulate phantom
-        // tracking error against a marching setpoint.
-        if !homer_has_real_can || is_fresh {
-            let remaining = unwrapped_target - setpoint_unwrapped;
-            let step = remaining.signum() * remaining.abs().min(step_size_rad);
-            setpoint_unwrapped += step;
-        }
+        let remaining_before_step = unwrapped_target - setpoint_unwrapped;
+        let step = remaining_before_step.signum() * remaining_before_step.abs().min(step_size_rad);
+        setpoint_unwrapped += step;
 
         let remaining = unwrapped_target - setpoint_unwrapped;
 
@@ -770,10 +733,7 @@ pub async fn run_with_overrides(
         if band_violation_should_abort(
             homer_has_real_can,
             is_fresh,
-            ticks,
-            grace_ticks,
             band_violation,
-            band_debounce_ticks,
             &mut consec_band_over,
             &role,
         ) {
@@ -860,11 +820,10 @@ pub async fn run_with_overrides(
         // target" and "distance to band edge in the direction of
         // motion", commanded velocity now smoothly approaches zero as
         // the motor nears whichever boundary it would hit first. The
-        // band-violation **debounce** above absorbs a residual
-        // sub-step-size overshoot; this cap keeps that overshoot small
-        // enough that the debounce window is genuinely sufficient
-        // rather than a guess. See `band_edge_distance` for the math
-        // and the no-limits short-circuit.
+        // immediate band-violation abort above stops on any observed
+        // overshoot; this cap exists to avoid reaching that boundary in
+        // the first place. See `band_edge_distance` for the math and the
+        // no-limits short-circuit.
         let dist_to_edge = band_edge_distance(limits_snapshot.as_ref(), last_measured, direction);
         let governing_capped = governing.abs().min(dist_to_edge);
         let approach_scale = (governing_capped / brake_distance_rad.max(1e-6)).min(1.0);
@@ -885,15 +844,8 @@ pub async fn run_with_overrides(
         let mut vel = direction * nominal_speed * approach_scale * lag_scale;
 
         // Final-approach deadband: if the motor is already inside the
-        // success tolerance, command zero velocity even if the early
-        // success check above didn't fire (e.g. telemetry was stale on
-        // *this* tick but `last_measured` is sticky from the most
-        // recent fresh sample, which happens to be in-tolerance). This
-        // is the symmetric companion to the early break: where that
-        // exits the loop on fresh in-tolerance telemetry, this clamps
-        // the commanded velocity on stale-but-likely-arrived
-        // telemetry, so neither code path can keep nudging a parked
-        // motor and re-introducing the limit cycle. Uses the same
+        // success tolerance, command zero velocity even if the dwell gate
+        // still needs more fresh low-velocity samples. Uses the same
         // shortest-signed-delta the success check uses so a measured
         // value on the other side of a wrap from `unwrapped_target`
         // still counts as in-tolerance.

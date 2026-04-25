@@ -35,11 +35,17 @@ fn motion_jog_round_trips() {
     let back = roundtrip(ClientFrame::MotionJog {
         role: "shoulder_a".into(),
         vel_rad_s: 0.25,
+        session_id: Some("tab-1".into()),
     });
     match back {
-        ClientFrame::MotionJog { role, vel_rad_s } => {
+        ClientFrame::MotionJog {
+            role,
+            vel_rad_s,
+            session_id,
+        } => {
             assert_eq!(role, "shoulder_a");
             assert!((vel_rad_s - 0.25).abs() < 1e-6);
+            assert_eq!(session_id.as_deref(), Some("tab-1"));
         }
         _ => panic!("variant mismatch"),
     }
@@ -49,16 +55,22 @@ fn motion_jog_round_trips() {
 fn motion_heartbeat_round_trips() {
     let back = roundtrip(ClientFrame::MotionHeartbeat {
         role: "shoulder_a".into(),
+        session_id: Some("tab-1".into()),
     });
-    assert!(matches!(back, ClientFrame::MotionHeartbeat { role } if role == "shoulder_a"));
+    assert!(
+        matches!(back, ClientFrame::MotionHeartbeat { role, session_id } if role == "shoulder_a" && session_id.as_deref() == Some("tab-1"))
+    );
 }
 
 #[test]
 fn motion_stop_round_trips() {
     let back = roundtrip(ClientFrame::MotionStop {
         role: "shoulder_a".into(),
+        session_id: Some("tab-1".into()),
     });
-    assert!(matches!(back, ClientFrame::MotionStop { role } if role == "shoulder_a"));
+    assert!(
+        matches!(back, ClientFrame::MotionStop { role, session_id } if role == "shoulder_a" && session_id.as_deref() == Some("tab-1"))
+    );
 }
 
 /// The SPA emits `{kind: "subscribe", kinds: [...], filters: {...}}`

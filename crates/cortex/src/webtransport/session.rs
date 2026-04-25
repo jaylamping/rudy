@@ -45,6 +45,40 @@ use crate::types::{
     WtPayload, WtSubscribe, WtSubscribeFilters, WtTransport,
 };
 
+/// Match REST `/api/motors/:role/motion/jog`: unbounded jog has no automatic
+/// reversal, so WT client streams must not bypass the same dead-man cap.
+const MAX_WT_JOG_VEL_RAD_S: f32 = 0.5;
+
+fn clamp_wt_jog_velocity(vel_rad_s: f32) -> Option<f32> {
+    vel_rad_s
+        .is_finite()
+        .then(|| vel_rad_s.clamp(-MAX_WT_JOG_VEL_RAD_S, MAX_WT_JOG_VEL_RAD_S))
+}
+
+fn ensure_wt_motion_control(
+    state: &SharedState,
+    role: &str,
+    session_id: Option<&str>,
+    op: &str,
+) -> bool {
+    let Some(session_id) = session_id.filter(|s| !s.is_empty()) else {
+        warn!(role = %role, op, "wt: motion rejected without session_id");
+        return false;
+    };
+    match state.ensure_control(session_id) {
+        Ok(()) => true,
+        Err(holder) => {
+            warn!(
+                role = %role,
+                op,
+                holder = %holder,
+                "wt: motion rejected by control lock"
+            );
+            false
+        }
+    }
+}
+
 /// Per-session router: owns subscriptions, sequence counters, the lazily-
 /// opened reliable stream handle, and a CBOR scratch buffer reused across
 /// frames.
@@ -552,7 +586,18 @@ async fn dispatch_client_frame(
         ClientFrame::Subscribe(sub) => {
             SessionRouter::apply_subscribe(filter, sub);
         }
-        ClientFrame::MotionJog { role, vel_rad_s } => {
+        ClientFrame::MotionJog {
+            role,
+            vel_rad_s,
+            session_id,
+        } => {
+            if !ensure_wt_motion_control(&state, &role, session_id.as_deref(), "motion_jog") {
+                return;
+            }
+            let Some(vel_rad_s) = clamp_wt_jog_velocity(vel_rad_s) else {
+                warn!(role = %role, "wt: motion_jog rejected non-finite velocity");
+                return;
+            };
             let intent = MotionIntent::Jog { vel_rad_s };
             // Hot path: existing jog → just update intent (which also
             // refreshes the heartbeat in the controller).
@@ -575,7 +620,10 @@ async fn dispatch_client_frame(
                 }
             }
         }
-        ClientFrame::MotionHeartbeat { role } => {
+        ClientFrame::MotionHeartbeat { role, session_id } => {
+            if !ensure_wt_motion_control(&state, &role, session_id.as_deref(), "motion_heartbeat") {
+                return;
+            }
             // No-op if the role isn't actively jogging — the controller
             // would have already exited on heartbeat lapse, and we don't
             // want a stale heartbeat to silently re-arm something the
@@ -586,7 +634,10 @@ async fn dispatch_client_frame(
                 *owned_role = Some(role);
             }
         }
-        ClientFrame::MotionStop { role } => {
+        ClientFrame::MotionStop { role, session_id } => {
+            if !ensure_wt_motion_control(&state, &role, session_id.as_deref(), "motion_stop") {
+                return;
+            }
             let stopped = state.motion.stop(&role).await;
             if stopped {
                 debug!(role = %role, "wt: client requested motion stop");
@@ -598,5 +649,23 @@ async fn dispatch_client_frame(
                 *owned_role = None;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wt_jog_velocity_clamps_to_rest_deadman_cap() {
+        assert_eq!(clamp_wt_jog_velocity(2.0), Some(MAX_WT_JOG_VEL_RAD_S));
+        assert_eq!(clamp_wt_jog_velocity(-2.0), Some(-MAX_WT_JOG_VEL_RAD_S));
+        assert_eq!(clamp_wt_jog_velocity(0.25), Some(0.25));
+    }
+
+    #[test]
+    fn wt_jog_velocity_rejects_non_finite() {
+        assert_eq!(clamp_wt_jog_velocity(f32::NAN), None);
+        assert_eq!(clamp_wt_jog_velocity(f32::INFINITY), None);
     }
 }

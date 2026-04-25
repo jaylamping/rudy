@@ -171,6 +171,37 @@ async fn jog_step_too_large_when_not_homed_is_forbidden() {
     assert_eq!(err.error, "step_too_large");
 }
 
+#[tokio::test]
+async fn jog_refuses_home_failed_state() {
+    let (state, _dir) = common::make_state();
+    common::seed_feedback(&state);
+    common::set_boot_state(
+        &state,
+        "shoulder_actuator_a",
+        BootState::HomeFailed {
+            reason: "tracking_error".into(),
+            last_pos_rad: 0.1,
+        },
+    );
+    let app = cortex::build_app(state);
+
+    let body = serde_json::to_vec(&json!({"vel_rad_s": 0.1, "ttl_ms": 200})).unwrap();
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/motors/shoulder_actuator_a/jog")
+                .header("content-type", "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CONFLICT);
+    let err: ApiError = body_json(resp).await;
+    assert_eq!(err.error, "not_ready");
+}
+
 /// Sweep-safe CAN I/O (fail-closed): when `state.latest[role]` is missing
 /// or older than `safety.max_feedback_age_ms`, jog must refuse with
 /// `409 stale_telemetry` rather than silently bypassing the band check.

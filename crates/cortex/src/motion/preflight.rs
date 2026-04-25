@@ -11,8 +11,7 @@
 //! What gets checked, in order (cheap → expensive):
 //!
 //! 1. Inventory presence + `present` / `verified` flags.
-//! 2. Boot-state gate (`Unknown` and `OutOfBand` refuse motion; `InBand` and
-//!    `Homed` are permitted).
+//! 2. Boot-state gate (only `InBand` and `Homed` permit motion).
 //! 3. Stale-telemetry refusal (`safety.max_feedback_age_ms`).
 //! 4. Active motor faults: non-zero `fault_sta` / `warn_sta` on the fresh row.
 //! 5. Path-aware travel-band check on the projected position (velocity
@@ -269,7 +268,34 @@ impl PreflightChecks<'_> {
                     max_rad,
                 });
             }
-            _ => {}
+            BootState::OffsetChanged {
+                stored_rad,
+                current_rad,
+            } => {
+                return Err(PreflightFailure::BootNotReady {
+                    detail: format!(
+                        "{} commissioned_zero_offset disagrees with firmware (stored={stored_rad:.4}, current={current_rad:.4}); restore or re-commission before motion",
+                        self.role
+                    ),
+                });
+            }
+            BootState::AutoHoming { .. } => {
+                return Err(PreflightFailure::BootNotReady {
+                    detail: format!("{} is auto-homing; wait before starting motion", self.role),
+                });
+            }
+            BootState::HomeFailed {
+                reason,
+                last_pos_rad,
+            } => {
+                return Err(PreflightFailure::BootNotReady {
+                    detail: format!(
+                        "{} home failed ({reason}) at {last_pos_rad:.3} rad; retry /home before motion",
+                        self.role
+                    ),
+                });
+            }
+            BootState::InBand | BootState::Homed => {}
         }
 
         let max_age_ms = self.state.read_effective().safety.max_feedback_age_ms as i64;

@@ -66,6 +66,7 @@ describe("openClientStream", () => {
       kind: "motion_jog",
       role: "shoulder_actuator_a",
       vel_rad_s: 0.25,
+      session_id: null,
     });
     await handle.close();
 
@@ -75,6 +76,7 @@ describe("openClientStream", () => {
       kind: "motion_jog",
       role: "shoulder_actuator_a",
       vel_rad_s: 0.25,
+      session_id: expect.any(String),
     });
   });
 
@@ -89,6 +91,7 @@ describe("openClientStream", () => {
     expect(decoded).toMatchObject({
       kind: "motion_stop",
       role: "shoulder_actuator_a",
+      session_id: expect.any(String),
     });
     // Stream is closed end-to-end, mirroring the daemon's
     // ClientGone-on-EOF safety net.
@@ -124,16 +127,19 @@ describe("openClientStream", () => {
       kind: "motion_jog",
       role: "r",
       vel_rad_s: 0.1,
+      session_id: null,
     });
     const p2 = handle.send({
       kind: "motion_jog",
       role: "r",
       vel_rad_s: 0.2,
+      session_id: null,
     });
     const p3 = handle.send({
       kind: "motion_jog",
       role: "r",
       vel_rad_s: 0.3,
+      session_id: null,
     });
     await Promise.all([p1, p2, p3]);
     await handle.close();
