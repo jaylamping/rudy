@@ -8,9 +8,6 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
-use chrono::Utc;
-use driver::rs03::feedback::{decode_motor_feedback, MotorFeedback as DriverFeedback};
-use driver::rs03::frame::{comm_type_from_id, passive_observer_node_id, strip_eff_flag};
 use driver::rs03::params::LOC_REF;
 use driver::rs03::session;
 use driver::rs03::{MitCommand, RobstrideCodec};
@@ -18,15 +15,12 @@ use driver::{CanBus, Rs03, RsActuator};
 use tokio::runtime::Handle;
 use tracing::{debug, info, warn};
 
-use crate::boot_state;
-use crate::can::angle::UnwrappedAngle;
-use crate::types::MotorFeedback;
-
 use super::command::{
-    Cmd, PendingEntry, PendingKey, ReplyBytes, WriteValue, CMD_DRAIN_BATCH, RECV_POLL_TIMEOUT,
-    REPLY_TIMEOUT,
+    Cmd, PendingEntry, PendingKey, WriteValue, CMD_DRAIN_BATCH, RECV_POLL_TIMEOUT, REPLY_TIMEOUT,
 };
+use super::feedback;
 use super::handle::BusHandle;
+use super::health::BusHealth;
 use super::pin::pin_to_cpu;
 
 /// RS03 `run_mode`: profile position (PP). See `driver::rs03::params::RUN_MODE`.
@@ -66,6 +60,8 @@ pub fn spawn(
     let bus_for_thread = Arc::clone(&bus_arc);
     let iface_for_thread = iface.clone();
     let iface_for_handle = iface.clone();
+    let health = Arc::new(BusHealth::default());
+    let health_for_thread = Arc::clone(&health);
 
     thread::Builder::new()
         .name(format!("rudy-can-{iface}"))
@@ -78,11 +74,17 @@ pub fn spawn(
             if let Some(cpu) = cpu_pin {
                 pin_to_cpu(&iface_for_thread, cpu);
             }
-            run_worker(iface_for_thread, bus_for_thread, rx, state);
+            run_worker(
+                iface_for_thread,
+                bus_for_thread,
+                rx,
+                state,
+                health_for_thread,
+            );
         })
         .with_context(|| format!("spawning worker thread for {iface}"))?;
 
-    Ok(BusHandle::new(iface_for_handle, tx, bus_arc))
+    Ok(BusHandle::new(iface_for_handle, tx, bus_arc, health))
 }
 
 /// Inner per-thread main loop.
@@ -91,6 +93,7 @@ fn run_worker(
     bus: Arc<Mutex<CanBus>>,
     cmd_rx: Receiver<Cmd>,
     state: Weak<crate::state::AppState>,
+    health: Arc<BusHealth>,
 ) {
     info!(iface = %iface, "bus worker started");
     let mut pending: HashMap<PendingKey, PendingEntry> = HashMap::new();
@@ -103,7 +106,7 @@ fn run_worker(
         };
         match recv_result {
             Ok((can_id, data, dlc)) => {
-                handle_frame(&iface, &state, &mut pending, can_id, &data, dlc);
+                feedback::route_frame(&iface, &state, &mut pending, &health, can_id, &data, dlc);
             }
             Err(e)
                 if e.kind() == io::ErrorKind::TimedOut || e.kind() == io::ErrorKind::WouldBlock => {
@@ -132,6 +135,7 @@ fn run_worker(
             match cmd_rx.try_recv() {
                 Ok(cmd) => {
                     backlog_drained = backlog_drained.saturating_add(1);
+                    health.record_cmd_drained(1);
                     handle_cmd(&iface, &bus, &state, &mut pending, cmd);
                 }
                 Err(TryRecvError::Empty) => break,
@@ -146,153 +150,6 @@ fn run_worker(
             }
         }
     }
-}
-
-/// Route a single received frame.
-fn handle_frame(
-    iface: &str,
-    state: &Weak<crate::state::AppState>,
-    pending: &mut HashMap<PendingKey, PendingEntry>,
-    can_id: u32,
-    data: &[u8; 8],
-    dlc: usize,
-) {
-    if let Some(node) = passive_observer_node_id(can_id) {
-        if let Some(st) = state.upgrade() {
-            st.record_passive_seen(iface, node);
-        }
-    }
-
-    let comm = comm_type_from_id(can_id);
-    if comm == driver::CommType::MotorFeedback as u8 {
-        if dlc < 8 {
-            return;
-        }
-        let raw = strip_eff_flag(can_id);
-        let src_motor = ((raw >> 16) & 0xFF) as u8;
-        match decode_motor_feedback(can_id, &data[..dlc]) {
-            Ok(fb) => apply_type2(state, iface, src_motor, fb),
-            Err(e) => debug!(iface = %iface, error = ?e, "type-2 decode failed"),
-        }
-        return;
-    }
-    if comm == driver::CommType::ReadParam as u8 {
-        if dlc < 8 {
-            return;
-        }
-        let raw = strip_eff_flag(can_id);
-        let reply_status = ((raw >> 16) & 0xFF) as u8;
-        let reply_motor = ((raw >> 8) & 0xFF) as u8;
-        let reply_index = u16::from_le_bytes([data[0], data[1]]);
-        let key = PendingKey {
-            motor_id: reply_motor,
-            index: reply_index,
-        };
-        if let Some(entry) = pending.remove(&key) {
-            let result: ReplyBytes = if reply_status == 0 {
-                let mut v = [0u8; 4];
-                v.copy_from_slice(&data[4..8]);
-                Some(v)
-            } else {
-                None
-            };
-            let _ = entry.reply.send(Ok(result));
-        }
-    }
-}
-
-/// Push a freshly-decoded type-2 row into `state.latest`,
-/// `state.feedback_tx`, and trigger boot-state classification + boot
-/// orchestrator the same way `LinuxCanCore::poll_once` does on aux merge.
-fn apply_type2(
-    state: &Weak<crate::state::AppState>,
-    iface: &str,
-    src_motor: u8,
-    fb: DriverFeedback,
-) {
-    let Some(state) = state.upgrade() else { return };
-
-    // Look up role + direction-sign in a single inventory read. Sign
-    // is applied at this CAN→cortex boundary so every downstream
-    // consumer (`state.latest`, boot-state classifier, home-ramp,
-    // jog endpoint, SPA) sees the **logical frame** where positive
-    // commanded vel implies positive measured pos. Default +1 means
-    // motors that don't need inversion behave exactly as before.
-    let (role, dir_sign) = {
-        let inv = state.inventory.read().expect("inventory poisoned");
-        let Some(dev) = inv.by_can_id(iface, src_motor) else {
-            return;
-        };
-        let sign = match dev {
-            crate::inventory::Device::Actuator(a) => a.common.direction_sign_f32(),
-            _ => 1.0,
-        };
-        (dev.role().to_string(), sign)
-    };
-
-    let now_ms = Utc::now().timestamp_millis();
-
-    let (prev_t_ms, prev_vbus, prev_torque, prev_fault) = {
-        let guard = state.latest.read().expect("latest poisoned");
-        match guard.get(&role) {
-            Some(f) => (Some(f.t_ms), f.vbus_v, f.torque_nm, f.fault_sta),
-            None => (None, 0.0, 0.0, 0),
-        }
-    };
-
-    let latest = MotorFeedback {
-        t_ms: now_ms,
-        role: role.clone(),
-        can_id: src_motor,
-        mech_pos_rad: fb.pos_rad * dir_sign,
-        mech_vel_rad_s: fb.vel_rad_s * dir_sign,
-        torque_nm: if fb.torque_nm != 0.0 {
-            fb.torque_nm
-        } else {
-            prev_torque
-        },
-        vbus_v: prev_vbus,
-        // MOS temp from type-2 is always authoritative once decoded (ADR-0002:
-        // uint16 BE, °C = raw/10). Do not gate on `> 0`: 0 °C is valid, and
-        // holding `prev_temp` when the frame carries 0.0 was masking real
-        // readings / leaving stale aux-merge values.
-        temp_c: fb.temp_c,
-        fault_sta: prev_fault,
-        warn_sta: 0,
-    };
-
-    state
-        .latest
-        .write()
-        .expect("latest poisoned")
-        .insert(role.clone(), latest.clone());
-
-    state
-        .last_type2_at
-        .write()
-        .expect("last_type2_at poisoned")
-        .insert(role.clone(), now_ms);
-
-    let gap_ms = prev_t_ms
-        .map(|prev| now_ms.saturating_sub(prev))
-        .unwrap_or(-1);
-    tracing::trace!(
-        role = %role,
-        can_id = src_motor,
-        gap_ms = gap_ms,
-        "type-2 frame applied"
-    );
-
-    let classify_outcome =
-        boot_state::classify(&state, &role, UnwrappedAngle::new(latest.mech_pos_rad));
-    crate::boot_orchestrator::spawn_if_orchestrator_qualifies(
-        state.clone(),
-        role.clone(),
-        classify_outcome,
-        false,
-    );
-
-    let _ = state.feedback_tx.send(latest);
 }
 
 /// Process one [`Cmd`]. The bus mutex is acquired only across the

@@ -40,19 +40,13 @@ use crate::motion::intent::MotionIntent;
 use crate::motion::mit;
 use crate::motion::preflight::{PreflightChecks, PreflightFailure};
 use crate::motion::smoothing::MitTargetSmoothing;
-use crate::motion::status::{MotionState, MotionStatus, MotionStopReason};
+use crate::motion::status::{
+    classify_motion_bus_string, MotionBusError, MotionState, MotionStatus, MotionStopReason,
+};
 use crate::motion::sweep::{self, SweepState};
+use crate::motion::tick::motion_tick_interval_ms;
 use crate::motion::wave::{self, WaveState};
 use crate::state::SharedState;
-
-/// Minimum tick interval. Set to 10 ms to match the RS03's active-report
-/// floor (`EPScan_time = 1`), so the controller can consume 100 Hz feedback
-/// without aliasing.
-const MIN_TICK_INTERVAL_MS: u64 = 10;
-
-/// Default tick interval. Keep aligned with `MIN_TICK_INTERVAL_MS` so the
-/// controller loop runs at the same 100 Hz cadence as firmware feedback.
-const DEFAULT_TICK_INTERVAL_MS: u64 = 10;
 
 /// Heartbeat window for [`MotionIntent::Jog`]. If the operator's
 /// dead-man stream doesn't refresh within this many milliseconds, the
@@ -97,7 +91,7 @@ pub async fn run(mut task: ControllerTask) {
     // `MotionRegistry::heartbeat_jog`.
     let mut jog_deadline = std::time::Instant::now() + Duration::from_millis(JOG_HEARTBEAT_TTL_MS);
 
-    let tick_interval_ms = DEFAULT_TICK_INTERVAL_MS.max(MIN_TICK_INTERVAL_MS);
+    let tick_interval_ms = motion_tick_interval_ms(&task.state.read_effective().safety);
     let mut tick = interval(Duration::from_millis(tick_interval_ms));
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
@@ -187,32 +181,27 @@ pub async fn run(mut task: ControllerTask) {
                 amplitude_rad,
                 speed_rad_s,
                 turnaround_rad,
-            } => {
-                // For wave, fabricate a "limits" of the band (or the
-                // hardware envelope when no band is set) so the step
-                // function can apply its own clipping.
-                let limits = limits_opt
-                    .clone()
-                    .unwrap_or(crate::inventory::TravelLimits {
-                        min_rad: -std::f32::consts::PI,
-                        max_rad: std::f32::consts::PI,
-                        updated_at: None,
+            } => match limits_opt.as_ref() {
+                Some(limits) => {
+                    let s = wave_state.get_or_insert_with(|| {
+                        WaveState::from_position(pf.feedback.mech_pos_rad, *center_rad)
                     });
-                let s = wave_state.get_or_insert_with(|| {
-                    WaveState::from_position(pf.feedback.mech_pos_rad, *center_rad)
-                });
-                let (v, ns) = wave::step(
-                    pf.feedback.mech_pos_rad,
-                    *s,
-                    &limits,
-                    *center_rad,
-                    *amplitude_rad,
-                    *speed_rad_s,
-                    *turnaround_rad,
-                );
-                *s = ns;
-                v
-            }
+                    let (v, ns) = wave::step(
+                        pf.feedback.mech_pos_rad,
+                        *s,
+                        limits,
+                        *center_rad,
+                        *amplitude_rad,
+                        *speed_rad_s,
+                        *turnaround_rad,
+                    );
+                    *s = ns;
+                    v
+                }
+                None => {
+                    break MotionStopReason::TravelLimitViolation;
+                }
+            },
             MotionIntent::Jog { vel_rad_s } => {
                 if std::time::Instant::now() >= jog_deadline {
                     break MotionStopReason::HeartbeatLapsed;
@@ -270,7 +259,7 @@ pub async fn run(mut task: ControllerTask) {
                 if let Err(e) =
                     drive_mit_stream(&task.state, &task.motor, mit_target, 0.0, 0.0, kp, kd).await
                 {
-                    break MotionStopReason::BusError(e);
+                    break MotionStopReason::Bus(e);
                 }
                 task.state.mark_enabled(&role);
                 let eff_vel = if dt_s > 0.0 {
@@ -294,7 +283,7 @@ pub async fn run(mut task: ControllerTask) {
                     Err(e) => break stop_reason_from_preflight(&e),
                 };
                 if let Err(e) = drive_velocity(&task.state, &task.motor, vel).await {
-                    break MotionStopReason::BusError(e);
+                    break MotionStopReason::Bus(e);
                 }
                 task.state.mark_enabled(&role);
                 broadcast_running(&task, pf.feedback.mech_pos_rad, intent, vel);
@@ -340,7 +329,14 @@ fn stop_reason_from_preflight(e: &PreflightFailure) -> MotionStopReason {
         PreflightFailure::LimbQuarantined { .. } | PreflightFailure::SettingsRecovery => {
             MotionStopReason::BootStateLost
         }
-        PreflightFailure::Internal(s) => MotionStopReason::BusError(s.clone()),
+        PreflightFailure::ActiveFault {
+            fault_sta,
+            warn_sta,
+        } => MotionStopReason::MotorFault {
+            fault_sta: *fault_sta,
+            warn_sta: *warn_sta,
+        },
+        PreflightFailure::Internal(s) => MotionStopReason::Bus(classify_motion_bus_string(s)),
     }
 }
 
@@ -352,7 +348,7 @@ async fn drive_mit_stream(
     torque_ff_nm: f32,
     kp_nm_per_rad: f32,
     kd_nm_s_per_rad: f32,
-) -> Result<(), String> {
+) -> Result<(), MotionBusError> {
     let Some(core) = state.real_can.clone() else {
         return Ok(());
     };
@@ -368,30 +364,40 @@ async fn drive_mit_stream(
         )
     })
     .await
-    .map_err(|e| format!("spawn_blocking: {e}"))?
-    .map_err(|e| format!("{e:#}"))
+    .map_err(|e| MotionBusError::Spawn {
+        detail: format!("spawn_blocking: {e}"),
+    })?
+    .map_err(|e| classify_motion_bus_string(format!("{e:#}")))
 }
 
-async fn drive_velocity(state: &SharedState, motor: &Actuator, vel: f32) -> Result<(), String> {
+async fn drive_velocity(
+    state: &SharedState,
+    motor: &Actuator,
+    vel: f32,
+) -> Result<(), MotionBusError> {
     let Some(core) = state.real_can.clone() else {
         return Ok(());
     };
     let motor_for_blocking = motor.clone();
     tokio::task::spawn_blocking(move || core.set_velocity_setpoint(&motor_for_blocking, vel))
         .await
-        .map_err(|e| format!("spawn_blocking: {e}"))?
-        .map_err(|e| format!("{e:#}"))
+        .map_err(|e| MotionBusError::Spawn {
+            detail: format!("spawn_blocking: {e}"),
+        })?
+        .map_err(|e| classify_motion_bus_string(format!("{e:#}")))
 }
 
-async fn drive_stop(state: &SharedState, motor: &Actuator) -> Result<(), String> {
+async fn drive_stop(state: &SharedState, motor: &Actuator) -> Result<(), MotionBusError> {
     let Some(core) = state.real_can.clone() else {
         return Ok(());
     };
     let motor_for_blocking = motor.clone();
     tokio::task::spawn_blocking(move || core.stop(&motor_for_blocking))
         .await
-        .map_err(|e| format!("spawn_blocking: {e}"))?
-        .map_err(|e| format!("{e:#}"))
+        .map_err(|e| MotionBusError::Spawn {
+            detail: format!("spawn_blocking: {e}"),
+        })?
+        .map_err(|e| classify_motion_bus_string(format!("{e:#}")))
 }
 
 fn broadcast_running(task: &ControllerTask, mech_pos_rad: f32, intent: MotionIntent, vel: f32) {

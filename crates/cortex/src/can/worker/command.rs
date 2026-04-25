@@ -151,6 +151,21 @@ pub enum WriteValue {
     U32(u32),
 }
 
+impl WriteValue {
+    /// RS03 type-18 payload bytes (`index` LE + value LE). Shared with
+    /// `driver::rs03::param_dword` so encode stays single-sourced.
+    pub fn type18_payload(self, index: u16) -> [u8; 8] {
+        use driver::rs03::param_dword::{
+            type18_payload_f32, type18_payload_u32, type18_payload_u8,
+        };
+        match self {
+            WriteValue::F32(v) => type18_payload_f32(index, v),
+            WriteValue::U8(v) => type18_payload_u8(index, v),
+            WriteValue::U32(v) => type18_payload_u32(index, v),
+        }
+    }
+}
+
 /// Pending-reply key. The worker indexes outstanding `ReadParam`
 /// commands by `(motor_id, index)` so a flood of unrelated type-17
 /// replies (e.g. from a different motor on the same bus) can't

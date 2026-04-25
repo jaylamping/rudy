@@ -1,5 +1,7 @@
 //! Wire types for motion controller status and stop reasons.
 
+use std::fmt;
+
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -39,6 +41,63 @@ pub enum MotionState {
     Stopped,
 }
 
+/// Classified CAN / motion IO failure (replaces stringly bus errors).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MotionBusError {
+    Timeout { detail: String },
+    BrokenPipe,
+    Encode { detail: String },
+    Protocol { detail: String },
+    Backpressure { detail: String },
+    Spawn { detail: String },
+    Other(String),
+}
+
+impl fmt::Display for MotionBusError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            MotionBusError::Timeout { detail } => write!(f, "timeout: {detail}"),
+            MotionBusError::BrokenPipe => write!(f, "broken_pipe"),
+            MotionBusError::Encode { detail } => write!(f, "encode: {detail}"),
+            MotionBusError::Protocol { detail } => write!(f, "protocol: {detail}"),
+            MotionBusError::Backpressure { detail } => write!(f, "backpressure: {detail}"),
+            MotionBusError::Spawn { detail } => write!(f, "spawn: {detail}"),
+            MotionBusError::Other(s) => write!(f, "{s}"),
+        }
+    }
+}
+
+/// Map worker / `spawn_blocking` error strings into structured variants.
+#[must_use]
+pub fn classify_motion_bus_string(msg: impl AsRef<str>) -> MotionBusError {
+    let msg = msg.as_ref();
+    let ml = msg.to_ascii_lowercase();
+    if ml.contains("timed out") || ml.contains("timeout") {
+        return MotionBusError::Timeout {
+            detail: msg.to_string(),
+        };
+    }
+    if ml.contains("broken pipe") || ml.contains("brokenpipe") {
+        return MotionBusError::BrokenPipe;
+    }
+    if ml.contains("enobufs") || ml.contains("nobufs") {
+        return MotionBusError::Backpressure {
+            detail: msg.to_string(),
+        };
+    }
+    if ml.contains("decode") || ml.contains("protocol") || ml.contains("invalid") {
+        return MotionBusError::Protocol {
+            detail: msg.to_string(),
+        };
+    }
+    if ml.contains("spawn_blocking") {
+        return MotionBusError::Spawn {
+            detail: msg.to_string(),
+        };
+    }
+    MotionBusError::Other(msg.to_string())
+}
+
 /// Why a controller exited. Stringified into [`MotionStatus::reason`] and
 /// the audit log so post-mortem grep is straightforward.
 #[derive(Debug, Clone)]
@@ -58,8 +117,10 @@ pub enum MotionStopReason {
     BootStateLost,
     /// A different motion request superseded this one for the same role.
     Superseded,
-    /// Underlying CAN call failed.
-    BusError(String),
+    /// Underlying CAN / worker path failed.
+    Bus(MotionBusError),
+    /// Motor reported non-zero fault / warning registers (type-2 / type-0x15).
+    MotorFault { fault_sta: u32, warn_sta: u32 },
     /// Daemon shutdown.
     Shutdown,
 }
@@ -74,7 +135,8 @@ impl MotionStopReason {
             MotionStopReason::StaleTelemetry => "stale_telemetry",
             MotionStopReason::BootStateLost => "boot_state_lost",
             MotionStopReason::Superseded => "superseded",
-            MotionStopReason::BusError(_) => "bus_error",
+            MotionStopReason::Bus(_) => "bus_error",
+            MotionStopReason::MotorFault { .. } => "motor_fault",
             MotionStopReason::Shutdown => "shutdown",
         }
     }
@@ -84,7 +146,11 @@ impl MotionStopReason {
     /// extra information.
     pub fn detail(&self) -> String {
         match self {
-            MotionStopReason::BusError(e) => e.clone(),
+            MotionStopReason::Bus(e) => e.to_string(),
+            MotionStopReason::MotorFault {
+                fault_sta,
+                warn_sta,
+            } => format!("fault_sta=0x{fault_sta:08x} warn_sta=0x{warn_sta:08x}"),
             other => other.label().into(),
         }
     }

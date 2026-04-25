@@ -27,6 +27,13 @@ fn auto_assign_cpu_two_cores_uses_only_core_one() {
 }
 
 #[test]
+fn write_value_type18_payload_matches_driver() {
+    use driver::rs03::param_dword::type18_payload_f32;
+    let w = WriteValue::F32(1.5);
+    assert_eq!(w.type18_payload(0x700A), type18_payload_f32(0x700A, 1.5));
+}
+
+#[test]
 fn write_value_variants_carry_typed_payloads() {
     let cases = [
         WriteValue::F32(1.5),

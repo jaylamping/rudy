@@ -4,6 +4,7 @@ use std::time::Duration;
 use anyhow::{anyhow, Result};
 
 use crate::can::angle::PrincipalAngle;
+use crate::can::motor_frame;
 use crate::can::worker::MitStreamSetpoint;
 use crate::inventory::{self, Actuator, Device};
 use crate::state::SharedState;
@@ -30,10 +31,11 @@ impl LinuxCanCore {
         // mechanical encoder reads opposite to the firmware command
         // sign — see `ActuatorCommon::direction_sign` for the
         // convention. Sign is applied symmetrically in
-        // `worker/thread.rs::apply_type2` and `handle/poll.rs` on
+        // `worker/feedback.rs::apply_type2` and `handle/poll.rs` on
         // ingest, so the rest of cortex never sees the
         // firmware-native frame.
-        let firmware_vel = vel_rad_s * motor.common.direction_sign_f32();
+        let firmware_vel =
+            motor_frame::firmware_scalar_from_logical(vel_rad_s, motor.common.direction_sign_f32());
         handle.set_velocity(
             self.host_id,
             motor.common.can_id,
@@ -53,7 +55,10 @@ impl LinuxCanCore {
     /// travel-limit envelope this is well-behaved).
     pub fn set_position_hold(&self, motor: &Actuator, target: PrincipalAngle) -> Result<()> {
         let handle = self.handle_for(&motor.common.can_bus)?;
-        let firmware_target = target.raw() * motor.common.direction_sign_f32();
+        let firmware_target = motor_frame::firmware_scalar_from_logical(
+            target.raw(),
+            motor.common.direction_sign_f32(),
+        );
         handle.set_position_hold(
             self.host_id,
             motor.common.can_id,
@@ -86,7 +91,10 @@ impl LinuxCanCore {
         kd_nm_s_per_rad: f32,
     ) -> Result<()> {
         let handle = self.handle_for(&motor.common.can_bus)?;
-        let firmware_target = target.raw() * motor.common.direction_sign_f32();
+        let firmware_target = motor_frame::firmware_scalar_from_logical(
+            target.raw(),
+            motor.common.direction_sign_f32(),
+        );
         handle.set_mit_hold(
             self.host_id,
             motor.common.can_id,
@@ -112,8 +120,8 @@ impl LinuxCanCore {
     ) -> Result<()> {
         let handle = self.handle_for(&motor.common.can_bus)?;
         let sign = motor.common.direction_sign_f32();
-        let firmware_pos = position_rad * sign;
-        let firmware_vel = velocity_rad_s * sign;
+        let firmware_pos = motor_frame::firmware_scalar_from_logical(position_rad, sign);
+        let firmware_vel = motor_frame::firmware_scalar_from_logical(velocity_rad_s, sign);
         handle.set_mit_command(
             self.host_id,
             motor.common.can_id,

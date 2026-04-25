@@ -25,6 +25,7 @@ pub mod backoff;
 pub mod discovery;
 pub mod math;
 pub mod mock;
+pub mod motor_frame;
 /// Legacy path for angle math used across CAN and motion (`can::motion::wrap_to_pi`, …).
 pub use math as motion;
 pub mod home_ramp;

@@ -27,9 +27,11 @@
 pub mod actuator;
 pub mod comm_types;
 pub mod errors;
+pub mod fault_feedback;
 pub mod feedback;
 pub mod frame;
 pub mod mit;
+pub mod param_dword;
 pub mod params;
 pub mod session;
 pub mod tests;
@@ -37,7 +39,9 @@ pub mod tests;
 pub use actuator::Rs03;
 pub use comm_types::CommType;
 pub use errors::ProtocolError;
+pub use fault_feedback::{decode_fault_dwords, FaultDwords};
 pub use feedback::{decode_motor_feedback, MotorFeedback};
+pub use param_dword::{decode_type17_value_f32, type18_payload_f32, type18_payload_u32, type18_payload_u8};
 pub use frame::{
     arb_id, comm_type_from_id, passive_observer_node_id, strip_eff_flag, with_eff_flag,
     CAN_EFF_FLAG,

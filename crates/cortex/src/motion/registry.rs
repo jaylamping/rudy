@@ -36,6 +36,7 @@ use uuid::Uuid;
 use crate::motion::controller::{self, ControllerTask};
 use crate::motion::intent::MotionIntent;
 use crate::motion::preflight::{PreflightChecks, PreflightFailure};
+use crate::motion::tick::motion_tick_interval_ms;
 use crate::state::SharedState;
 
 /// Live handle to one running controller. Owned by the [`MotionRegistry`]
@@ -98,11 +99,12 @@ impl MotionRegistry {
         // obvious "you can't move this motor right now" failures
         // (Unknown / OutOfBand / stale telemetry) before we tear down
         // the existing motion.
+        let horizon_ms = motion_tick_interval_ms(&state.read_effective().safety);
         let preflight = PreflightChecks {
             state,
             role,
             vel_rad_s: 0.0,
-            horizon_ms: 10,
+            horizon_ms,
             target_position_rad: None,
         };
         let pf = preflight.run()?;

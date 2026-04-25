@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 use super::comm_types::CommType;
 use super::feedback::{decode_motor_feedback, MotorFeedback};
 use super::frame::{self, passive_observer_node_id, strip_eff_flag};
+use super::param_dword::{type18_payload_f32, type18_payload_u32, type18_payload_u8};
 use super::params;
 
 use crate::socketcan_bus::CanBus;
@@ -71,9 +72,7 @@ pub fn write_param_f32(
     index: u16,
     value: f32,
 ) -> io::Result<()> {
-    let mut p = [0u8; 8];
-    p[0..2].copy_from_slice(&index.to_le_bytes());
-    p[4..8].copy_from_slice(&value.to_le_bytes());
+    let p = type18_payload_f32(index, value);
     send_frame(bus, CommType::WriteParam, host_id, motor_id, &p)
 }
 
@@ -84,9 +83,7 @@ pub fn write_param_u8(
     index: u16,
     value: u8,
 ) -> io::Result<()> {
-    let mut p = [0u8; 8];
-    p[0..2].copy_from_slice(&index.to_le_bytes());
-    p[4] = value;
+    let p = type18_payload_u8(index, value);
     send_frame(bus, CommType::WriteParam, host_id, motor_id, &p)
 }
 
@@ -97,9 +94,7 @@ pub fn write_param_u32(
     index: u16,
     value: u32,
 ) -> io::Result<()> {
-    let mut p = [0u8; 8];
-    p[0..2].copy_from_slice(&index.to_le_bytes());
-    p[4..8].copy_from_slice(&value.to_le_bytes());
+    let p = type18_payload_u32(index, value);
     send_frame(bus, CommType::WriteParam, host_id, motor_id, &p)
 }
 

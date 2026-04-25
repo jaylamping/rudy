@@ -110,15 +110,18 @@ mod status_tests {
         );
         assert_eq!(MotionStopReason::Superseded.label(), "superseded");
         assert_eq!(
-            MotionStopReason::BusError("nope".into()).label(),
+            MotionStopReason::Bus(crate::motion::status::MotionBusError::Other("nope".into(),))
+                .label(),
             "bus_error"
         );
     }
 
     #[test]
     fn stop_reason_detail_carries_inner_error() {
-        let r = MotionStopReason::BusError("ENOBUFS".into());
-        assert_eq!(r.detail(), "ENOBUFS");
+        let r = MotionStopReason::Bus(crate::motion::status::MotionBusError::Backpressure {
+            detail: "ENOBUFS".into(),
+        });
+        assert!(r.detail().contains("ENOBUFS"));
         let r = MotionStopReason::Operator;
         assert_eq!(r.detail(), "operator");
     }

@@ -8,6 +8,7 @@ use std::time::Duration;
 use driver::CanBus;
 
 use super::command::{Cmd, ReplyBytes, WriteValue, REPLY_TIMEOUT};
+use super::health::BusHealth;
 
 /// Firmware-frame MIT `OperationCtrl` setpoint for streaming (position,
 /// velocity, torque FF, kp, kd). Passed to [`BusHandle::set_mit_command`].
@@ -40,15 +41,31 @@ pub struct BusHandle {
     pub(super) iface: String,
     pub(super) tx: Sender<Cmd>,
     pub(super) bus: Arc<Mutex<CanBus>>,
+    health: Arc<BusHealth>,
 }
 
 impl BusHandle {
-    pub(super) fn new(iface: String, tx: Sender<Cmd>, bus: Arc<Mutex<CanBus>>) -> Self {
-        Self { iface, tx, bus }
+    pub(super) fn new(
+        iface: String,
+        tx: Sender<Cmd>,
+        bus: Arc<Mutex<CanBus>>,
+        health: Arc<BusHealth>,
+    ) -> Self {
+        Self {
+            iface,
+            tx,
+            bus,
+            health,
+        }
     }
 
     pub fn iface(&self) -> &str {
         &self.iface
+    }
+
+    /// RX/decode/drain counters for this bus worker.
+    pub fn health(&self) -> &BusHealth {
+        &self.health
     }
 
     /// Borrow the raw [`CanBus`] for the duration of `f`, exclusively.

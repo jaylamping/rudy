@@ -37,6 +37,7 @@ pub mod preflight;
 pub mod registry;
 pub mod smoothing;
 pub mod status;
+pub mod tick;
 
 pub use intent::{
     default_turnaround_rad, MotionIntent, OVERSHOOT_S, SWEEP_BASE_INSET_RAD, WAVE_BASE_INSET_RAD,
@@ -44,7 +45,10 @@ pub use intent::{
 pub use patterns::{sweep, wave};
 pub use preflight::{PreflightChecks, PreflightFailure, PreflightOk};
 pub use registry::{MotionRegistry, MotionSnapshot};
-pub use status::{MotionState, MotionStatus, MotionStopReason};
+pub use status::{
+    classify_motion_bus_string, MotionBusError, MotionState, MotionStatus, MotionStopReason,
+};
+pub use tick::motion_tick_interval_ms;
 
 #[cfg(test)]
 #[path = "motion_tests.rs"]

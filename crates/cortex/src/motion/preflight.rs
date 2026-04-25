@@ -14,10 +14,11 @@
 //! 2. Boot-state gate (`Unknown` and `OutOfBand` refuse motion; `InBand` and
 //!    `Homed` are permitted).
 //! 3. Stale-telemetry refusal (`safety.max_feedback_age_ms`).
-//! 4. Path-aware travel-band check on the projected position (velocity
+//! 4. Active motor faults: non-zero `fault_sta` / `warn_sta` on the fresh row.
+//! 5. Path-aware travel-band check on the projected position (velocity
 //!    projection) **or** on `current → target_position_rad` when set, via
 //!    [`crate::can::travel::enforce_position_with_path`].
-//! 5. While not `Homed`, step delta vs. `safety.boot_max_step_rad` ceiling.
+//! 6. While not `Homed`, step delta vs. `safety.boot_max_step_rad` ceiling.
 //!
 //! Returns a [`PreflightFailure`] enum so the REST layer can map to its
 //! existing 4xx codes and the controller can map to a
@@ -80,6 +81,11 @@ pub enum PreflightFailure {
     },
     /// Runtime DB re-seeded from seed files; operator must `POST /api/settings/recovery/ack`.
     SettingsRecovery,
+    /// Decoded `fault_sta` / `warn_sta` from latest telemetry (type-2 + type-0x15).
+    ActiveFault {
+        fault_sta: u32,
+        warn_sta: u32,
+    },
     Internal(String),
 }
 
@@ -100,6 +106,7 @@ impl PreflightFailure {
             PreflightFailure::StepTooLarge { .. } => "step_too_large",
             PreflightFailure::LimbQuarantined { .. } => "limb_quarantined",
             PreflightFailure::SettingsRecovery => "settings_recovery",
+            PreflightFailure::ActiveFault { .. } => "motor_fault",
             PreflightFailure::Internal(_) => "internal",
         }
     }
@@ -164,6 +171,12 @@ impl PreflightFailure {
             PreflightFailure::SettingsRecovery => {
                 "settings DB recovered from seed — acknowledge in Settings before motion".to_string()
             }
+            PreflightFailure::ActiveFault {
+                fault_sta,
+                warn_sta,
+            } => format!(
+                "{role} reports fault_sta=0x{fault_sta:08x} warn_sta=0x{warn_sta:08x}; clear faults before motion"
+            ),
             PreflightFailure::Internal(s) => s.clone(),
         }
     }
@@ -286,6 +299,13 @@ impl PreflightChecks<'_> {
             }
             None => return Err(PreflightFailure::NoTelemetry),
         };
+
+        if feedback.fault_sta != 0 || feedback.warn_sta != 0 {
+            return Err(PreflightFailure::ActiveFault {
+                fault_sta: feedback.fault_sta,
+                warn_sta: feedback.warn_sta,
+            });
+        }
 
         let projected = match self.target_position_rad {
             Some(t) => t,

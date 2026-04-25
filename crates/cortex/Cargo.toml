@@ -55,6 +55,30 @@ path = "tests/can/stub.rs"
 name = "feedback_broadcast"
 path = "tests/can/feedback_broadcast.rs"
 
+# Root-level integration tests (`tests/*.rs`) — explicit roots (Cargo does not
+# auto-discover multiple integration test binaries in this crate layout).
+[[test]]
+name = "motion_preflight"
+path = "tests/motion_preflight.rs"
+[[test]]
+name = "motion_wave_envelope"
+path = "tests/motion_wave_envelope.rs"
+[[test]]
+name = "motion_lifecycle"
+path = "tests/motion_lifecycle.rs"
+[[test]]
+name = "daemon_lifecycle"
+path = "tests/daemon_lifecycle.rs"
+[[test]]
+name = "boot_orchestrator_lifecycle"
+path = "tests/boot_orchestrator_lifecycle.rs"
+[[test]]
+name = "inventory_migration"
+path = "tests/inventory_migration.rs"
+[[test]]
+name = "wt_codec"
+path = "tests/wt_codec.rs"
+
 [dependencies]
 # Core async + error plumbing
 tokio = { workspace = true }

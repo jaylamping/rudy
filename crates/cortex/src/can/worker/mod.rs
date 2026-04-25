@@ -33,12 +33,15 @@
 #![cfg(target_os = "linux")]
 
 mod command;
+mod feedback;
 mod handle;
+mod health;
 mod pin;
 mod thread;
 
 pub use command::{Cmd, ReplyBytes, WriteValue, REPLY_TIMEOUT};
 pub use handle::{BusHandle, MitStreamSetpoint};
+pub use health::BusHealth;
 pub use pin::{auto_assign_cpu, available_cpus};
 pub use thread::spawn;
 
