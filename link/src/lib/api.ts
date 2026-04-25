@@ -34,7 +34,7 @@ export async function apiFetch<T>(
     headers.set("X-Rudy-Session", sessionId());
   }
 
-  const res = await fetch(path, { ...init, headers });
+  const res = await fetch(path, { cache: "no-store", ...init, headers });
 
   const text = await res.text();
   const body: unknown = text ? safeJson(text) : null;

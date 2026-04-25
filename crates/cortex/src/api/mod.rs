@@ -3,7 +3,13 @@
 //! All routes return JSON. Mutating endpoints audit-log their inputs and
 //! (when applicable) range-check against the actuator spec.
 
-use axum::Router;
+use axum::{
+    body::Body,
+    http::{header, HeaderValue, Request},
+    middleware::{self, Next},
+    response::Response,
+    Router,
+};
 
 use crate::state::SharedState;
 
@@ -22,5 +28,13 @@ pub fn router(state: SharedState) -> Router<SharedState> {
         .merge(motors::router())
         .merge(motion::router())
         .merge(ops::router())
+        .layer(middleware::from_fn(no_store))
         .with_state(state)
+}
+
+async fn no_store(req: Request<Body>, next: Next) -> Response {
+    let mut res = next.run(req).await;
+    res.headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    res
 }

@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { queryKeys, settingsQueryOptions } from "@/api";
 import { api, ApiError } from "@/lib/api";
 import type { SettingEntry } from "@/lib/types/SettingEntry";
+import type { SettingsGetResponse } from "@/lib/types/SettingsGetResponse";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -222,6 +223,8 @@ type SettingsExportData = {
   entries: SettingEntry[];
 };
 
+type SettingJsonValue = SettingsGetResponse["entries"][number]["effective"];
+
 function settingsExportJson(data: SettingsExportData): string {
   const exportedAt = new Date().toISOString();
   const values = Object.fromEntries(data.entries.map((e) => [e.key, e.effective]));
@@ -294,7 +297,10 @@ function EntryRow({ entry: e }: { entry: SettingEntry }) {
       const v = parseValue(e, draft);
       return api.settings.put(e.key, { value: v });
     },
-    onSuccess: async () => {
+    onSuccess: async (saved) => {
+      qc.setQueryData<SettingsGetResponse>(queryKeys.settings.all(), (old) =>
+        old ? settingsWithSavedEntry(old, saved.key, saved.effective) : old,
+      );
       await qc.invalidateQueries({ queryKey: queryKeys.settings.all() });
     },
   });
@@ -366,6 +372,26 @@ function EntryRow({ entry: e }: { entry: SettingEntry }) {
       </td>
     </tr>
   );
+}
+
+function settingsWithSavedEntry(
+  data: SettingsGetResponse,
+  key: string,
+  effective: SettingJsonValue,
+): SettingsGetResponse {
+  return {
+    ...data,
+    entries: data.entries.map((entry) =>
+      entry.key === key
+        ? {
+            ...entry,
+            effective,
+            in_db: true,
+            dirty: JSON.stringify(effective) !== JSON.stringify(entry.seed),
+          }
+        : entry,
+    ),
+  };
 }
 
 function valueForEdit(e: SettingEntry): string {
