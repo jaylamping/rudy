@@ -11,7 +11,7 @@
 use anyhow::Result;
 
 use crate::can::angle::UnwrappedAngle;
-use crate::can::motion::{shortest_signed_delta, wrap_to_pi};
+use crate::can::motion::shortest_signed_delta;
 use crate::inventory::TravelLimits;
 use crate::state::SharedState;
 use crate::types::SafetyEvent;
@@ -74,23 +74,23 @@ pub enum BandCheck {
     },
 }
 
-/// Principal-angle path-aware band check. Use this from any handler that
+/// Raw-angle path-aware band check. Use this from any handler that
 /// produces motion (jog, home, bench-tests-that-command-position).
 ///
-/// Both `current_rad` and `target_rad` are reduced to principal angles in
-/// [-pi, +pi] before the check. The check passes only when:
+/// Travel bands describe cable-bound joint travel around the commissioned
+/// zero. The check passes only when:
 ///
-///  1. the principal target endpoint is inside `[min_rad, max_rad]`, AND
-///  2. the principal current position is also inside the band — which, for
+///  1. the raw target endpoint is inside `[min_rad, max_rad]`, AND
+///  2. the raw current position is also inside the band — which, for
 ///     the < 360 deg cable-bound joints we have, guarantees the swept
 ///     shortest-path arc stays in band.
 ///
 /// If only condition 1 holds (target in band but current outside), the
 /// result is [`BandCheck::PathViolation`] — the swept arc would cross the
 /// boundary. This is the chokepoint that prevents the multi-turn-encoder
-/// disaster: the firmware might still take a long path, but a daemon that
-/// commands "go to 0 deg" while reading "+20 deg (actually +20 deg + 360)"
-/// is refused before any frame leaves the host.
+/// disaster: readings like `0 + 2π*n` are physically different cable poses,
+/// not equivalent principal angles. They must be refused before any frame
+/// leaves the host.
 pub fn enforce_position_with_path(
     state: &SharedState,
     role: &str,
@@ -107,8 +107,8 @@ pub fn enforce_position_with_path(
         return Ok(BandCheck::NoLimit);
     };
 
-    let cur_p = wrap_to_pi(current.raw());
-    let tgt_p = wrap_to_pi(target.raw());
+    let cur_p = current.raw();
+    let tgt_p = target.raw();
 
     if tgt_p < limits.min_rad || tgt_p > limits.max_rad {
         let _ = state

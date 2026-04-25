@@ -22,7 +22,6 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::can::angle::UnwrappedAngle;
-use crate::can::motion::{shortest_signed_delta, wrap_to_pi};
 use crate::inventory::TravelLimits;
 use crate::state::SharedState;
 use crate::types::SafetyEvent;
@@ -133,12 +132,11 @@ pub fn classify(state: &SharedState, role: &str, mech_pos: UnwrappedAngle) -> Cl
         return transition(state, role, BootState::Unknown);
     }
 
-    let principal = wrap_to_pi(mech_pos_rad);
-    let new = if principal >= limits.min_rad && principal <= limits.max_rad {
+    let new = if mech_pos_rad >= limits.min_rad && mech_pos_rad <= limits.max_rad {
         BootState::InBand
     } else {
         BootState::OutOfBand {
-            mech_pos_rad: principal,
+            mech_pos_rad,
             min_rad: limits.min_rad,
             max_rad: limits.max_rad,
         }
@@ -260,15 +258,15 @@ pub fn current(state: &SharedState, role: &str) -> BootState {
 /// Distance (in radians, positive) to the nearest band edge that brings
 /// the motor back into the band. Returns 0.0 if already in band.
 pub fn distance_to_band(mech_pos: UnwrappedAngle, limits: &TravelLimits) -> f32 {
-    let principal = wrap_to_pi(mech_pos.raw());
-    if principal >= limits.min_rad && principal <= limits.max_rad {
+    let pos = mech_pos.raw();
+    if pos >= limits.min_rad && pos <= limits.max_rad {
         return 0.0;
     }
-    // Pick the band edge (min or max) with the shorter principal-angle
+    // Pick the band edge (min or max) with the shorter raw-angle
     // distance. The recovery target is `edge +/- margin` on the in-band
     // side; this function returns the distance to the EDGE, not the target.
-    let to_min = shortest_signed_delta(principal, limits.min_rad).abs();
-    let to_max = shortest_signed_delta(principal, limits.max_rad).abs();
+    let to_min = (pos - limits.min_rad).abs();
+    let to_max = (pos - limits.max_rad).abs();
     to_min.min(to_max)
 }
 
@@ -279,12 +277,12 @@ pub fn recovery_target(
     limits: &TravelLimits,
     margin_rad: f32,
 ) -> Option<f32> {
-    let principal = wrap_to_pi(mech_pos.raw());
-    if principal >= limits.min_rad && principal <= limits.max_rad {
+    let pos = mech_pos.raw();
+    if pos >= limits.min_rad && pos <= limits.max_rad {
         return None;
     }
-    let to_min = shortest_signed_delta(principal, limits.min_rad).abs();
-    let to_max = shortest_signed_delta(principal, limits.max_rad).abs();
+    let to_min = (pos - limits.min_rad).abs();
+    let to_max = (pos - limits.max_rad).abs();
     let target = if to_min <= to_max {
         // Nearest edge is min; aim margin INSIDE the band (toward max).
         limits.min_rad + margin_rad
@@ -305,8 +303,11 @@ fn transition(state: &SharedState, role: &str, new: BootState) -> ClassifyOutcom
     let mut map = state.boot_state.write().expect("boot_state poisoned");
     let prev = map.get(role).cloned().unwrap_or(BootState::Unknown);
 
-    // Never demote Homed via classify; only set_zero / mark_homed escape this.
-    if matches!(prev, BootState::Homed) && !matches!(new, BootState::Homed) {
+    // Never demote Homed on non-limit telemetry churn; do demote to OutOfBand
+    // on real raw-position evidence so cable-bound joints fail closed.
+    if matches!(prev, BootState::Homed)
+        && !matches!(new, BootState::Homed | BootState::OutOfBand { .. })
+    {
         return ClassifyOutcome::Unchanged;
     }
 

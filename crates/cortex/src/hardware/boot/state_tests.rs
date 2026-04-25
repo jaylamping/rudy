@@ -25,6 +25,13 @@ fn distance_to_band_picks_nearer_edge() {
 }
 
 #[test]
+fn distance_to_band_rejects_multiturn_position_that_wraps_in_band() {
+    let l = limits(-1.0, 1.0);
+    let two_turns = 4.0 * std::f32::consts::PI;
+    assert!(distance_to_band(UnwrappedAngle::new(two_turns), &l) > 10.0);
+}
+
+#[test]
 fn recovery_target_lands_inside_band() {
     let l = limits(-1.0, 1.0);
     let t = recovery_target(UnwrappedAngle::new(1.5), &l, 0.1).expect("out of band on max side");
@@ -37,6 +44,13 @@ fn recovery_target_lands_inside_band() {
 fn recovery_target_none_when_in_band() {
     let l = limits(-1.0, 1.0);
     assert!(recovery_target(UnwrappedAngle::new(0.0), &l, 0.1).is_none());
+}
+
+#[test]
+fn recovery_target_rejects_multiturn_position_that_wraps_in_band() {
+    let l = limits(-1.0, 1.0);
+    let two_turns = 4.0 * std::f32::consts::PI;
+    assert!(recovery_target(UnwrappedAngle::new(two_turns), &l, 0.1).is_some());
 }
 
 #[test]

@@ -134,6 +134,34 @@ fn path_check_current_outside_band_returns_pathviolation() {
 }
 
 #[test]
+fn path_check_rejects_multiturn_current_that_wraps_in_band() {
+    let (s, _d) = state_with_band(-1.0, 1.0);
+    let two_turns = 4.0 * std::f32::consts::PI;
+    let r = enforce_position_with_path(
+        &s,
+        "m",
+        UnwrappedAngle::new(two_turns),
+        UnwrappedAngle::new(0.0),
+    )
+    .unwrap();
+    assert!(matches!(r, BandCheck::PathViolation { .. }));
+}
+
+#[test]
+fn path_check_rejects_multiturn_target_that_wraps_in_band() {
+    let (s, _d) = state_with_band(-1.0, 1.0);
+    let two_turns = 4.0 * std::f32::consts::PI;
+    let r = enforce_position_with_path(
+        &s,
+        "m",
+        UnwrappedAngle::new(0.0),
+        UnwrappedAngle::new(two_turns),
+    )
+    .unwrap();
+    assert!(matches!(r, BandCheck::OutOfBand { .. }));
+}
+
+#[test]
 fn path_check_no_band_returns_nolimit() {
     let dir = tempfile::tempdir().unwrap();
     let spec_path = dir.path().join("robstride_rs03.yaml");

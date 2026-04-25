@@ -41,7 +41,7 @@
 //! - latest mech_pos_rad missing or stale (older than
 //!   `cfg.safety.max_feedback_age_ms`) → log info, return without
 //!   force_setting state. The next valid type-2 frame will retrigger.
-//! - wrap_to_pi(mech_pos_rad) outside `travel_limits` → no-op (the
+//! - raw `mech_pos_rad` outside `travel_limits` → no-op (the
 //!   classifier already set OutOfBand). Clear the attempted flag so a
 //!   future InBand transition retriggers.
 //! - all checks pass → force_set `AutoHoming`, call `home_ramp::run_with_overrides`
@@ -71,7 +71,6 @@ use tracing::{info, warn};
 use crate::audit::{AuditEntry, AuditResult};
 use crate::boot_state::{self, BootState, ClassifyOutcome};
 use crate::can::home_ramp;
-use crate::can::motion::wrap_to_pi;
 use crate::state::SharedState;
 use crate::types::SafetyEvent;
 
@@ -246,17 +245,15 @@ pub async fn maybe_run(state: SharedState, role: String) {
         }
     };
 
-    // Step 7: principal-angle band check. If outside band, the classifier
+    // Step 7: raw-angle band check. If outside band, the classifier
     // has already set OutOfBand; clear attempted so a future
     // OutOfBand → InBand transition retriggers this orchestrator.
     let limits = motor.common.travel_limits.clone();
     if let Some(limits) = &limits {
-        let principal = wrap_to_pi(mech_pos_rad);
-        if principal < limits.min_rad || principal > limits.max_rad {
+        if mech_pos_rad < limits.min_rad || mech_pos_rad > limits.max_rad {
             info!(
                 role = %role,
                 mech_pos_rad,
-                principal,
                 min = limits.min_rad,
                 max = limits.max_rad,
                 "boot_orchestrator: motor outside band; awaiting operator nudge into range",
