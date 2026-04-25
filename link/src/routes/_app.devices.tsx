@@ -22,11 +22,10 @@
 
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, Cpu, Loader2, RefreshCw, Trash2, Zap } from "lucide-react";
+import { Loader2, RefreshCw } from "lucide-react";
 import { useState } from "react";
-import { ConfirmDialog } from "@/components/params";
 import { queryKeys, useConfigQuery } from "@/api";
-import { ApiError, api } from "@/lib/api";
+import { api } from "@/lib/api";
 import { DevicesSection } from "@/components/devices/devices-section";
 import { OnboardingWizard } from "@/components/devices/onboarding-wizard";
 import { bootStateShortLabel } from "@/lib/bootStateUi";
@@ -40,11 +39,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { useLiveInterval } from "@/lib/hooks/useLiveInterval";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import type { Device } from "@/lib/types/Device";
 import type { MotorSummary } from "@/lib/types/MotorSummary";
 import type { UnassignedDevice } from "@/lib/types/UnassignedDevice";
@@ -129,12 +123,6 @@ function DevicesPage() {
     null,
   );
   const [onboardOpen, setOnboardOpen] = useState(false);
-  const [removeTarget, setRemoveTarget] = useState<{
-    role: string;
-    can_bus: string;
-    can_id: number;
-  } | null>(null);
-
   const openOnboard = (d: UnassignedDevice) => {
     setOnboardTarget(d);
     setOnboardOpen(true);
@@ -164,16 +152,6 @@ function DevicesPage() {
       void qc.invalidateQueries({ queryKey: queryKeys.devices.unassigned() });
     },
   });
-  const removeMut = useMutation({
-    mutationFn: (target: { role: string }) => api.removeDevice(target.role),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: queryKeys.devices.all() });
-      void qc.invalidateQueries({ queryKey: queryKeys.motors.all() });
-      void qc.invalidateQueries({ queryKey: queryKeys.devices.unassigned() });
-      setRemoveTarget(null);
-    },
-  });
-
   const motorByRole = new Map<string, MotorSummary>();
   for (const row of motorsQ.data ?? []) {
     motorByRole.set(row.role, row);
@@ -224,18 +202,6 @@ function DevicesPage() {
 
   const unassigned = unassignedQ.data ?? [];
 
-  const onRequestRemove = (a: ActuatorDevice) => {
-    removeMut.reset();
-    setRemoveTarget({
-      role: a.role,
-      can_bus: a.can_bus,
-      can_id: a.can_id,
-    });
-  };
-  const removePendingRole = removeMut.isPending
-    ? (removeTarget?.role ?? null)
-    : null;
-
   return (
     <div className="space-y-12">
       <OnboardingWizard
@@ -275,8 +241,6 @@ function DevicesPage() {
             trunk={split.trunk}
             other={split.otherActuators}
             motorByRole={motorByRole}
-            onRequestRemove={onRequestRemove}
-            removePendingRole={removePendingRole}
           />
           <SensorsSection sensors={split.sensors} />
           <PeripheralsSection peripheralsByGroup={split.peripheralsByGroup} />
@@ -292,46 +256,6 @@ function DevicesPage() {
         onOnboard={openOnboard}
       />
 
-      {removeTarget ? (
-        <ConfirmDialog
-          title="Remove actuator from inventory?"
-          description={
-            <div className="space-y-2">
-              <p>
-                Remove <code className="font-mono">{removeTarget.role}</code> (
-                {removeTarget.can_bus} / 0x
-                {removeTarget.can_id.toString(16).padStart(2, "0")}) from the
-                on-disk live inventory?
-                {configQ.data ? (
-                  <code className="text-xs break-all block mt-1 text-foreground">
-                    {configQ.data.paths.inventory}
-                  </code>
-                ) : (
-                  <span className="text-xs"> Path appears here once loaded…</span>
-                )}
-              </p>
-              <p>
-                This motor will disappear from the limb view and must be
-                onboarded again before control.
-              </p>
-              {removeMut.isError ? (
-                <p className="text-xs text-destructive">
-                  {describeApiError(removeMut.error)}
-                </p>
-              ) : null}
-            </div>
-          }
-          confirmLabel={removeMut.isPending ? "Removing..." : "Remove actuator"}
-          confirmVariant="destructive"
-          onCancel={() => {
-            if (!removeMut.isPending) setRemoveTarget(null);
-          }}
-          onConfirm={() => {
-            if (removeMut.isPending) return;
-            removeMut.mutate(removeTarget);
-          }}
-        />
-      ) : null}
     </div>
   );
 }
@@ -345,15 +269,11 @@ function ActuatorsSection({
   trunk,
   other,
   motorByRole,
-  onRequestRemove,
-  removePendingRole,
 }: {
   armsLegs: Map<LimbId, ActuatorDevice[]>;
   trunk: ActuatorDevice[];
   other: ActuatorDevice[];
   motorByRole: Map<string, MotorSummary>;
-  onRequestRemove: (a: ActuatorDevice) => void;
-  removePendingRole: string | null;
 }) {
   const totalArms = LIMB_GRID.reduce(
     (acc, id) => acc + (armsLegs.get(id)?.length ?? 0),
@@ -374,8 +294,6 @@ function ActuatorsSection({
             description={LIMB_DESCRIPTIONS[id]}
             actuators={armsLegs.get(id) ?? []}
             motorByRole={motorByRole}
-            onRequestRemove={onRequestRemove}
-            removePendingRole={removePendingRole}
           />
         ))}
       </div>
@@ -385,8 +303,6 @@ function ActuatorsSection({
           <TrunkActuatorCard
             actuators={trunk}
             motorByRole={motorByRole}
-            onRequestRemove={onRequestRemove}
-            removePendingRole={removePendingRole}
           />
         </div>
       ) : null}
@@ -405,8 +321,6 @@ function ActuatorsSection({
               <ActuatorCardGrid
                 actuators={other}
                 motorByRole={motorByRole}
-                onRequestRemove={onRequestRemove}
-                removePendingRole={removePendingRole}
                 showLimb
               />
             </CardContent>
@@ -422,15 +336,11 @@ function LimbActuatorCard({
   description,
   actuators,
   motorByRole,
-  onRequestRemove,
-  removePendingRole,
 }: {
   title: string;
   description: string;
   actuators: ActuatorDevice[];
   motorByRole: Map<string, MotorSummary>;
-  onRequestRemove: (a: ActuatorDevice) => void;
-  removePendingRole: string | null;
 }) {
   return (
     <Card className="flex flex-col">
@@ -452,8 +362,6 @@ function LimbActuatorCard({
           <ActuatorCardGrid
             actuators={actuators}
             motorByRole={motorByRole}
-            onRequestRemove={onRequestRemove}
-            removePendingRole={removePendingRole}
           />
         )}
       </CardContent>
@@ -464,13 +372,9 @@ function LimbActuatorCard({
 function TrunkActuatorCard({
   actuators,
   motorByRole,
-  onRequestRemove,
-  removePendingRole,
 }: {
   actuators: ActuatorDevice[];
   motorByRole: Map<string, MotorSummary>;
-  onRequestRemove: (a: ActuatorDevice) => void;
-  removePendingRole: string | null;
 }) {
   return (
     <Card>
@@ -489,8 +393,6 @@ function TrunkActuatorCard({
         <ActuatorCardGrid
           actuators={actuators}
           motorByRole={motorByRole}
-          onRequestRemove={onRequestRemove}
-          removePendingRole={removePendingRole}
           showLimb
         />
       </CardContent>
@@ -501,114 +403,59 @@ function TrunkActuatorCard({
 function ActuatorCardGrid({
   actuators,
   motorByRole,
-  onRequestRemove,
-  removePendingRole,
   showLimb = false,
 }: {
   actuators: ActuatorDevice[];
   motorByRole: Map<string, MotorSummary>;
-  onRequestRemove: (a: ActuatorDevice) => void;
-  removePendingRole: string | null;
   showLimb?: boolean;
 }) {
   return (
-    <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+    <div className="grid grid-cols-1 gap-2 xl:grid-cols-2">
       {actuators.map((a) => {
         const motor = motorByRole.get(a.role);
         const boot = motor ? bootStateShortLabel(motor.boot_state) : "Unknown";
         const isEnabled = motor?.enabled ?? false;
-        const fam =
-          a.family.kind === "robstride"
-            ? `RobStride ${a.family.model}`
-            : a.family.kind;
-        const removeBtn = (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-            aria-label={`Remove ${a.role}`}
-            onClick={() => onRequestRemove(a)}
-            disabled={removePendingRole === a.role || isEnabled}
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
-        );
+        const isOnline = !!motor;
 
         return (
           <div
             key={a.role}
-            className="group rounded-lg border border-border/80 bg-gradient-to-br from-card via-card to-muted/20 p-3 shadow-sm transition-colors hover:border-primary/40"
+            className="group rounded-lg border border-border/80 bg-gradient-to-br from-card via-card to-muted/20 px-3 py-2.5 shadow-sm transition-colors hover:border-primary/40"
           >
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <Link
-                  to="/actuators/$role"
-                  params={{ role: a.role }}
-                  className="block truncate font-mono text-sm font-semibold text-foreground hover:underline"
+            <div className="min-w-0 space-y-2">
+              <Link
+                to="/actuators/$role"
+                params={{ role: a.role }}
+                className="block truncate font-mono text-sm font-semibold text-foreground hover:underline"
+              >
+                {a.role}
+              </Link>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Badge
+                  variant={isEnabled ? "success" : "secondary"}
+                  className="font-normal"
                 >
-                  {a.role}
-                </Link>
-                <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                  <Badge
-                    variant={isEnabled ? "success" : "secondary"}
-                    className="font-normal"
-                  >
-                    {isEnabled ? "Enabled" : "Idle"}
+                  {isEnabled ? "Enabled" : "Idle"}
+                </Badge>
+                <Badge variant="outline" className="font-normal">
+                  {boot}
+                </Badge>
+                <Badge
+                  variant={isOnline ? "success" : "warning"}
+                  className="font-normal"
+                >
+                  {isOnline ? "Seen" : "No telemetry"}
+                </Badge>
+                {showLimb ? (
+                  <Badge variant="secondary" className="font-normal">
+                    {a.limb ?? "No limb"}
                   </Badge>
-                  <Badge variant="outline" className="font-normal">
-                    {boot}
-                  </Badge>
-                </div>
+                ) : null}
               </div>
-              {isEnabled ? (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span className="inline-flex">{removeBtn}</span>
-                  </TooltipTrigger>
-                  <TooltipContent side="top">Stop the motor first.</TooltipContent>
-                </Tooltip>
-              ) : (
-                removeBtn
-              )}
-            </div>
-
-            <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
-              <DeviceMeta icon={Zap} label="CAN" value={a.can_bus} />
-              <DeviceMeta
-                icon={Cpu}
-                label="ID"
-                value={`0x${a.can_id.toString(16).padStart(2, "0")}`}
-              />
-              <DeviceMeta icon={Activity} label="Family" value={fam} />
-              {showLimb ? (
-                <DeviceMeta icon={Activity} label="Limb" value={a.limb ?? "—"} />
-              ) : null}
             </div>
           </div>
         );
       })}
-    </div>
-  );
-}
-
-function DeviceMeta({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: typeof Activity;
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="rounded-md border border-border/70 bg-background/50 px-2.5 py-2">
-      <div className="flex items-center gap-1.5 text-[0.65rem] uppercase tracking-wide text-muted-foreground">
-        <Icon className="h-3 w-3" />
-        {label}
-      </div>
-      <div className="mt-1 truncate font-mono text-[0.72rem] text-foreground">
-        {value}
-      </div>
     </div>
   );
 }
@@ -945,13 +792,3 @@ function UnassignedSection({
   );
 }
 
-function describeApiError(error: unknown): string {
-  if (error instanceof ApiError) {
-    const detail =
-      error.body && typeof error.body === "object" && "detail" in error.body
-        ? String((error.body as { detail?: unknown }).detail ?? "")
-        : "";
-    return detail || error.message;
-  }
-  return "Failed to remove actuator.";
-}
