@@ -12,8 +12,6 @@ use tracing::{debug, trace};
 
 use crate::boot_state;
 use crate::can::angle::UnwrappedAngle;
-use crate::can::motor_frame;
-use crate::inventory::Device;
 use crate::state::AppState;
 use crate::types::MotorFeedback;
 
@@ -108,16 +106,12 @@ fn apply_type2(
         return;
     };
 
-    let (role, dir_sign) = {
+    let role = {
         let inv = state.inventory.read().expect("inventory poisoned");
         let Some(dev) = inv.by_can_id(iface, src_motor) else {
             return;
         };
-        let sign = match dev {
-            Device::Actuator(a) => a.common.direction_sign_f32(),
-            _ => 1.0,
-        };
-        (dev.role().to_string(), sign)
+        dev.role().to_string()
     };
 
     let now_ms = Utc::now().timestamp_millis();
@@ -140,8 +134,8 @@ fn apply_type2(
         t_ms: now_ms,
         role: role.clone(),
         can_id: src_motor,
-        mech_pos_rad: motor_frame::logical_scalar_from_firmware(fb.pos_rad, dir_sign),
-        mech_vel_rad_s: motor_frame::logical_scalar_from_firmware(fb.vel_rad_s, dir_sign),
+        mech_pos_rad: fb.pos_rad,
+        mech_vel_rad_s: fb.vel_rad_s,
         torque_nm: if fb.torque_nm != 0.0 {
             fb.torque_nm
         } else {

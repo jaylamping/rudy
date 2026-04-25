@@ -88,7 +88,6 @@ mod tests {
             joint_kind: None,
             notes_yaml: None,
             desired_params: std::collections::BTreeMap::new(),
-            direction_sign: 1,
         };
         let motor = Actuator {
             common,

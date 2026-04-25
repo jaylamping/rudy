@@ -599,16 +599,6 @@ pub async fn run_with_overrides(
         // it started", which is what operators reach for first.
         hold_kp_nm_per_rad = cfg.hold_kp_nm_per_rad,
         hold_kd_nm_s_per_rad = cfg.hold_kd_nm_s_per_rad,
-        // `direction_sign` is applied at the CAN boundary
-        // (`set_velocity_setpoint`, type-2/type-17 telemetry decode)
-        // and is otherwise invisible to this loop, so the entry log
-        // is the right (only) place to confirm it loaded as the
-        // operator expected. A mistakenly-flipped sign turns a
-        // healthy home into a tracking-error abort within ~150 ms;
-        // having `direction_sign` next to `from_rad` / `target_rad`
-        // / `signed_delta` makes that the very first thing a
-        // post-mortem can rule in or out.
-        direction_sign = motor.common.direction_sign,
         "home_ramp: starting"
     );
 

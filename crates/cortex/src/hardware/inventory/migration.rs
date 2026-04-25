@@ -85,16 +85,6 @@ pub fn migrate_v1_yaml_to_v2_inventory(yaml: &str) -> Result<Inventory> {
             joint_kind: m.joint_kind,
             notes_yaml,
             desired_params: BTreeMap::new(),
-            // v1 inventory predates the direction_sign concept; every
-            // motor commissioned under v1 was implicitly assumed to
-            // have positive encoder polarity (the only motors in
-            // service were the ones whose mech_pos_rad happened to
-            // agree with the firmware vel command sign). Default to
-            // `+1` so the migration is bit-for-bit non-effective for
-            // existing fleets; operators flip to `-1` per-motor as
-            // they discover inverted units (see `direction_sign`
-            // doc).
-            direction_sign: 1,
         };
         devices.push(Device::Actuator(Actuator {
             common,

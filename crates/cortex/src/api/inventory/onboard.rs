@@ -203,12 +203,6 @@ pub async fn onboard_robstride(
                     joint_kind: Some(body_clone.joint_kind),
                     notes_yaml: None,
                     desired_params: std::collections::BTreeMap::new(),
-                    // Onboarding wizard doesn't expose
-                    // direction_sign yet; default to +1 and let the
-                    // operator flip via inventory edit + restart if a
-                    // bench jog reveals inverted polarity. See
-                    // ActuatorCommon::direction_sign.
-                    direction_sign: 1,
                 },
                 family: ActuatorFamily::Robstride {
                     model: body_clone.model,

@@ -3,7 +3,6 @@ use chrono::Utc;
 
 use crate::boot_state;
 use crate::can::angle::UnwrappedAngle;
-use crate::can::motor_frame;
 use crate::inventory::Actuator;
 use crate::state::SharedState;
 use crate::types::{MotorFeedback, ParamValue};
@@ -170,19 +169,11 @@ impl LinuxCanCore {
             Seeded,
         }
 
-        // Apply `direction_sign` to firmware-reported pos/vel here so
-        // the merged row (and every downstream consumer) sees the
-        // logical frame, matching the type-2 ingest path in
-        // `worker/feedback.rs::apply_type2`. `aux.vbus` and
-        // `aux.fault_sta` are direction-agnostic and pass through
-        // unchanged.
-        let dir_sign = motor.common.direction_sign_f32();
         let torque_nm = aux.iqf.map(|iqf| {
             iqf * state
                 .spec_for(motor.robstride_model())
                 .hardware
                 .torque_constant_nm_per_arms
-                * dir_sign
         });
         let (merged, outcome): (MotorFeedback, MergeOutcome) = {
             let mut latest = state.latest.write().expect("latest poisoned");
@@ -203,12 +194,10 @@ impl LinuxCanCore {
                     }
                     let outcome = if row.t_ms < poll_started_ms {
                         if let Some(p) = aux.mech_pos {
-                            row.mech_pos_rad =
-                                motor_frame::logical_scalar_from_firmware(p, dir_sign);
+                            row.mech_pos_rad = p;
                         }
                         if let Some(v) = aux.mech_vel {
-                            row.mech_vel_rad_s =
-                                motor_frame::logical_scalar_from_firmware(v, dir_sign);
+                            row.mech_vel_rad_s = v;
                         }
                         row.t_ms = now_ms;
                         MergeOutcome::Type17Stamped
@@ -222,14 +211,8 @@ impl LinuxCanCore {
                         t_ms: now_ms,
                         role: motor.common.role.clone(),
                         can_id: motor.common.can_id,
-                        mech_pos_rad: motor_frame::logical_scalar_from_firmware(
-                            aux.mech_pos.unwrap_or_default(),
-                            dir_sign,
-                        ),
-                        mech_vel_rad_s: motor_frame::logical_scalar_from_firmware(
-                            aux.mech_vel.unwrap_or_default(),
-                            dir_sign,
-                        ),
+                        mech_pos_rad: aux.mech_pos.unwrap_or_default(),
+                        mech_vel_rad_s: aux.mech_vel.unwrap_or_default(),
                         torque_nm: torque_nm.unwrap_or_default(),
                         vbus_v: aux.vbus.unwrap_or_default(),
                         temp_c: aux.motor_temp.unwrap_or_default(),
