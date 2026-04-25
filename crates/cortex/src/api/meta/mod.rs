@@ -27,9 +27,9 @@ pub fn router() -> Router<SharedState> {
         )
         // Single-segment name only (e.g. `bench`); catch-all must end the path in axum 0.7.
         .route(
-            "/settings/profiles/apply/{name}",
+            "/settings/profiles/apply/:name",
             post(settings::post_apply_profile),
         )
         // One URL segment per key (e.g. `safety.require_verified`); no `/*` catch-all.
-        .route("/settings/{key}", put(settings::put_one))
+        .route("/settings/:key", put(settings::put_one))
 }

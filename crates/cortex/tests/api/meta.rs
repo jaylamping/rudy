@@ -3,15 +3,16 @@
 #![allow(unused_imports)] // shared prelude matches other `tests/api/*.rs` suites
 
 use axum::body::Body;
-use axum::http::{Method, Request, StatusCode};
+use axum::http::{header, Method, Request, StatusCode};
 use http_body_util::BodyExt;
 use serde_json::json;
 use tower::ServiceExt;
 
 use cortex::inventory::{Device, Inventory, TravelLimits};
 use cortex::types::{
-    ApiError, MotorFeedback, MotorSummary, ParamSnapshot, Reminder, SafetyEvent, ServerConfig,
-    ServerFeatures, SettingsGetResponse, SystemSnapshot, WebTransportAdvert,
+    ApiError, MotorFeedback, MotorSummary, ParamSnapshot, PutSettingResponse, Reminder,
+    SafetyEvent, ServerConfig, ServerFeatures, SettingsGetResponse, SystemSnapshot,
+    WebTransportAdvert,
 };
 
 #[path = "../common/mod.rs"]
@@ -193,9 +194,76 @@ async fn get_settings_registry_shape() {
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(
+        resp.headers().get(header::CACHE_CONTROL).unwrap(),
+        "no-store",
+        "API settings responses must not be browser-cached",
+    );
     let s: SettingsGetResponse = body_json(resp).await;
     assert!(!s.runtime_db_enabled);
     assert!(!s.recovery_pending);
     assert!(!s.entries.is_empty());
     assert!(s.entries.iter().any(|e| e.key == "safety.require_verified"));
+}
+
+#[tokio::test]
+async fn put_settings_updates_get_and_persists_kv() {
+    let (state, _dir) = common::make_state_with_runtime();
+    let app = cortex::build_app(state.clone());
+
+    let put_resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::PUT)
+                .uri("/api/settings/safety.require_verified")
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("X-Rudy-Session", "settings-test")
+                .body(Body::from(json!({ "value": false }).to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let put_status = put_resp.status();
+    let put_bytes = put_resp.into_body().collect().await.unwrap().to_bytes();
+    assert_eq!(
+        put_status,
+        StatusCode::OK,
+        "body: {}",
+        std::str::from_utf8(&put_bytes).unwrap_or("<binary>")
+    );
+    let saved: PutSettingResponse = serde_json::from_slice(&put_bytes).expect("put response");
+    assert_eq!(saved.key, "safety.require_verified");
+    assert_eq!(saved.effective, json!(false));
+
+    let get_resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/settings")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(get_resp.status(), StatusCode::OK);
+    let settings: SettingsGetResponse = body_json(get_resp).await;
+    let entry = settings
+        .entries
+        .iter()
+        .find(|entry| entry.key == "safety.require_verified")
+        .expect("settings entry");
+    assert_eq!(entry.effective, json!(false));
+    assert!(entry.in_db);
+    assert!(entry.dirty);
+
+    let db = state.settings_db.as_ref().expect("runtime db enabled");
+    let db = db.lock().expect("settings db lock");
+    let value_json: String = db
+        .query_row(
+            "SELECT value_json FROM settings_kv WHERE key = ?1",
+            ["safety.require_verified"],
+            |row| row.get(0),
+        )
+        .expect("settings row");
+    assert_eq!(value_json, "false");
 }

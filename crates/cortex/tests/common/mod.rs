@@ -128,6 +128,37 @@ pub fn make_state() -> (SharedState, tempfile::TempDir) {
     (state, dir)
 }
 
+/// Same as [`make_state`], but boots the runtime SQLite settings store.
+pub fn make_state_with_runtime() -> (SharedState, tempfile::TempDir) {
+    let (state, dir) = make_state();
+    let mut cfg = state.cfg.clone();
+    cfg.runtime.enabled = true;
+    cfg.runtime.db_path = dir.path().join("runtime.db");
+    cfg.runtime.inventory_yaml_mirror = true;
+    cfg.safety.target_tolerance_rad = 0.010;
+    cfg.safety.target_dwell_max_vel_rad_s = 1_000_000.0;
+
+    let runtime = cortex::settings::init(&cfg).expect("init runtime settings");
+    let inv = state.inventory.read().expect("inventory poisoned").clone();
+    let audit_path = dir.path().join("audit_runtime.jsonl");
+    cfg.paths.audit_log = audit_path.clone();
+    let reminders =
+        ReminderStore::open(dir.path().join("reminders_runtime.json")).expect("open reminders");
+    let (log_event_tx, _) = tokio::sync::broadcast::channel(2048);
+
+    let new_state = Arc::new(AppState::new_with_log_tx(
+        cfg,
+        Some(runtime),
+        state.specs.clone(),
+        inv,
+        AuditLog::open(&audit_path).expect("open audit"),
+        state.real_can.clone(),
+        reminders,
+        log_event_tx,
+    ));
+    (new_state, dir)
+}
+
 /// Mutate a single actuator row by `role` (test helper; inventory is v2 `devices:`).
 pub fn actuator_mut<'a>(inv: &'a mut Inventory, role: &str) -> Option<&'a mut Actuator> {
     inv.devices.iter_mut().find_map(|d| {
