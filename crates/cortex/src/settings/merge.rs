@@ -6,7 +6,7 @@ use anyhow::Result;
 use serde_json::json;
 use serde_json::Value as Json;
 
-use crate::config::{Config, SafetyConfig, TelemetryConfig};
+use crate::config::{Config, MotionBackend, SafetyConfig, TelemetryConfig};
 
 /// Seed rows from a loaded TOML config (idempotent: same values the DB was meant to have on first import).
 pub fn file_defaults_to_kv(cfg: &Config) -> Vec<(String, Json)> {
@@ -84,6 +84,23 @@ pub fn file_defaults_to_kv(cfg: &Config) -> Vec<(String, Json)> {
         (
             "safety.hold_kd_nm_s_per_rad".into(),
             json!(s.hold_kd_nm_s_per_rad),
+        ),
+        ("safety.motion_backend".into(), json!(s.motion_backend)),
+        (
+            "safety.mit_command_rate_hz".into(),
+            json!(s.mit_command_rate_hz),
+        ),
+        (
+            "safety.mit_max_angle_step_rad".into(),
+            json!(s.mit_max_angle_step_rad),
+        ),
+        (
+            "safety.mit_lpf_cutoff_hz".into(),
+            json!(s.mit_lpf_cutoff_hz),
+        ),
+        (
+            "safety.mit_min_jerk_blend_ms".into(),
+            json!(s.mit_min_jerk_blend_ms),
         ),
         (
             "telemetry.poll_interval_ms".into(),
@@ -174,6 +191,32 @@ fn apply_key(
         "safety.scan_on_boot" => s.scan_on_boot = v.as_bool().ok_or("expected bool")?,
         "safety.hold_kp_nm_per_rad" => s.hold_kp_nm_per_rad = f32v(&v).ok_or("expected f32")?,
         "safety.hold_kd_nm_s_per_rad" => s.hold_kd_nm_s_per_rad = f32v(&v).ok_or("expected f32")?,
+        "safety.motion_backend" => {
+            s.motion_backend = match v
+                .as_str()
+                .ok_or_else(|| "expected \"mit\" or \"velocity\" string".to_string())?
+            {
+                "mit" => MotionBackend::Mit,
+                "velocity" => MotionBackend::Velocity,
+                other => {
+                    return Err(format!(
+                        "unknown motion_backend {other:?} (expected mit|velocity)"
+                    ))
+                }
+            };
+        }
+        "safety.mit_command_rate_hz" => {
+            s.mit_command_rate_hz = f32v(&v).ok_or("expected f32")?;
+        }
+        "safety.mit_max_angle_step_rad" => {
+            s.mit_max_angle_step_rad = f32v(&v).ok_or("expected f32")?;
+        }
+        "safety.mit_lpf_cutoff_hz" => {
+            s.mit_lpf_cutoff_hz = f32v(&v).ok_or("expected f32")?;
+        }
+        "safety.mit_min_jerk_blend_ms" => {
+            s.mit_min_jerk_blend_ms = f32v(&v).ok_or("expected f32")?;
+        }
         "telemetry.poll_interval_ms" => t.poll_interval_ms = v.as_u64().ok_or("expected u64")?,
 
         _ => return Err("unknown key".to_string()),

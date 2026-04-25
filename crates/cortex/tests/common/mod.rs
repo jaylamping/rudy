@@ -28,8 +28,8 @@ use std::sync::Arc;
 use cortex::audit::AuditLog;
 use cortex::can;
 use cortex::config::{
-    CanConfig, Config, HttpConfig, LogsConfig, PathsConfig, RuntimeDbConfig, SafetyConfig,
-    TelemetryConfig, WebTransportConfig,
+    CanConfig, Config, HttpConfig, LogsConfig, MotionBackend, PathsConfig, RuntimeDbConfig,
+    SafetyConfig, TelemetryConfig, WebTransportConfig,
 };
 use cortex::inventory::{Actuator, Device, Inventory};
 use cortex::reminders::ReminderStore;
@@ -106,6 +106,11 @@ pub fn make_state() -> (SharedState, tempfile::TempDir) {
             scan_on_boot: true,
             hold_kp_nm_per_rad: 10.0,
             hold_kd_nm_s_per_rad: 0.5,
+            motion_backend: MotionBackend::Velocity,
+            mit_command_rate_hz: 100.0,
+            mit_max_angle_step_rad: 0.087,
+            mit_lpf_cutoff_hz: 6.0,
+            mit_min_jerk_blend_ms: 0.0,
         },
         logs: LogsConfig {
             db_path: dir.path().join("logs.db"),
@@ -236,6 +241,11 @@ pub fn make_state_commission_can_path_fails() -> (SharedState, tempfile::TempDir
             scan_on_boot: true,
             hold_kp_nm_per_rad: 10.0,
             hold_kd_nm_s_per_rad: 0.5,
+            motion_backend: MotionBackend::Velocity,
+            mit_command_rate_hz: 100.0,
+            mit_max_angle_step_rad: 0.087,
+            mit_lpf_cutoff_hz: 6.0,
+            mit_min_jerk_blend_ms: 0.0,
         },
         logs: LogsConfig {
             db_path: dir.path().join("logs.db"),

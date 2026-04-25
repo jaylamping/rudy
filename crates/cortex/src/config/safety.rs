@@ -2,6 +2,17 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Jog / sweep / wave actuator backend in [`crate::motion::controller`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum MotionBackend {
+    /// Legacy `RUN_MODE` velocity + `SPD_REF` streaming.
+    #[default]
+    Velocity,
+    /// Streaming MIT `OperationCtrl` frames at controller tick rate.
+    Mit,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SafetyConfig {
     #[serde(default = "default_true")]
@@ -299,6 +310,28 @@ pub struct SafetyConfig {
     /// set on the same actuator.
     #[serde(default = "default_hold_kd_nm_s_per_rad")]
     pub hold_kd_nm_s_per_rad: f32,
+
+    /// Jog / sweep / wave: velocity mode vs streaming MIT.
+    #[serde(default)]
+    pub motion_backend: MotionBackend,
+
+    /// Target command rate for MIT streaming (Hz). Controller tick aligns
+    /// with telemetry; this documents intent and caps future schedulers.
+    #[serde(default = "default_mit_command_rate_hz")]
+    pub mit_command_rate_hz: f32,
+
+    /// Max principal-path step per MIT tick (rad). Conservative default
+    /// matches [`Self::boot_max_step_rad`]; per-actuator override in inventory.
+    #[serde(default = "default_mit_max_angle_step_rad")]
+    pub mit_max_angle_step_rad: f32,
+
+    /// One-pole LPF cutoff (Hz) on MIT position targets; `<= 0` disables.
+    #[serde(default = "default_mit_lpf_cutoff_hz")]
+    pub mit_lpf_cutoff_hz: f32,
+
+    /// Minimum-jerk blend time (ms) between MIT targets; `0` disables.
+    #[serde(default)]
+    pub mit_min_jerk_blend_ms: f32,
 }
 
 impl SafetyConfig {
@@ -391,4 +424,16 @@ pub(crate) fn default_hold_kp_nm_per_rad() -> f32 {
 
 pub(crate) fn default_hold_kd_nm_s_per_rad() -> f32 {
     1.7
+}
+
+fn default_mit_command_rate_hz() -> f32 {
+    100.0
+}
+
+fn default_mit_max_angle_step_rad() -> f32 {
+    default_boot_max_step_rad()
+}
+
+fn default_mit_lpf_cutoff_hz() -> f32 {
+    6.0
 }

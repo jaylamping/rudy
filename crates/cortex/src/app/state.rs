@@ -186,6 +186,9 @@ pub struct AppState {
     /// rewrites `RUN_MODE` before `SPD_REF`.
     pub position_hold: RwLock<BTreeSet<String>>,
 
+    /// Roles receiving streamed MIT `OperationCtrl` frames (no per-tick mode dance).
+    pub mit_streaming: RwLock<BTreeSet<String>>,
+
     /// Per-role idempotency set for the boot orchestrator's auto-home
     /// flow (commissioned-zero plan, Phase C.5). The orchestrator
     /// inserts a role when it begins, removes it on terminal-failure
@@ -300,6 +303,7 @@ impl AppState {
             boot_state: RwLock::new(HashMap::new()),
             enabled: RwLock::new(BTreeSet::new()),
             position_hold: RwLock::new(BTreeSet::new()),
+            mit_streaming: RwLock::new(BTreeSet::new()),
             boot_orchestrator_attempted: Mutex::new(std::collections::HashSet::new()),
             log_store: OnceLock::new(),
             log_event_tx,
@@ -372,6 +376,10 @@ impl AppState {
             .write()
             .expect("position_hold poisoned")
             .remove(role);
+        self.mit_streaming
+            .write()
+            .expect("mit_streaming poisoned")
+            .remove(role);
     }
 
     /// Mark a role as holding position in RS03 profile-position mode after homing.
@@ -404,6 +412,29 @@ impl AppState {
             .read()
             .expect("position_hold poisoned")
             .contains(role)
+    }
+
+    /// True when the bus worker is streaming MIT `OperationCtrl` for this
+    /// role (fast path: encode + send only, no mode transition).
+    pub fn is_mit_streaming(&self, role: &str) -> bool {
+        self.mit_streaming
+            .read()
+            .expect("mit_streaming poisoned")
+            .contains(role)
+    }
+
+    pub fn mark_mit_streaming(&self, role: &str) {
+        self.mit_streaming
+            .write()
+            .expect("mit_streaming poisoned")
+            .insert(role.to_string());
+    }
+
+    pub fn clear_mit_streaming(&self, role: &str) {
+        self.mit_streaming
+            .write()
+            .expect("mit_streaming poisoned")
+            .remove(role);
     }
 
     /// Default TTL for `seen_can_ids` entries. An id that hasn't been seen

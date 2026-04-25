@@ -108,6 +108,21 @@ pub enum Cmd {
         role: String,
         reply: Sender<io::Result<()>>,
     },
+    /// Streaming MIT `OperationCtrl` at control rate. First frame after
+    /// velocity / PP / disabled / static MIT hold runs the same stop →
+    /// `RUN_MODE=0` → enable → MIT sequence as [`SetMitHold`]; subsequent
+    /// frames send only `encode_mit` while [`AppState::is_mit_streaming`].
+    SetMitCommand {
+        motor_id: u8,
+        host_id: u8,
+        position_rad: f32,
+        velocity_rad_s: f32,
+        torque_ff_nm: f32,
+        kp_nm_per_rad: f32,
+        kd_nm_s_per_rad: f32,
+        role: String,
+        reply: Sender<io::Result<()>>,
+    },
     /// Single-parameter write.
     WriteParam {
         motor_id: u8,

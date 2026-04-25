@@ -479,6 +479,7 @@ fn handle_cmd(
             if result.is_ok() && !role.is_empty() {
                 if let Some(state) = state.upgrade() {
                     state.clear_position_hold(&role);
+                    state.clear_mit_streaming(&role);
                 }
             }
             if result.is_ok() && need_rearm && !role.is_empty() {
@@ -519,6 +520,13 @@ fn handle_cmd(
                 })()
             };
             log_send_result(iface, "set_position_hold", motor_id, &result);
+            if result.is_ok() {
+                if let Some(st) = state.upgrade() {
+                    if let Some(role) = role_for_can_id(&st, iface, motor_id) {
+                        st.clear_mit_streaming(&role);
+                    }
+                }
+            }
             let _ = reply.send(result);
         }
         Cmd::SetMitHold {
@@ -590,6 +598,79 @@ fn handle_cmd(
                 })()
             };
             log_send_result(iface, "set_mit_hold", motor_id, &result);
+            if result.is_ok() {
+                if let Some(st) = state.upgrade() {
+                    if let Some(role) = role_for_can_id(&st, iface, motor_id) {
+                        st.clear_mit_streaming(&role);
+                    }
+                }
+            }
+            let _ = reply.send(result);
+        }
+        Cmd::SetMitCommand {
+            motor_id,
+            host_id,
+            position_rad,
+            velocity_rad_s,
+            torque_ff_nm,
+            kp_nm_per_rad,
+            kd_nm_s_per_rad,
+            role,
+            reply,
+        } => {
+            let need_entry = match state.upgrade() {
+                Some(st) => {
+                    if role.is_empty() {
+                        true
+                    } else {
+                        !st.is_mit_streaming(&role)
+                            || !st.is_enabled(&role)
+                            || st.is_position_hold(&role)
+                    }
+                }
+                None => true,
+            };
+            let result: io::Result<()> = {
+                let guard = bus.lock().expect("bus mutex poisoned");
+                (|| {
+                    let dev = Rs03::new(host_id, motor_id);
+                    if need_entry {
+                        session::cmd_stop(&guard, dev.host_id(), dev.motor_id(), false)?;
+                        session::write_param_u8(
+                            &guard,
+                            dev.host_id(),
+                            dev.motor_id(),
+                            dev.param_index_run_mode(),
+                            RUN_MODE_OP,
+                        )?;
+                        session::cmd_enable(&guard, dev.host_id(), dev.motor_id())?;
+                    }
+                    let codec = RobstrideCodec;
+                    let cmd = MitCommand {
+                        position_rad,
+                        velocity_rad_s,
+                        kp: kp_nm_per_rad,
+                        kd: kd_nm_s_per_rad,
+                        torque_ff_nm,
+                    };
+                    let (id, data) = codec.encode_mit(host_id, motor_id, cmd).map_err(|e| {
+                        io::Error::new(
+                            io::ErrorKind::InvalidInput,
+                            format!("encode MIT command frame: {e:?}"),
+                        )
+                    })?;
+                    guard.send_ext(id, &data)?;
+                    Ok(())
+                })()
+            };
+            log_send_result(iface, "set_mit_command", motor_id, &result);
+            if result.is_ok() && !role.is_empty() {
+                if let Some(st) = state.upgrade() {
+                    st.clear_position_hold(&role);
+                    st.mark_enabled(&role);
+                    st.mark_mit_streaming(&role);
+                }
+            }
             let _ = reply.send(result);
         }
         Cmd::WriteParam {

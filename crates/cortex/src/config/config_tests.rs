@@ -49,6 +49,11 @@ fn cfg_with(audit_log: &str, db_path: Option<&str>) -> Config {
             scan_on_boot: true,
             hold_kp_nm_per_rad: super::safety::default_hold_kp_nm_per_rad(),
             hold_kd_nm_s_per_rad: super::safety::default_hold_kd_nm_s_per_rad(),
+            motion_backend: super::MotionBackend::default(),
+            mit_command_rate_hz: 100.0,
+            mit_max_angle_step_rad: super::safety::default_boot_max_step_rad(),
+            mit_lpf_cutoff_hz: 6.0,
+            mit_min_jerk_blend_ms: 0.0,
         },
         logs: LogsConfig {
             db_path: db_path
@@ -100,6 +105,9 @@ fn actuator_common_roundtrip_preserves_active_report_persisted_flag() {
         homing_speed_rad_s: None,
         hold_kp_nm_per_rad: None,
         hold_kd_nm_s_per_rad: None,
+        mit_command_kp_nm_per_rad: None,
+        mit_command_kd_nm_s_per_rad: None,
+        mit_max_angle_step_rad: None,
         limb: None,
         joint_kind: None,
         notes_yaml: None,

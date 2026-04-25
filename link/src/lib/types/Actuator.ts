@@ -35,6 +35,22 @@ hold_kp_nm_per_rad: number | null,
  */
 hold_kd_nm_s_per_rad: number | null, 
 /**
+ * Optional MIT streaming command stiffness (Nm/rad) for jog/sweep/wave
+ * when [`crate::config::MotionBackend::Mit`] is active. `None` uses
+ * [`crate::config::SafetyConfig::hold_kp_nm_per_rad`].
+ */
+mit_command_kp_nm_per_rad: number | null, 
+/**
+ * Optional MIT streaming command damping (Nm·s/rad). `None` uses
+ * [`crate::config::SafetyConfig::hold_kd_nm_s_per_rad`].
+ */
+mit_command_kd_nm_s_per_rad: number | null, 
+/**
+ * Optional per-tick max angle step (rad) for MIT streaming. `None`
+ * uses [`crate::config::SafetyConfig::mit_max_angle_step_rad`].
+ */
+mit_max_angle_step_rad: number | null, 
+/**
  * Polarity of this motor's mechanical encoder relative to the
  * firmware velocity command sign — i.e., does commanding a
  * positive `vel_rad_s` make `mech_pos_rad` increase (+1) or

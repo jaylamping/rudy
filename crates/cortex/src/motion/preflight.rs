@@ -1,5 +1,5 @@
 //! Shared preflight checks for any code path that issues a velocity
-//! setpoint.
+//! setpoint or a **target position** (MIT streaming).
 //!
 //! Lifted verbatim from the equivalent gauntlet at the top of
 //! [`crate::api::jog::jog`] so REST [`crate::api::motion`], the WebTransport
@@ -14,10 +14,10 @@
 //! 2. Boot-state gate (`Unknown` and `OutOfBand` refuse motion; `InBand` and
 //!    `Homed` are permitted).
 //! 3. Stale-telemetry refusal (`safety.max_feedback_age_ms`).
-//! 4. Path-aware travel-band check on the projected position, via
+//! 4. Path-aware travel-band check on the projected position (velocity
+//!    projection) **or** on `current → target_position_rad` when set, via
 //!    [`crate::can::travel::enforce_position_with_path`].
-//! 5. While not `Homed`, projected delta vs.
-//!    `safety.boot_max_step_rad` ceiling.
+//! 5. While not `Homed`, step delta vs. `safety.boot_max_step_rad` ceiling.
 //!
 //! Returns a [`PreflightFailure`] enum so the REST layer can map to its
 //! existing 4xx codes and the controller can map to a
@@ -180,21 +180,26 @@ pub struct PreflightOk {
     pub boot_state: BootState,
 }
 
-/// Inputs needed for a single preflight pass. `vel_rad_s` and
-/// `horizon_ms` together project where the motor would be after the
-/// upcoming command frame so the band check runs on a *future* point
-/// (matches the existing jog projection logic).
+/// Inputs needed for a single preflight pass.
+///
+/// **Velocity mode:** `vel_rad_s` and `horizon_ms` project where the motor
+/// would be after the upcoming frame (matches jog projection).
+///
+/// **Position mode:** when `target_position_rad` is `Some`, the band/path
+/// check uses that target instead of the velocity projection; `vel_rad_s`
+/// / `horizon_ms` are ignored for the geometric check (staleness/boot gates
+/// still apply).
 pub struct PreflightChecks<'a> {
     pub state: &'a SharedState,
     pub role: &'a str,
     /// Velocity the controller is about to command, in rad/s. Used for
-    /// the projection only; the actual `Cmd::SetVelocity` is the
-    /// caller's responsibility.
+    /// the projection only when [`Self::target_position_rad`] is `None`.
     pub vel_rad_s: f32,
-    /// Projection horizon. For REST `/jog` this is the operator's TTL;
-    /// for the controller it's one tick interval. Larger horizons make
-    /// the band check more conservative.
+    /// Projection horizon when using velocity projection.
     pub horizon_ms: u64,
+    /// When `Some`, validate path/band/step against this logical target
+    /// position (rad) instead of `feedback + vel * horizon`.
+    pub target_position_rad: Option<f32>,
 }
 
 impl PreflightChecks<'_> {
@@ -282,7 +287,10 @@ impl PreflightChecks<'_> {
             None => return Err(PreflightFailure::NoTelemetry),
         };
 
-        let projected = feedback.mech_pos_rad + self.vel_rad_s * (self.horizon_ms as f32 / 1000.0);
+        let projected = match self.target_position_rad {
+            Some(t) => t,
+            None => feedback.mech_pos_rad + self.vel_rad_s * (self.horizon_ms as f32 / 1000.0),
+        };
         let check = enforce_position_with_path(
             self.state,
             self.role,
@@ -321,10 +329,11 @@ impl PreflightChecks<'_> {
 
         if !matches!(bs, BootState::Homed) {
             let delta = shortest_signed_delta(feedback.mech_pos_rad, projected).abs();
-            if delta > self.state.read_effective().safety.boot_max_step_rad {
+            let cap = self.state.read_effective().safety.boot_max_step_rad;
+            if delta > cap {
                 return Err(PreflightFailure::StepTooLarge {
                     delta_rad: delta,
-                    cap_rad: self.state.read_effective().safety.boot_max_step_rad,
+                    cap_rad: cap,
                 });
             }
         }

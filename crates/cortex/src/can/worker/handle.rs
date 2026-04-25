@@ -172,6 +172,33 @@ impl BusHandle {
         recv_blocking(rx, REPLY_TIMEOUT)?
     }
 
+    /// Streaming MIT command (operation mode). See [`Cmd::SetMitCommand`].
+    pub fn set_mit_command(
+        &self,
+        host_id: u8,
+        motor_id: u8,
+        role: &str,
+        position_rad: f32,
+        velocity_rad_s: f32,
+        torque_ff_nm: f32,
+        kp_nm_per_rad: f32,
+        kd_nm_s_per_rad: f32,
+    ) -> io::Result<()> {
+        let (tx, rx) = mpsc::channel();
+        self.submit(Cmd::SetMitCommand {
+            motor_id,
+            host_id,
+            position_rad,
+            velocity_rad_s,
+            torque_ff_nm,
+            kp_nm_per_rad,
+            kd_nm_s_per_rad,
+            role: role.to_string(),
+            reply: tx,
+        })?;
+        recv_blocking(rx, REPLY_TIMEOUT)?
+    }
+
     pub fn write_param(
         &self,
         host_id: u8,

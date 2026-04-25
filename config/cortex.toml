@@ -162,6 +162,16 @@ target_dwell_max_vel_rad_s = 0.05
 hold_kp_nm_per_rad = 120.0
 hold_kd_nm_s_per_rad = 1.7
 
+# Streaming MIT for jog/sweep/wave (`motion::controller`). `velocity` keeps
+# legacy SPD_REF; `mit` sends OperationCtrl each tick. Code default is
+# `velocity` until bench validation; flip after staged actuator passes.
+# Per-actuator overrides: inventory `mit_command_*`, `mit_max_angle_step_rad`.
+# motion_backend = "mit"
+# mit_command_rate_hz = 100.0
+# mit_max_angle_step_rad = 0.087
+# mit_lpf_cutoff_hz = 6.0
+# mit_min_jerk_blend_ms = 0.0
+
 # Tolerance for the boot orchestrator's add_offset readback check
 # (commissioned-zero quick-home plan, Phase C). On every boot the
 # orchestrator reads firmware param 0x702B over CAN and compares it

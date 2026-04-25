@@ -18,8 +18,8 @@ use super::{resolve_homing_speed, run_with_tracking_budget, MAX_HOMER_VEL_RAD_S}
 use crate::audit::AuditLog;
 use crate::can;
 use crate::config::{
-    CanConfig, Config, HttpConfig, LogsConfig, PathsConfig, RuntimeDbConfig, SafetyConfig,
-    TelemetryConfig, WebTransportConfig,
+    CanConfig, Config, HttpConfig, LogsConfig, MotionBackend, PathsConfig, RuntimeDbConfig,
+    SafetyConfig, TelemetryConfig, WebTransportConfig,
 };
 use crate::inventory::Inventory;
 use crate::reminders::ReminderStore;
@@ -93,6 +93,11 @@ fn state_with_real_can_stub_inner(
             scan_on_boot: true,
             hold_kp_nm_per_rad: 10.0,
             hold_kd_nm_s_per_rad: 0.5,
+            motion_backend: MotionBackend::Velocity,
+            mit_command_rate_hz: 100.0,
+            mit_max_angle_step_rad: 0.087,
+            mit_lpf_cutoff_hz: 6.0,
+            mit_min_jerk_blend_ms: 0.0,
         },
         logs: LogsConfig {
             db_path: dir.path().join("logs.db"),
@@ -183,6 +188,11 @@ fn state_with_velocity_gate(
             scan_on_boot: true,
             hold_kp_nm_per_rad: 10.0,
             hold_kd_nm_s_per_rad: 0.5,
+            motion_backend: MotionBackend::Velocity,
+            mit_command_rate_hz: 100.0,
+            mit_max_angle_step_rad: 0.087,
+            mit_lpf_cutoff_hz: 6.0,
+            mit_min_jerk_blend_ms: 0.0,
         },
         logs: LogsConfig {
             db_path: dir.path().join("logs.db"),

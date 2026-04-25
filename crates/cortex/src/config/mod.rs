@@ -19,7 +19,7 @@ pub use http::HttpConfig;
 pub use logs::LogsConfig;
 pub use paths::PathsConfig;
 pub use runtime_db::RuntimeDbConfig;
-pub use safety::SafetyConfig;
+pub use safety::{MotionBackend, SafetyConfig};
 
 /// Used by `can::home_ramp::dwell_tests` and `position_hold_tests`; keep defaults
 /// single-sourced in `safety.rs`.

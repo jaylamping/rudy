@@ -20,10 +20,9 @@
 //!   the existing exit gate in [`crate::api::home::run_homer`].
 //!
 //! The controller does NOT own a copy of the bus or talk to wtransport
-//! directly; it routes outbound velocity through [`drive_velocity`] (a
-//! light wrapper over `RealCanHandle::set_velocity_setpoint` that is a
-//! no-op in mock mode) and outbound status through
-//! [`crate::state::AppState::motion_status_tx`].
+//! directly; it routes outbound commands through [`drive_velocity`] or
+//! [`drive_mit_stream`] (wrappers over `RealCanHandle` that no-op in mock
+//! mode) and outbound status through [`crate::state::AppState::motion_status_tx`].
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -35,9 +34,12 @@ use tracing::{debug, warn};
 
 use crate::audit::{AuditEntry, AuditResult};
 use crate::boot_state;
+use crate::config::MotionBackend;
 use crate::inventory::Actuator;
 use crate::motion::intent::MotionIntent;
+use crate::motion::mit;
 use crate::motion::preflight::{PreflightChecks, PreflightFailure};
+use crate::motion::smoothing::MitTargetSmoothing;
 use crate::motion::status::{MotionState, MotionStatus, MotionStopReason};
 use crate::motion::sweep::{self, SweepState};
 use crate::motion::wave::{self, WaveState};
@@ -89,6 +91,7 @@ pub async fn run(mut task: ControllerTask) {
     // tick so we have live telemetry to derive the initial direction.
     let mut sweep_state: Option<SweepState> = None;
     let mut wave_state: Option<WaveState> = None;
+    let mut mit_smooth = MitTargetSmoothing::default();
 
     // Heartbeat deadline for jog motions. Refreshed by
     // `MotionRegistry::heartbeat_jog`.
@@ -135,6 +138,7 @@ pub async fn run(mut task: ControllerTask) {
             role: &role,
             vel_rad_s: 0.0,
             horizon_ms: tick_interval_ms,
+            target_position_rad: None,
         };
         let pf = match preflight.run() {
             Ok(pf) => pf,
@@ -217,32 +221,85 @@ pub async fn run(mut task: ControllerTask) {
             }
         };
 
-        // Re-run the band check on the *projected* position after one
-        // tick at desired_vel. The preflight call above used vel=0, which
-        // covers boot/state but not the upcoming motion direction.
-        let projected_check = PreflightChecks {
-            state: &task.state,
-            role: &role,
-            vel_rad_s: desired_vel,
-            horizon_ms: tick_interval_ms,
-        }
-        .run();
-        let vel = match projected_check {
-            Ok(_) => desired_vel,
-            Err(e) => {
-                break stop_reason_from_preflight(&e);
-            }
+        let (
+            motion_backend,
+            mit_lpf_cutoff_hz,
+            mit_min_jerk_blend_ms,
+            hold_kp,
+            hold_kd,
+            mit_max_step_global,
+        ) = {
+            let eff = task.state.read_effective();
+            let s = &eff.safety;
+            (
+                s.motion_backend,
+                s.mit_lpf_cutoff_hz,
+                s.mit_min_jerk_blend_ms,
+                s.hold_kp_nm_per_rad,
+                s.hold_kd_nm_s_per_rad,
+                s.mit_max_angle_step_rad,
+            )
         };
 
-        // Drive the bus. Errors here are terminal (the bus is sick); the
-        // motor will be stopped by the post-loop cleanup. Mock mode is a
-        // no-op so unit tests can drive the loop without hardware.
-        if let Err(e) = drive_velocity(&task.state, &task.motor, vel).await {
-            break MotionStopReason::BusError(e);
-        }
-        task.state.mark_enabled(&role);
+        let dt_s = tick_interval_ms as f32 / 1000.0;
 
-        broadcast_running(&task, pf.feedback.mech_pos_rad, intent, vel);
+        match motion_backend {
+            MotionBackend::Mit => {
+                let raw_target = pf.feedback.mech_pos_rad + desired_vel * dt_s;
+                let step_cap = mit::mit_step_max_rad_or(&task.motor, mit_max_step_global);
+                let sm_in = mit_smooth.smooth(
+                    pf.feedback.mech_pos_rad,
+                    raw_target,
+                    dt_s,
+                    mit_lpf_cutoff_hz,
+                    mit_min_jerk_blend_ms,
+                );
+                let mit_target = mit::clamp_mit_step(pf.feedback.mech_pos_rad, sm_in, step_cap);
+                let projected_check = PreflightChecks {
+                    state: &task.state,
+                    role: &role,
+                    vel_rad_s: 0.0,
+                    horizon_ms: tick_interval_ms,
+                    target_position_rad: Some(mit_target),
+                }
+                .run();
+                if let Err(e) = projected_check {
+                    break stop_reason_from_preflight(&e);
+                }
+                let (kp, kd) = mit::mit_command_kp_kd_or(&task.motor, hold_kp, hold_kd);
+                if let Err(e) =
+                    drive_mit_stream(&task.state, &task.motor, mit_target, 0.0, 0.0, kp, kd).await
+                {
+                    break MotionStopReason::BusError(e);
+                }
+                task.state.mark_enabled(&role);
+                let eff_vel = if dt_s > 0.0 {
+                    (mit_target - pf.feedback.mech_pos_rad) / dt_s
+                } else {
+                    0.0
+                };
+                broadcast_running(&task, pf.feedback.mech_pos_rad, intent, eff_vel);
+            }
+            MotionBackend::Velocity => {
+                let projected_check = PreflightChecks {
+                    state: &task.state,
+                    role: &role,
+                    vel_rad_s: desired_vel,
+                    horizon_ms: tick_interval_ms,
+                    target_position_rad: None,
+                }
+                .run();
+                let vel = match projected_check {
+                    Ok(_) => desired_vel,
+                    Err(e) => break stop_reason_from_preflight(&e),
+                };
+                if let Err(e) = drive_velocity(&task.state, &task.motor, vel).await {
+                    break MotionStopReason::BusError(e);
+                }
+                task.state.mark_enabled(&role);
+                broadcast_running(&task, pf.feedback.mech_pos_rad, intent, vel);
+            }
+        }
     };
 
     // Always stop the motor before returning. Mirrors the exit
@@ -285,6 +342,34 @@ fn stop_reason_from_preflight(e: &PreflightFailure) -> MotionStopReason {
         }
         PreflightFailure::Internal(s) => MotionStopReason::BusError(s.clone()),
     }
+}
+
+async fn drive_mit_stream(
+    state: &SharedState,
+    motor: &Actuator,
+    position_rad: f32,
+    velocity_rad_s: f32,
+    torque_ff_nm: f32,
+    kp_nm_per_rad: f32,
+    kd_nm_s_per_rad: f32,
+) -> Result<(), String> {
+    let Some(core) = state.real_can.clone() else {
+        return Ok(());
+    };
+    let motor_for_blocking = motor.clone();
+    tokio::task::spawn_blocking(move || {
+        core.set_mit_command_stream(
+            &motor_for_blocking,
+            position_rad,
+            velocity_rad_s,
+            torque_ff_nm,
+            kp_nm_per_rad,
+            kd_nm_s_per_rad,
+        )
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking: {e}"))?
+    .map_err(|e| format!("{e:#}"))
 }
 
 async fn drive_velocity(state: &SharedState, motor: &Actuator, vel: f32) -> Result<(), String> {

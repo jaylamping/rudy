@@ -97,6 +97,35 @@ impl LinuxCanCore {
         Ok(())
     }
 
+    /// Streaming MIT `OperationCtrl` each control tick. Logical-frame
+    /// `position_rad` / `velocity_rad_s` / `torque_ff_nm`; sign applied at
+    /// the CAN boundary like [`Self::set_velocity_setpoint`].
+    pub fn set_mit_command_stream(
+        &self,
+        motor: &Actuator,
+        position_rad: f32,
+        velocity_rad_s: f32,
+        torque_ff_nm: f32,
+        kp_nm_per_rad: f32,
+        kd_nm_s_per_rad: f32,
+    ) -> Result<()> {
+        let handle = self.handle_for(&motor.common.can_bus)?;
+        let sign = motor.common.direction_sign_f32();
+        let firmware_pos = position_rad * sign;
+        let firmware_vel = velocity_rad_s * sign;
+        handle.set_mit_command(
+            self.host_id,
+            motor.common.can_id,
+            &motor.common.role,
+            firmware_pos,
+            firmware_vel,
+            torque_ff_nm,
+            kp_nm_per_rad,
+            kd_nm_s_per_rad,
+        )?;
+        Ok(())
+    }
+
     /// Apply low torque/speed limits at boot from `inventory.desired_params`, or seed
     /// commissioning defaults into inventory on first run (write + save to flash).
     pub fn seed_boot_low_limits(&self, state: &SharedState) {
@@ -292,8 +321,8 @@ mod tests {
 
     use crate::audit::AuditLog;
     use crate::config::{
-        CanConfig, Config, HttpConfig, LogsConfig, PathsConfig, SafetyConfig, TelemetryConfig,
-        WebTransportConfig,
+        CanConfig, Config, HttpConfig, LogsConfig, MotionBackend, PathsConfig, SafetyConfig,
+        TelemetryConfig, WebTransportConfig,
     };
     use crate::inventory::Inventory;
     use crate::reminders::ReminderStore;
@@ -372,6 +401,11 @@ mod tests {
                 scan_on_boot: true,
                 hold_kp_nm_per_rad: 10.0,
                 hold_kd_nm_s_per_rad: 0.5,
+                motion_backend: MotionBackend::Velocity,
+                mit_command_rate_hz: 100.0,
+                mit_max_angle_step_rad: 0.087,
+                mit_lpf_cutoff_hz: 6.0,
+                mit_min_jerk_blend_ms: 0.0,
             },
             logs: LogsConfig {
                 db_path: dir.path().join("logs.db"),

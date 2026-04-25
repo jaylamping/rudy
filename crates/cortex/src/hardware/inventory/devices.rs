@@ -104,6 +104,19 @@ pub struct ActuatorCommon {
     /// ratio when bumping `hold_kp_nm_per_rad`.
     #[serde(default)]
     pub hold_kd_nm_s_per_rad: Option<f32>,
+    /// Optional MIT streaming command stiffness (Nm/rad) for jog/sweep/wave
+    /// when [`crate::config::MotionBackend::Mit`] is active. `None` uses
+    /// [`crate::config::SafetyConfig::hold_kp_nm_per_rad`].
+    #[serde(default)]
+    pub mit_command_kp_nm_per_rad: Option<f32>,
+    /// Optional MIT streaming command damping (Nm·s/rad). `None` uses
+    /// [`crate::config::SafetyConfig::hold_kd_nm_s_per_rad`].
+    #[serde(default)]
+    pub mit_command_kd_nm_s_per_rad: Option<f32>,
+    /// Optional per-tick max angle step (rad) for MIT streaming. `None`
+    /// uses [`crate::config::SafetyConfig::mit_max_angle_step_rad`].
+    #[serde(default)]
+    pub mit_max_angle_step_rad: Option<f32>,
     /// Polarity of this motor's mechanical encoder relative to the
     /// firmware velocity command sign — i.e., does commanding a
     /// positive `vel_rad_s` make `mech_pos_rad` increase (+1) or
@@ -483,6 +496,9 @@ mod direction_sign_tests {
             homing_speed_rad_s: None,
             hold_kp_nm_per_rad: None,
             hold_kd_nm_s_per_rad: None,
+            mit_command_kp_nm_per_rad: None,
+            mit_command_kd_nm_s_per_rad: None,
+            mit_max_angle_step_rad: None,
             limb: None,
             joint_kind: None,
             notes_yaml: None,

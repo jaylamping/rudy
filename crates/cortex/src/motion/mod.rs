@@ -31,9 +31,11 @@
 
 pub mod controller;
 pub mod intent;
+pub mod mit;
 pub mod patterns;
 pub mod preflight;
 pub mod registry;
+pub mod smoothing;
 pub mod status;
 
 pub use intent::{
