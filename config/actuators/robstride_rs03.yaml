@@ -141,11 +141,21 @@ observables:
     type: float
     units: rad_per_s
     description: "load-end mechanical velocity (type-17 shadow of 0x3017)"
+  iqf:
+    index: 0x701A
+    type: float
+    units: amps_rms
+    description: "Filtered q-axis current; torque fallback source via hardware torque constant"
   vbus:
     index: 0x701C                     # shadow of 0x300C
     type: float
     units: volts
     description: "DC bus voltage (type-17 shadow of 0x300C)"
+  motor_temp:
+    index: 0x3006
+    type: int16
+    units: deg_c_tenths
+    description: "Motor winding temperature, raw tenths of degC"
   fault_sta:
     index: 0x3022
     type: uint32

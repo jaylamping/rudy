@@ -340,6 +340,23 @@ impl LinuxCanCore {
         Ok(bytes.map(u32::from_le_bytes))
     }
 
+    pub(crate) fn read_named_i16_tenths_as_f32(
+        &self,
+        state: &SharedState,
+        motor: &Actuator,
+        name: &str,
+    ) -> Result<Option<f32>> {
+        let spec = state.spec_for(motor.robstride_model());
+        let desc = spec
+            .observables
+            .get(name)
+            .ok_or_else(|| anyhow!("observable {name} not found in actuator spec"))?;
+        let handle = self.handle_for(&motor.common.can_bus)?;
+        let bytes =
+            handle.read_param(self.host_id, motor.common.can_id, desc.index, PARAM_TIMEOUT)?;
+        Ok(bytes.map(|b| f32::from(i16::from_le_bytes([b[0], b[1]])) / 10.0))
+    }
+
     fn read_param_value(
         &self,
         motor: &Actuator,
@@ -362,6 +379,11 @@ impl LinuxCanCore {
                 .read_param(self.host_id, motor.common.can_id, desc.index, PARAM_TIMEOUT)?
                 .map(u32::from_le_bytes)
                 .map(|v| serde_json::json!(v as u16))
+                .unwrap_or(serde_json::Value::Null)),
+            "int16" | "i16" => Ok(handle
+                .read_param(self.host_id, motor.common.can_id, desc.index, PARAM_TIMEOUT)?
+                .map(|b| i16::from_le_bytes([b[0], b[1]]))
+                .map(|v| serde_json::json!(v))
                 .unwrap_or(serde_json::Value::Null)),
             "uint32" | "u32" => Ok(handle
                 .read_param(self.host_id, motor.common.can_id, desc.index, PARAM_TIMEOUT)?

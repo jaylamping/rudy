@@ -232,11 +232,11 @@ fn apply_type2(
 
     let now_ms = Utc::now().timestamp_millis();
 
-    let (prev_t_ms, prev_vbus, prev_fault) = {
+    let (prev_t_ms, prev_vbus, prev_torque, prev_temp, prev_fault) = {
         let guard = state.latest.read().expect("latest poisoned");
         match guard.get(&role) {
-            Some(f) => (Some(f.t_ms), f.vbus_v, f.fault_sta),
-            None => (None, 0.0, 0),
+            Some(f) => (Some(f.t_ms), f.vbus_v, f.torque_nm, f.temp_c, f.fault_sta),
+            None => (None, 0.0, 0.0, 0.0, 0),
         }
     };
 
@@ -246,9 +246,17 @@ fn apply_type2(
         can_id: src_motor,
         mech_pos_rad: fb.pos_rad * dir_sign,
         mech_vel_rad_s: fb.vel_rad_s * dir_sign,
-        torque_nm: fb.torque_nm,
+        torque_nm: if fb.torque_nm != 0.0 {
+            fb.torque_nm
+        } else {
+            prev_torque
+        },
         vbus_v: prev_vbus,
-        temp_c: fb.temp_c,
+        temp_c: if fb.temp_c > 0.0 {
+            fb.temp_c
+        } else {
+            prev_temp
+        },
         fault_sta: prev_fault,
         warn_sta: 0,
     };

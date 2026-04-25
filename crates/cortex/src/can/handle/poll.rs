@@ -14,7 +14,9 @@ use super::LinuxCanCore;
 struct AuxObservables {
     mech_pos: Option<f32>,
     mech_vel: Option<f32>,
+    iqf: Option<f32>,
     vbus: Option<f32>,
+    motor_temp: Option<f32>,
     fault_sta: Option<u32>,
 }
 
@@ -53,7 +55,22 @@ impl LinuxCanCore {
     ) -> Result<AuxObservables> {
         let mech_pos = self.read_named_f32(state, motor, "mech_pos")?;
         let mech_vel = self.read_named_f32(state, motor, "mech_vel")?;
+        let iqf = self.read_named_f32(state, motor, "iqf")?;
         let vbus = self.read_named_f32(state, motor, "vbus")?;
+        let motor_temp = match self.read_named_i16_tenths_as_f32(state, motor, "motor_temp") {
+            Ok(v) => v,
+            Err(e) => {
+                if let Some(io_err) = e.downcast_ref::<std::io::Error>() {
+                    if io_err.kind() == std::io::ErrorKind::TimedOut {
+                        None
+                    } else {
+                        return Err(e);
+                    }
+                } else {
+                    return Err(e);
+                }
+            }
+        };
         let fault_sta = match self.read_named_u32(state, motor, "fault_sta") {
             Ok(v) => v,
             Err(e) => {
@@ -71,7 +88,9 @@ impl LinuxCanCore {
         Ok(AuxObservables {
             mech_pos,
             mech_vel,
+            iqf,
             vbus,
+            motor_temp,
             fault_sta,
         })
     }
@@ -104,7 +123,15 @@ impl LinuxCanCore {
                         Some(v) => serde_json::json!(v),
                         None => continue,
                     },
+                    "iqf" => match aux.iqf {
+                        Some(v) => serde_json::json!(v),
+                        None => continue,
+                    },
                     "vbus" => match aux.vbus {
+                        Some(v) => serde_json::json!(v),
+                        None => continue,
+                    },
+                    "motor_temp" => match aux.motor_temp {
                         Some(v) => serde_json::json!(v),
                         None => continue,
                     },
@@ -149,6 +176,13 @@ impl LinuxCanCore {
         // `aux.fault_sta` are direction-agnostic and pass through
         // unchanged.
         let dir_sign = motor.common.direction_sign_f32();
+        let torque_nm = aux.iqf.map(|iqf| {
+            iqf * state
+                .spec_for(motor.robstride_model())
+                .hardware
+                .torque_constant_nm_per_arms
+                * dir_sign
+        });
         let (merged, outcome): (MotorFeedback, MergeOutcome) = {
             let mut latest = state.latest.write().expect("latest poisoned");
             let now_ms = Utc::now().timestamp_millis();
@@ -156,6 +190,12 @@ impl LinuxCanCore {
                 Some(row) => {
                     if let Some(v) = aux.vbus {
                         row.vbus_v = v;
+                    }
+                    if let Some(v) = aux.motor_temp {
+                        row.temp_c = v;
+                    }
+                    if let Some(v) = torque_nm {
+                        row.torque_nm = v;
                     }
                     if let Some(f) = aux.fault_sta {
                         row.fault_sta = f;
@@ -181,9 +221,9 @@ impl LinuxCanCore {
                         can_id: motor.common.can_id,
                         mech_pos_rad: aux.mech_pos.unwrap_or_default() * dir_sign,
                         mech_vel_rad_s: aux.mech_vel.unwrap_or_default() * dir_sign,
-                        torque_nm: 0.0,
+                        torque_nm: torque_nm.unwrap_or_default(),
                         vbus_v: aux.vbus.unwrap_or_default(),
-                        temp_c: 0.0,
+                        temp_c: aux.motor_temp.unwrap_or_default(),
                         fault_sta: aux.fault_sta.unwrap_or_default(),
                         warn_sta: 0,
                     };
@@ -202,7 +242,9 @@ impl LinuxCanCore {
                 poll_started_ms = poll_started_ms,
                 aux_pos = ?aux.mech_pos,
                 aux_vel = ?aux.mech_vel,
+                aux_iqf = ?aux.iqf,
                 aux_vbus = ?aux.vbus,
+                aux_temp = ?aux.motor_temp,
                 aux_fault = ?aux.fault_sta,
                 "aux merge"
             ),
@@ -213,7 +255,9 @@ impl LinuxCanCore {
                 poll_started_ms = poll_started_ms,
                 aux_pos = ?aux.mech_pos,
                 aux_vel = ?aux.mech_vel,
+                aux_iqf = ?aux.iqf,
                 aux_vbus = ?aux.vbus,
+                aux_temp = ?aux.motor_temp,
                 aux_fault = ?aux.fault_sta,
                 "aux merge: type-17 fallback refreshed t_ms (no type-2 this tick)"
             ),
