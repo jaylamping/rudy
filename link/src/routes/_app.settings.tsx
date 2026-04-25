@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { RefreshCw, RotateCcw, ShieldCheck, SlidersHorizontal } from "lucide-react";
+import { Copy, Download, RefreshCw, RotateCcw, ShieldCheck, SlidersHorizontal } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { queryKeys, settingsQueryOptions } from "@/api";
 import { api, ApiError } from "@/lib/api";
@@ -22,6 +22,7 @@ function SettingsPage() {
   const [cat, setCat] = useState<"all" | string>("all");
   const [resOpen, setResOpen] = useState(false);
   const [rseedOpen, setRseedOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const resetAll = useMutation({
     mutationFn: () => api.settings.reset(),
@@ -62,6 +63,37 @@ function SettingsPage() {
           cortex
         </Badge>
         <div className="ml-auto flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={!q.data && q.isFetching}
+            onClick={async () => {
+              const fresh = await q.refetch();
+              const data = fresh.data ?? q.data;
+              if (!data) return;
+              await copySettingsExport(data);
+              setCopied(true);
+              window.setTimeout(() => setCopied(false), 1500);
+            }}
+          >
+            <Copy className="mr-1 h-3.5 w-3.5" />
+            {copied ? "Copied" : "Copy JSON"}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={!q.data && q.isFetching}
+            onClick={async () => {
+              const fresh = await q.refetch();
+              const data = fresh.data ?? q.data;
+              if (data) downloadSettingsExport(data);
+            }}
+          >
+            <Download className="mr-1 h-3.5 w-3.5" />
+            Export JSON
+          </Button>
           {q.data?.runtime_db_enabled ? (
             <>
               <Button type="button" variant="outline" size="sm" onClick={() => setResOpen(true)}>
@@ -182,6 +214,71 @@ function SettingsPage() {
       ) : null}
     </div>
   );
+}
+
+type SettingsExportData = {
+  runtime_db_enabled: boolean;
+  recovery_pending: boolean;
+  entries: SettingEntry[];
+};
+
+function settingsExportJson(data: SettingsExportData): string {
+  const exportedAt = new Date().toISOString();
+  const values = Object.fromEntries(data.entries.map((e) => [e.key, e.effective]));
+  const payload = {
+    exported_at: exportedAt,
+    runtime_db_enabled: data.runtime_db_enabled,
+    recovery_pending: data.recovery_pending,
+    values,
+    entries: data.entries.map((e) => ({
+      key: e.key,
+      label: e.label,
+      category: e.category,
+      value_kind: e.value_kind,
+      unit: e.unit,
+      effective: e.effective,
+      seed: e.seed,
+      in_db: e.in_db,
+      dirty: e.dirty,
+      apply_mode: e.apply_mode,
+      editable: e.editable,
+      read_only_reason: e.read_only_reason,
+      requires_motors_stopped: e.requires_motors_stopped,
+    })),
+  };
+  return `${JSON.stringify(payload, null, 2)}\n`;
+}
+
+function downloadSettingsExport(data: SettingsExportData) {
+  const exportedAt = new Date().toISOString();
+  const blob = new Blob([settingsExportJson(data)], {
+    type: "application/json",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `rudy-settings-${exportedAt.replace(/[:.]/g, "-")}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+async function copySettingsExport(data: SettingsExportData) {
+  const text = settingsExportJson(data);
+  if (navigator.clipboard) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand("copy");
+  textarea.remove();
 }
 
 function EntryRow({ entry: e }: { entry: SettingEntry }) {
