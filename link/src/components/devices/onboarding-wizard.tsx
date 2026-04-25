@@ -4,7 +4,7 @@
  */
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { Loader2 } from "lucide-react";
 import { queryKeys, useConfigQuery } from "@/api";
@@ -95,6 +95,8 @@ export function OnboardingWizard({
   const [createdRole, setCreatedRole] = useState<string | null>(null);
 
   const derivedRole = `${limb}.${jointKind}`;
+  const deviceKey = device ? `${device.bus}:${device.can_id}` : null;
+  const lastResetKey = useRef<string | null>(null);
 
   const onboardMut = useMutation({
     mutationFn: () => {
@@ -142,14 +144,19 @@ export function OnboardingWizard({
   });
 
   useEffect(() => {
-    if (open && device) {
-      setPhase("form");
-      setCreatedRole(null);
-      onboardMut.reset();
-      commissionMut.reset();
-      verifyMut.reset();
+    if (!open || !deviceKey) {
+      lastResetKey.current = null;
+      return;
     }
-  }, [open, device, onboardMut, commissionMut, verifyMut]);
+
+    if (lastResetKey.current === deviceKey) return;
+    lastResetKey.current = deviceKey;
+    setPhase("form");
+    setCreatedRole(null);
+    onboardMut.reset();
+    commissionMut.reset();
+    verifyMut.reset();
+  }, [open, deviceKey, onboardMut, commissionMut, verifyMut]);
 
   const resetAndClose = () => {
     setPhase("form");
