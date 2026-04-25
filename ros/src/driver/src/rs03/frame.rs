@@ -59,8 +59,7 @@ pub fn passive_observer_node_id(can_id: u32) -> Option<u8> {
     let node = match comm {
         // Source id is in bits 16..23 (device → host frames whose layout
         // mirrors the type-2 motor feedback header).
-        c if c == CommType::GetDeviceId as u8 || c == CommType::MotorFeedback as u8 =>
-        {
+        c if c == CommType::GetDeviceId as u8 || c == CommType::MotorFeedback as u8 => {
             ((raw >> 16) & 0xFF) as u8
         }
         // Source id is in bits 8..15 (type-17 reply convention reused by
