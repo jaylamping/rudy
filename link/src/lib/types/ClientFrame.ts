@@ -16,7 +16,7 @@ import type { WtSubscribe } from "./WtSubscribe";
  * truth for the encoding and is auto-generated against the ts-rs export
  * of this enum.
  */
-export type ClientFrame = { "kind": "subscribe" } & WtSubscribe | { "kind": "motion_jog", role: string, vel_rad_s: number,
+export type ClientFrame = { "kind": "subscribe" } & WtSubscribe | { "kind": "motion_jog", role: string, vel_rad_s: number, 
 /**
  * Per-tab control-lock session id. Required for motion frames so WT
  * cannot bypass the same single-operator gate as REST.
