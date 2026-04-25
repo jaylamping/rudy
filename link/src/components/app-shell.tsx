@@ -133,7 +133,7 @@ export function AppShell() {
           <RestartButton />
           <EstopButton />
         </header>
-        <div className="mx-auto w-full max-w-6xl p-4 sm:p-6">
+        <div className="mx-auto w-full max-w-[85vw] p-4 sm:p-6 2xl:max-w-[90rem]">
           <Outlet />
         </div>
       </main>
