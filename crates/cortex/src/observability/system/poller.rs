@@ -16,7 +16,7 @@
 //! dashboard animates without hardware. Same pattern motor telemetry uses
 //! (see `crates/cortex/src/can/mock.rs`).
 
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use tracing::{debug, info};
 
@@ -60,9 +60,10 @@ pub fn spawn(state: SharedState) {
     });
 }
 
-/// Maintains state needed to compute deltas (CPU pct).
-#[derive(Debug, Default)]
+/// Maintains state needed to compute deltas (CPU pct) and process lifetime.
+#[derive(Debug)]
 pub struct SystemPoller {
+    started_at: Instant,
     // Read on Linux to compute CPU pct deltas; harmless dead state elsewhere.
     #[allow(dead_code)]
     last_cpu: Option<CpuTotals>,
@@ -77,25 +78,30 @@ struct CpuTotals {
 
 impl SystemPoller {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            started_at: Instant::now(),
+            last_cpu: None,
+        }
     }
 
     pub fn snapshot(&mut self, mock: bool) -> SystemSnapshot {
+        let cortex_uptime_s = self.started_at.elapsed().as_secs();
         if mock || !cfg!(target_os = "linux") {
-            return mock_snapshot();
+            return mock_snapshot(cortex_uptime_s);
         }
         #[cfg(target_os = "linux")]
         {
-            linux::read_snapshot(self).unwrap_or_else(|_| mock_snapshot())
+            linux::read_snapshot(self, cortex_uptime_s)
+                .unwrap_or_else(|_| mock_snapshot(cortex_uptime_s))
         }
         #[cfg(not(target_os = "linux"))]
         {
-            mock_snapshot()
+            mock_snapshot(cortex_uptime_s)
         }
     }
 }
 
-fn mock_snapshot() -> SystemSnapshot {
+fn mock_snapshot(cortex_uptime_s: u64) -> SystemSnapshot {
     let secs = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs_f64())
@@ -121,6 +127,7 @@ fn mock_snapshot() -> SystemSnapshot {
             raw_hex: None,
         },
         uptime_s: 3600 * 12 + (secs as u64 % 600),
+        cortex_uptime_s,
         hostname: hostname_or("rudy-dev"),
         kernel: "mock".to_string(),
         is_mock: true,
@@ -148,7 +155,10 @@ mod linux {
     use super::{hostname_or, now_ms, CpuTotals, SystemPoller};
     use crate::types::{SystemSnapshot, SystemTemps, SystemThrottled};
 
-    pub fn read_snapshot(poller: &mut SystemPoller) -> std::io::Result<SystemSnapshot> {
+    pub fn read_snapshot(
+        poller: &mut SystemPoller,
+        cortex_uptime_s: u64,
+    ) -> std::io::Result<SystemSnapshot> {
         let cpu_now = read_cpu_totals()?;
         let cpu_pct = match poller.last_cpu {
             Some(prev) if cpu_now.total > prev.total => {
@@ -177,6 +187,7 @@ mod linux {
             temps_c: temps,
             throttled,
             uptime_s,
+            cortex_uptime_s,
             hostname: hostname_or("rudy"),
             kernel,
             is_mock: false,

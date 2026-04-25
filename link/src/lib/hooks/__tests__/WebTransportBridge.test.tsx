@@ -140,6 +140,7 @@ function makeSystem(t_ms: number): SystemSnapshot {
     temps_c: { cpu: 48, gpu: 45 },
     throttled: { now: false, ever: false, raw_hex: "0x0" },
     uptime_s: 1234n as unknown as bigint,
+    cortex_uptime_s: 56n as unknown as bigint,
     hostname: "test",
     kernel: "test",
     is_mock: true,

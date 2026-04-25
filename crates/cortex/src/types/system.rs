@@ -20,7 +20,10 @@ pub struct SystemSnapshot {
     pub mem_total_mb: u64,
     pub temps_c: SystemTemps,
     pub throttled: SystemThrottled,
+    /// Host/Pi uptime from `/proc/uptime`.
     pub uptime_s: u64,
+    /// Cortex daemon uptime since this process started.
+    pub cortex_uptime_s: u64,
     pub hostname: String,
     pub kernel: String,
     /// True when values are synthetic (no Linux host or `cfg.can.mock = true`).

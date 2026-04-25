@@ -56,19 +56,16 @@ export function SystemHealthCard({ className }: { className?: string }) {
             warn={70}
             crit={80}
           />
-          <Gauge
-            label="GPU temp"
-            value={snap.temps_c.gpu ?? null}
-            unit="degC"
-            warn={70}
-            crit={80}
+          <Stat
+            label="Cortex uptime"
+            value={fmtUptime(Number(snap.cortex_uptime_s))}
           />
           <Stat label="Load 1m" value={snap.load[0].toFixed(2)} mono />
           <Stat
             label="Mem used"
             value={`${snap.mem_used_mb} / ${snap.mem_total_mb} MiB`}
           />
-          <Stat label="Uptime" value={fmtUptime(Number(snap.uptime_s))} />
+          <Stat label="Pi uptime" value={fmtUptime(Number(snap.uptime_s))} />
           <Stat
             label="Throttled"
             value={

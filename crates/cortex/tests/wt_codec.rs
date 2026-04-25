@@ -57,6 +57,7 @@ fn sample_system() -> SystemSnapshot {
             raw_hex: Some("0x0".into()),
         },
         uptime_s: 12_345,
+        cortex_uptime_s: 678,
         hostname: "rudy-pi".into(),
         kernel: "6.6.20-rpi".into(),
         is_mock: false,
