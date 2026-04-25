@@ -190,14 +190,22 @@ export function WebTransportBridge({
         }),
     );
 
-    // Inventory-shape `safety_event`s that change the `["motors"]` cache
-    // structure (not just per-motor telemetry, which the regular reducers
-    // handle). A `motor_renamed` event can arrive here either because
-    // *this* tab triggered an assign/rename, or because another tab /
-    // operator did — either way, the cached motor list is now wrong and
-    // a refetch is the only honest fix.
+    // `MotorSummary.boot_state` (and inventory fields) come from the REST
+    // bootstrap; `motor_feedback` WT merges only patch `latest`. Without a
+    // refetch, badges like "needs verify & home" stay stale after the daemon
+    // transitions to `Homed` on `auto_homed` / `homed` / `home_failed`, etc.
+    const MOTORS_INVALIDATING_SAFETY_EVENTS = new Set([
+      "auto_homed",
+      "commissioned",
+      "home_failed",
+      "homed",
+      "motor_removed",
+      "motor_renamed",
+      "offset_changed",
+      "travel_limit_violation",
+    ]);
     const unsubInv = wt.onKind<{ kind: string }>("safety_event", (env) => {
-      if (env.data.kind === "motor_renamed") {
+      if (MOTORS_INVALIDATING_SAFETY_EVENTS.has(env.data.kind)) {
         queryClient.invalidateQueries({ queryKey: queryKeys.motors.all() });
       }
     });
