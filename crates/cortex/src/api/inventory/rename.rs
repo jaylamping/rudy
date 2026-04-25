@@ -205,12 +205,13 @@ async fn do_rename(
     }
 
     let inv_path = state.cfg.paths.inventory.clone();
+    let db_ctx = state.runtime_inventory_persist();
     let role_for_closure = role.clone();
     let new_role_for_closure = new_role.clone();
     let assignment_for_closure = assignment.clone();
 
     let new_inv = tokio::task::spawn_blocking(move || {
-        inventory::write_atomic(&inv_path, |inv| {
+        inventory::write_atomic(&inv_path, db_ctx, |inv| {
             let m: &mut Actuator = inv
                 .devices
                 .iter_mut()

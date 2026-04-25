@@ -263,7 +263,7 @@ pub async fn run(
     from_rad: f32,
     target_rad: f32,
 ) -> Result<(f32, u32), (String, f32)> {
-    let budget = state.cfg.safety.tracking_error_max_rad;
+    let budget = state.read_effective().safety.tracking_error_max_rad;
     run_with_tracking_budget(state, motor, from_rad, target_rad, budget).await
 }
 
@@ -292,7 +292,7 @@ async fn finish_home_success(
     // like shoulder_pitch with arm payload typically need 200-300 vs the
     // global 120 — `inventory.yaml` carries `hold_kp_nm_per_rad` /
     // `hold_kd_nm_s_per_rad` per actuator. `None` (the default for
-    // every freshly-onboarded motor) inherits from `cfg.safety.*`.
+    // every freshly-onboarded motor) inherits from `effective.safety.*`.
     let kp = motor
         .common
         .hold_kp_nm_per_rad
@@ -404,8 +404,9 @@ pub fn resolve_homing_speed(state: &SharedState, motor: &Actuator) -> (f32, &'st
             return (v.min(MAX_HOMER_VEL_RAD_S), "actuator_override");
         }
     }
-    let g = state.cfg.safety.effective_homing_speed_rad_s();
-    let src = if state.cfg.safety.homing_speed_rad_s.is_some() {
+    let eff = state.read_effective();
+    let g = eff.safety.effective_homing_speed_rad_s();
+    let src = if eff.safety.homing_speed_rad_s.is_some() {
         "global_config"
     } else {
         "derived_step_tick"
@@ -454,7 +455,7 @@ pub async fn run_with_overrides(
     homing_speed_source: &'static str,
 ) -> Result<(f32, u32), (String, f32)> {
     let role = motor.common.role.clone();
-    let cfg = state.cfg.safety.clone();
+    let cfg = state.read_effective().safety.clone();
     let tick = Duration::from_millis(cfg.tick_interval_ms.max(5) as u64);
     let timeout = Duration::from_millis(cfg.homer_timeout_ms.max(1_000) as u64);
     let grace_ticks = cfg.tracking_error_grace_ticks;

@@ -97,6 +97,7 @@ Today: `control` ships a **loopback** `SystemInterface` for CI/bring-up. The top
 - **URDF limits/dynamics**: must stay consistent with the actuator spec (enforced by `tests/`)
 - **Sim randomization**: `ros/src/simulation/configs/*.yaml`
 - **ROS parameters**: per-package `config/` + `bringup`
+- **Operator console live state**: `cortex` uses SQLite (see [ADR-0007](decisions/0007-runtime-config-sqlite.md)) for runtime safety/telemetry (and, when enabled, full inventory) after the first import; checked-in TOML/YAML remain **seed** defaults, not the live source of truth on the Pi after that import.
 
 ## See also
 

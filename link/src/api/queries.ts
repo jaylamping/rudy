@@ -84,3 +84,16 @@ export const logsLevelQueryOptions = () =>
 export function useLogsLevelQuery() {
   return useQuery(logsLevelQueryOptions());
 }
+
+// ---------------------------------------------------------------------------
+// /api/settings
+// ---------------------------------------------------------------------------
+
+const SETTINGS_STALE_MS = 15_000;
+
+export const settingsQueryOptions = () =>
+  queryOptions({
+    queryKey: queryKeys.settings.all(),
+    queryFn: () => api.settings.get(),
+    staleTime: SETTINGS_STALE_MS,
+  });

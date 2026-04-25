@@ -63,7 +63,7 @@ fn summary_for(
         travel_limits: m.common.travel_limits.clone(),
         predefined_home_rad: m.common.predefined_home_rad,
         homing_speed_rad_s: m.common.homing_speed_rad_s,
-        default_homing_speed_rad_s: state.cfg.safety.effective_homing_speed_rad_s(),
+        default_homing_speed_rad_s: state.read_effective().safety.effective_homing_speed_rad_s(),
         latest,
         boot_state: boot_state::current(state, &m.common.role),
         limb: m.common.limb.clone(),

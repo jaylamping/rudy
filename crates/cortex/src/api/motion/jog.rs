@@ -88,7 +88,7 @@ pub async fn jog(
             Some(format!("inventory entry for {role} has present=false")),
         ));
     }
-    if state.cfg.safety.require_verified && !motor.common.verified {
+    if state.read_effective().safety.require_verified && !motor.common.verified {
         return Err(err(
             StatusCode::FORBIDDEN,
             "not_verified",
@@ -143,7 +143,7 @@ pub async fn jog(
     // The previous policy was "no recent feedback => skip the band check
     // and let the firmware envelope handle it"; that's the sweep-safe
     // hole the new policy closes (see Sweep-safe CAN I/O plan).
-    let max_age_ms = state.cfg.safety.max_feedback_age_ms as i64;
+    let max_age_ms = state.read_effective().safety.max_feedback_age_ms as i64;
     let now_ms = Utc::now().timestamp_millis();
     let fb_snapshot = state
         .latest
@@ -261,13 +261,13 @@ pub async fn jog(
         // anything trying to skip past the homer.
         if !matches!(bs, BootState::Homed) {
             let delta = shortest_signed_delta(fb.mech_pos_rad, projected).abs();
-            if delta > state.cfg.safety.boot_max_step_rad {
+            if delta > state.read_effective().safety.boot_max_step_rad {
                 return Err(err(
                     StatusCode::CONFLICT,
                     "step_too_large",
                     Some(format!(
                     "projected delta {delta:.3} rad exceeds boot_max_step_rad {:.3} rad; run /home first",
-                    state.cfg.safety.boot_max_step_rad
+                    state.read_effective().safety.boot_max_step_rad
                 )),
                 ));
             }

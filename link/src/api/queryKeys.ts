@@ -49,6 +49,10 @@ export const queryKeys = {
     all: () => ["reminders"] as const,
   },
 
+  settings: {
+    all: () => ["settings"] as const,
+  },
+
   logs: {
     /**
      * The "live tail" slot. The WebTransport `log_event` reducer writes here

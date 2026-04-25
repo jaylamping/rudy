@@ -8,4 +8,5 @@ export {
   useConfigQuery,
   logsLevelQueryOptions,
   useLogsLevelQuery,
+  settingsQueryOptions,
 } from "./queries";

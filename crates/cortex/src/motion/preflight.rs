@@ -25,6 +25,7 @@
 //! strings.
 
 use chrono::Utc;
+use std::sync::atomic::Ordering;
 
 use crate::boot_state::{self, BootState};
 use crate::can::angle::UnwrappedAngle;
@@ -77,6 +78,8 @@ pub enum PreflightFailure {
         limb: String,
         failed_motors: Vec<LimbQuarantineMotor>,
     },
+    /// Runtime DB re-seeded from seed files; operator must `POST /api/settings/recovery/ack`.
+    SettingsRecovery,
     Internal(String),
 }
 
@@ -96,6 +99,7 @@ impl PreflightFailure {
             PreflightFailure::PathViolation { .. } => "path_violation",
             PreflightFailure::StepTooLarge { .. } => "step_too_large",
             PreflightFailure::LimbQuarantined { .. } => "limb_quarantined",
+            PreflightFailure::SettingsRecovery => "settings_recovery",
             PreflightFailure::Internal(_) => "internal",
         }
     }
@@ -157,6 +161,9 @@ impl PreflightFailure {
                     .join(", ");
                 format!("limb {limb} quarantined ({names})")
             }
+            PreflightFailure::SettingsRecovery => {
+                "settings DB recovered from seed — acknowledge in Settings before motion".to_string()
+            }
             PreflightFailure::Internal(s) => s.clone(),
         }
     }
@@ -194,6 +201,9 @@ impl PreflightChecks<'_> {
     /// Run every check. On success the caller has everything it needs
     /// (motor, latest feedback, boot state) without re-reading the locks.
     pub fn run(&self) -> Result<PreflightOk, PreflightFailure> {
+        if self.state.settings_recovery_pending.load(Ordering::SeqCst) {
+            return Err(PreflightFailure::SettingsRecovery);
+        }
         let motor = {
             let inv = self.state.inventory.read().expect("inventory poisoned");
             inv.actuator_by_role(self.role).cloned()
@@ -203,7 +213,7 @@ impl PreflightChecks<'_> {
         if !motor.common.present {
             return Err(PreflightFailure::Absent);
         }
-        if self.state.cfg.safety.require_verified && !motor.common.verified {
+        if self.state.read_effective().safety.require_verified && !motor.common.verified {
             return Err(PreflightFailure::NotVerified);
         }
 
@@ -244,7 +254,7 @@ impl PreflightChecks<'_> {
             _ => {}
         }
 
-        let max_age_ms = self.state.cfg.safety.max_feedback_age_ms as i64;
+        let max_age_ms = self.state.read_effective().safety.max_feedback_age_ms as i64;
         let now_ms = Utc::now().timestamp_millis();
         let feedback = match self
             .state
@@ -311,10 +321,10 @@ impl PreflightChecks<'_> {
 
         if !matches!(bs, BootState::Homed) {
             let delta = shortest_signed_delta(feedback.mech_pos_rad, projected).abs();
-            if delta > self.state.cfg.safety.boot_max_step_rad {
+            if delta > self.state.read_effective().safety.boot_max_step_rad {
                 return Err(PreflightFailure::StepTooLarge {
                     delta_rad: delta,
-                    cap_rad: self.state.cfg.safety.boot_max_step_rad,
+                    cap_rad: self.state.read_effective().safety.boot_max_step_rad,
                 });
             }
         }

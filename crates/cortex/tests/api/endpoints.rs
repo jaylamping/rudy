@@ -51,5 +51,17 @@ fn endpoint_inventory_documented() {
         "POST   /api/reminders",
         "PUT    /api/reminders/:id",
         "DELETE /api/reminders/:id",
+        "GET    /api/logs",
+        "DELETE /api/logs",
+        "GET    /api/logs/level",
+        "PUT    /api/logs/level",
+        "GET    /api/settings",
+        "PUT    /api/settings/:key",
+        "POST   /api/settings/reset",
+        "POST   /api/settings/reseed",
+        "POST   /api/settings/recovery/ack",
+        "GET    /api/settings/profiles",
+        "POST   /api/settings/profiles",
+        "POST   /api/settings/profiles/apply/:name",
     ];
 }

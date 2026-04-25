@@ -206,7 +206,10 @@ pub async fn restore_offset(
         ));
     };
 
-    let tol = state.cfg.safety.commission_readback_tolerance_rad;
+    let tol = state
+        .read_effective()
+        .safety
+        .commission_readback_tolerance_rad;
     if (stored_rad - stored_commission).abs() > tol {
         let detail = format!(
             "OffsetChanged.stored_rad ({stored_rad}) disagrees with inventory commissioned_zero_offset ({stored_commission}) beyond tolerance ({tol})"

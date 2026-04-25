@@ -12,8 +12,8 @@ use chrono::Utc;
 use super::finish_home_success;
 use crate::audit::AuditLog;
 use crate::config::{
-    CanConfig, Config, HttpConfig, LogsConfig, PathsConfig, SafetyConfig, TelemetryConfig,
-    WebTransportConfig,
+    CanConfig, Config, HttpConfig, LogsConfig, PathsConfig, RuntimeDbConfig, SafetyConfig,
+    TelemetryConfig, WebTransportConfig,
 };
 use crate::inventory::Inventory;
 use crate::reminders::ReminderStore;
@@ -96,6 +96,7 @@ fn fixture_state() -> (
             db_path: dir.path().join("logs.db"),
             ..LogsConfig::default()
         },
+        runtime: RuntimeDbConfig::default(),
     };
     let specs = spec::load_robstride_specs(dir.path(), Some(&spec_path)).unwrap();
     let inv = Inventory::load(&inv_path).unwrap();

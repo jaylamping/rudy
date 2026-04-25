@@ -9,6 +9,7 @@ mod can;
 mod http;
 mod logs;
 mod paths;
+mod runtime_db;
 mod safety;
 mod telemetry;
 mod webtransport;
@@ -17,6 +18,7 @@ pub use can::{CanBusConfig, CanConfig};
 pub use http::HttpConfig;
 pub use logs::LogsConfig;
 pub use paths::PathsConfig;
+pub use runtime_db::RuntimeDbConfig;
 pub use safety::SafetyConfig;
 
 /// Used by `can::home_ramp::dwell_tests` and `position_hold_tests`; keep defaults
@@ -39,6 +41,8 @@ pub struct Config {
     pub safety: SafetyConfig,
     #[serde(default)]
     pub logs: LogsConfig,
+    #[serde(default)]
+    pub runtime: RuntimeDbConfig,
 }
 
 impl Config {
@@ -90,6 +94,20 @@ impl Config {
                     .map(PathBuf::from)
                     .unwrap_or_else(|| PathBuf::from("logs.db"));
                 self.logs.db_path = parent.join(file_name);
+            }
+        }
+        if self.runtime.enabled
+            && !self.runtime.db_path.has_root()
+            && self.paths.audit_log.has_root()
+        {
+            if let Some(parent) = self.paths.audit_log.parent() {
+                let file_name = self
+                    .runtime
+                    .db_path
+                    .file_name()
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|| PathBuf::from("runtime.db"));
+                self.runtime.db_path = parent.join(file_name);
             }
         }
     }

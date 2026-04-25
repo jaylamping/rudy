@@ -115,6 +115,14 @@ fi
   echo "# with EROFS and the daemon never reaches the HTTP listener, taking"
   echo "# the whole console offline."
   echo "db_path = \"/var/lib/rudy/logs.db\""
+  echo
+  echo "[runtime]"
+  echo "# Operator-tuned safety/telemetry + inventory snapshot in one SQLite"
+  echo "# file. Settings UI writes here; re-run render only refreshes this block"
+  echo "# (not the merged KV). See docs/decisions/0007-runtime-config-sqlite.md"
+  echo "enabled = true"
+  echo "db_path = \"/var/lib/rudy/runtime.db\""
+  echo "inventory_yaml_mirror = true"
 } | sudo tee "${CONFIG_PATH}" >/dev/null
 
 sudo chown rudy:rudy "${CONFIG_PATH}"

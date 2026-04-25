@@ -227,3 +227,9 @@ band_violation_debounce_ticks = 15
 # probes across 0x01..0x7F on each configured bus). Disable to trim boot
 # latency or on noisy test benches.
 scan_on_boot = true
+
+# SQLite: merged safety/telemetry + optional inventory body (see ADR-0007).
+[runtime]
+enabled = true
+db_path = ".cortex/runtime.db"
+inventory_yaml_mirror = true

@@ -56,6 +56,7 @@ fn cfg_with(audit_log: &str, db_path: Option<&str>) -> Config {
                 .unwrap_or_else(super::logs::default_logs_db_path),
             ..Default::default()
         },
+        runtime: super::RuntimeDbConfig::default(),
     }
 }
 

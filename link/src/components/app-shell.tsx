@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   Menu,
   ScrollText,
+  SlidersHorizontal,
   View,
 } from "lucide-react";
 import { useState } from "react";
@@ -40,6 +41,7 @@ const NAV: readonly NavItem[] = [
   { to: "/jog", label: "Jog", Icon: Gamepad2 },
   { to: "/viz", label: "Viz", Icon: View },
   { to: "/logs", label: "Logs", Icon: ScrollText },
+  { to: "/settings", label: "Settings", Icon: SlidersHorizontal },
 ] as const;
 
 function NavLinks({

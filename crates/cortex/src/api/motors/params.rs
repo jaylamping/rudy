@@ -55,7 +55,7 @@ fn persist_desired_params(
 ) -> Result<(), anyhow::Error> {
     let role_owned = role.to_string();
     let inv_path = state.cfg.paths.inventory.clone();
-    let new_inv = inventory::write_atomic(&inv_path, |inv| {
+    let new_inv = inventory::write_atomic(&inv_path, state.runtime_inventory_persist(), |inv| {
         let actuator = inv
             .devices
             .iter_mut()

@@ -89,7 +89,7 @@ use crate::types::SafetyEvent;
 /// declining to act and waiting for a fresh tick. Reuses the existing
 /// `safety.max_feedback_age_ms` so config drift is impossible.
 fn max_feedback_age_ms(state: &SharedState) -> u64 {
-    state.cfg.safety.max_feedback_age_ms
+    state.read_effective().safety.max_feedback_age_ms
 }
 
 /// Inter-retry sleep on transient `read_add_offset` failures. Single
@@ -137,7 +137,7 @@ pub fn spawn_if_orchestrator_qualifies(
 /// and we never want a telemetry tick blocked on it.
 pub async fn maybe_run(state: SharedState, role: String) {
     // Step 1: master switch.
-    if !state.cfg.safety.auto_home_on_boot {
+    if !state.read_effective().safety.auto_home_on_boot {
         info!(
             role = %role,
             "boot_orchestrator: skipping (auto_home_on_boot=false)",
@@ -204,7 +204,10 @@ pub async fn maybe_run(state: SharedState, role: String) {
 
     // Step 5: tolerance check. Mismatch → OffsetChanged terminal state
     // (operator action required).
-    let tolerance = state.cfg.safety.commission_readback_tolerance_rad;
+    let tolerance = state
+        .read_effective()
+        .safety
+        .commission_readback_tolerance_rad;
     if (current_offset - stored_offset).abs() > tolerance {
         warn!(
             role = %role,
@@ -302,7 +305,7 @@ pub async fn maybe_run(state: SharedState, role: String) {
         predefined_home_rad = ?predefined_home_rad,
         limits_min_rad = ?limits_min,
         limits_max_rad = ?limits_max,
-        boot_tracking_error_max_rad = state.cfg.safety.boot_tracking_error_max_rad,
+        boot_tracking_error_max_rad = state.read_effective().safety.boot_tracking_error_max_rad,
         "boot_orchestrator: starting auto-home",
     );
 
@@ -396,12 +399,13 @@ pub async fn maybe_run(state: SharedState, role: String) {
     // gravity lag while still aborting promptly on a genuinely
     // bound-up joint via the 3-tick debounce.
     let (homing_speed_rad_s, homing_speed_source) = home_ramp::resolve_homing_speed(&state, &motor);
+    let boot_tracking_error_max_rad = state.read_effective().safety.boot_tracking_error_max_rad;
     let outcome = home_ramp::run_with_overrides(
         state.clone(),
         motor.clone(),
         mech_pos_rad,
         target_rad,
-        state.cfg.safety.boot_tracking_error_max_rad,
+        boot_tracking_error_max_rad,
         homing_speed_rad_s,
         homing_speed_source,
     )

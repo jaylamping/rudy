@@ -151,6 +151,7 @@ pub async fn onboard_robstride(
     }
 
     let inv_path = state.cfg.paths.inventory.clone();
+    let db_ctx = state.runtime_inventory_persist();
     let home_rad = home;
     let body_clone = OnboardRobstrideBody {
         can_bus: body.can_bus.clone(),
@@ -165,7 +166,7 @@ pub async fn onboard_robstride(
     let role_for_task = role.clone();
 
     let new_inv = tokio::task::spawn_blocking(move || {
-        inventory::write_atomic(&inv_path, |inv| {
+        inventory::write_atomic(&inv_path, db_ctx, |inv| {
             if inv.by_role(&role_for_task).is_some() {
                 anyhow::bail!("role_in_use");
             }

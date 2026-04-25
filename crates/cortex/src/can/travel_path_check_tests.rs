@@ -8,8 +8,8 @@ use crate::audit::AuditLog;
 use crate::can;
 use crate::can::angle::UnwrappedAngle;
 use crate::config::{
-    CanConfig, Config, HttpConfig, LogsConfig, PathsConfig, SafetyConfig, TelemetryConfig,
-    WebTransportConfig,
+    CanConfig, Config, HttpConfig, LogsConfig, PathsConfig, RuntimeDbConfig, SafetyConfig,
+    TelemetryConfig, WebTransportConfig,
 };
 use crate::inventory::Inventory;
 use crate::reminders::ReminderStore;
@@ -85,6 +85,7 @@ fn state_with_band(min: f32, max: f32) -> (crate::state::SharedState, tempfile::
             db_path: dir.path().join("logs.db"),
             ..LogsConfig::default()
         },
+        runtime: RuntimeDbConfig::default(),
     };
     let specs = spec::load_robstride_specs(dir.path(), Some(&spec_path)).unwrap();
     let inv = Inventory::load(&inv_path).unwrap();
@@ -193,6 +194,7 @@ fn path_check_no_band_returns_nolimit() {
             db_path: dir.path().join("logs.db"),
             ..LogsConfig::default()
         },
+        runtime: RuntimeDbConfig::default(),
     };
     let specs = spec::load_robstride_specs(dir.path(), Some(&spec_path)).unwrap();
     let inv = Inventory::load(&inv_path).unwrap();

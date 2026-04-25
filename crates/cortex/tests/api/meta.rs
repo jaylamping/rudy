@@ -11,7 +11,7 @@ use tower::ServiceExt;
 use cortex::inventory::{Device, Inventory, TravelLimits};
 use cortex::types::{
     ApiError, MotorFeedback, MotorSummary, ParamSnapshot, Reminder, SafetyEvent, ServerConfig,
-    ServerFeatures, SystemSnapshot, WebTransportAdvert,
+    ServerFeatures, SettingsGetResponse, SystemSnapshot, WebTransportAdvert,
 };
 
 #[path = "../common/mod.rs"]
@@ -175,4 +175,27 @@ async fn get_system_returns_system_snapshot_shape() {
     assert!(snap.mem_total_mb > 0);
     assert!(snap.t_ms > 0);
     assert_eq!(snap.load.len(), 3);
+}
+
+/// Runtime settings list (read-only when `[runtime] enabled` is false in fixture).
+#[tokio::test]
+async fn get_settings_registry_shape() {
+    let (state, _dir) = common::make_state();
+    let app = cortex::build_app(state);
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/settings")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let s: SettingsGetResponse = body_json(resp).await;
+    assert!(!s.runtime_db_enabled);
+    assert!(!s.recovery_pending);
+    assert!(!s.entries.is_empty());
+    assert!(s.entries.iter().any(|e| e.key == "safety.require_verified"));
 }

@@ -2,7 +2,10 @@
 
 use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
+
+use rusqlite::Connection;
 
 use tokio::sync::broadcast;
 use tracing_subscriber::EnvFilter;
@@ -10,7 +13,7 @@ use tracing_subscriber::EnvFilter;
 use crate::audit::{AuditEntry, AuditLog, AuditResult};
 use crate::boot_state::BootState;
 use crate::can::RealCanHandle;
-use crate::config::Config;
+use crate::config::{Config, SafetyConfig, TelemetryConfig};
 use crate::inventory::{Inventory, RobstrideModel};
 use crate::log_store::LogStore;
 use crate::motion::{MotionRegistry, MotionStatus};
@@ -32,6 +35,13 @@ use crate::types::{
 /// is up. `PUT /api/logs/level` fires the closure; failure (e.g. internal
 /// reload error) is propagated as a `String`.
 pub type FilterReloadFn = Arc<dyn Fn(EnvFilter) -> Result<(), String> + Send + Sync>;
+
+/// Merged `cortex.toml` + SQLite `settings_kv` (or file-only if runtime DB is disabled).
+#[derive(Debug, Clone)]
+pub struct EffectiveRuntime {
+    pub safety: SafetyConfig,
+    pub telemetry: TelemetryConfig,
+}
 
 /// Identity record for whichever session currently owns the single-operator
 /// lock. The lock is auto-acquired by the first mutating request from a fresh
@@ -58,6 +68,12 @@ pub struct SeenInfo {
 
 pub struct AppState {
     pub cfg: Config,
+    /// After merge with runtime store (or equal to `cfg` when `runtime.enabled` is false).
+    pub effective: RwLock<EffectiveRuntime>,
+    /// `true` until operator `POST /api/settings/recovery/ack` after corrupt-DB re-seed.
+    pub settings_recovery_pending: Arc<AtomicBool>,
+    /// When `[runtime] enabled` — shared handle for `PUT /api/settings` and (later) inventory.
+    pub settings_db: Option<Arc<Mutex<Connection>>>,
     /// Per–RobStride-model hardware spec (`robstride_rs0X.yaml`).
     pub specs: HashMap<RobstrideModel, Arc<ActuatorSpec>>,
     /// Live inventory. Behind a lock so the per-motor PUT endpoints
@@ -210,6 +226,7 @@ impl AppState {
         let (log_event_tx, _) = broadcast::channel::<LogEntry>(2048);
         Self::new_with_log_tx(
             cfg,
+            None,
             specs,
             inventory,
             audit,
@@ -225,6 +242,7 @@ impl AppState {
     /// short form.
     pub fn new_with_log_tx(
         cfg: Config,
+        runtime: Option<crate::settings::RuntimeConfigInit>,
         specs: HashMap<RobstrideModel, Arc<ActuatorSpec>>,
         inventory: Inventory,
         audit: AuditLog,
@@ -232,6 +250,24 @@ impl AppState {
         reminders: ReminderStore,
         log_event_tx: broadcast::Sender<LogEntry>,
     ) -> Self {
+        let (eff, recovery, sdb) = match runtime {
+            Some(r) => (
+                EffectiveRuntime {
+                    safety: r.effective_safety,
+                    telemetry: r.effective_telemetry,
+                },
+                r.recovery_pending,
+                r.db,
+            ),
+            None => (
+                EffectiveRuntime {
+                    safety: cfg.safety.clone(),
+                    telemetry: cfg.telemetry.clone(),
+                },
+                false,
+                None,
+            ),
+        };
         let (feedback_tx, _) = broadcast::channel::<MotorFeedback>(512);
         let (system_tx, _) = broadcast::channel::<SystemSnapshot>(8);
         let (test_progress_tx, _) = broadcast::channel::<TestProgress>(256);
@@ -239,6 +275,9 @@ impl AppState {
         let (motion_status_tx, _) = broadcast::channel::<MotionStatus>(256);
         Self {
             cfg,
+            effective: RwLock::new(eff),
+            settings_recovery_pending: Arc::new(AtomicBool::new(recovery)),
+            settings_db: sdb,
             specs,
             inventory: RwLock::new(inventory),
             seen_can_ids: RwLock::new(HashMap::new()),
@@ -277,6 +316,24 @@ impl AppState {
                 model.robstride_yaml_suffix()
             )
         })
+    }
+
+    /// Merged TOML + runtime DB. Hot paths should take `safety`/`telemetry`
+    /// and drop the lock quickly.
+    pub fn read_effective(&self) -> std::sync::RwLockReadGuard<'_, EffectiveRuntime> {
+        self.effective.read().expect("effective poisoned")
+    }
+
+    /// When `[runtime] enabled` — pass into [`inventory::write_atomic`].
+    pub fn runtime_inventory_persist(&self) -> Option<(std::sync::Arc<Mutex<Connection>>, bool)> {
+        self.settings_db
+            .as_ref()
+            .map(|db| (db.clone(), self.cfg.runtime.inventory_yaml_mirror))
+    }
+
+    /// Replace the merged runtime view after validated DB update (`PUT /api/settings`).
+    pub fn set_effective(&self, eff: EffectiveRuntime) {
+        *self.effective.write().expect("effective poisoned") = eff;
     }
 
     /// Wire the persistent log store + fan out the audit log into both it

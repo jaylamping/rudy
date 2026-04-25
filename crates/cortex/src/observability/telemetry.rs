@@ -135,7 +135,7 @@ pub fn spawn(state: SharedState) {
                 }
 
                 let mut tick = tokio::time::interval(std::time::Duration::from_millis(
-                    state.cfg.telemetry.poll_interval_ms.max(10),
+                    state.read_effective().telemetry.poll_interval_ms.max(10),
                 ));
                 loop {
                     tick.tick().await;

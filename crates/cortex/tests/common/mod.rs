@@ -28,8 +28,8 @@ use std::sync::Arc;
 use cortex::audit::AuditLog;
 use cortex::can;
 use cortex::config::{
-    CanConfig, Config, HttpConfig, LogsConfig, PathsConfig, SafetyConfig, TelemetryConfig,
-    WebTransportConfig,
+    CanConfig, Config, HttpConfig, LogsConfig, PathsConfig, RuntimeDbConfig, SafetyConfig,
+    TelemetryConfig, WebTransportConfig,
 };
 use cortex::inventory::{Actuator, Device, Inventory};
 use cortex::reminders::ReminderStore;
@@ -115,6 +115,7 @@ pub fn make_state() -> (SharedState, tempfile::TempDir) {
             batch_flush_ms: 25,
             purge_interval_s: 60,
         },
+        runtime: RuntimeDbConfig::default(),
     };
 
     let specs = spec::load_robstride_specs(dir.path(), Some(&spec_path)).expect("load specs");
@@ -213,6 +214,7 @@ pub fn make_state_commission_can_path_fails() -> (SharedState, tempfile::TempDir
             batch_flush_ms: 25,
             purge_interval_s: 60,
         },
+        runtime: RuntimeDbConfig::default(),
     };
 
     let specs = spec::load_robstride_specs(dir.path(), Some(&spec_path)).expect("load specs");

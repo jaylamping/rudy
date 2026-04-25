@@ -18,8 +18,8 @@ use super::{resolve_homing_speed, run_with_tracking_budget, MAX_HOMER_VEL_RAD_S}
 use crate::audit::AuditLog;
 use crate::can;
 use crate::config::{
-    CanConfig, Config, HttpConfig, LogsConfig, PathsConfig, SafetyConfig, TelemetryConfig,
-    WebTransportConfig,
+    CanConfig, Config, HttpConfig, LogsConfig, PathsConfig, RuntimeDbConfig, SafetyConfig,
+    TelemetryConfig, WebTransportConfig,
 };
 use crate::inventory::Inventory;
 use crate::reminders::ReminderStore;
@@ -98,6 +98,7 @@ fn state_with_real_can_stub_inner(
             db_path: dir.path().join("logs.db"),
             ..LogsConfig::default()
         },
+        runtime: RuntimeDbConfig::default(),
     };
     let specs = spec::load_robstride_specs(dir.path(), Some(&spec_path)).unwrap();
     let inv = Inventory::load(&inv_path).unwrap();
@@ -187,6 +188,7 @@ fn state_with_velocity_gate(
             db_path: dir.path().join("logs.db"),
             ..LogsConfig::default()
         },
+        runtime: RuntimeDbConfig::default(),
     };
     let specs = spec::load_robstride_specs(dir.path(), Some(&spec_path)).unwrap();
     let inv = Inventory::load(&inv_path).unwrap();

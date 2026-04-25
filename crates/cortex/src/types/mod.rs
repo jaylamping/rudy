@@ -11,6 +11,7 @@ mod meta;
 mod motor;
 mod reminders;
 mod safety;
+mod settings;
 mod system;
 mod tests;
 mod wt;
@@ -26,6 +27,12 @@ pub use motor::{
 };
 pub use reminders::{Reminder, ReminderInput};
 pub use safety::SafetyEvent;
+pub use settings::{
+    PutSettingRequest, PutSettingResponse, SettingEntry, SettingsApplyMode, SettingsGetResponse,
+    SettingsProfileApplyResponse, SettingsProfileCreateRequest, SettingsProfileCreateResponse,
+    SettingsProfileInfo, SettingsProfilesListResponse, SettingsRecoveryAckResponse,
+    SettingsResetResponse,
+};
 pub use system::{SystemSnapshot, SystemTemps, SystemThrottled};
 pub use tests::{TestLevel, TestName, TestProgress};
 pub use wt::{

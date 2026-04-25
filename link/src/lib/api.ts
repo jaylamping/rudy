@@ -406,6 +406,51 @@ export const api = {
       restart_in_ms: number;
       supervised: boolean;
     }>(`/api/restart`, { method: "POST" }),
+  settings: {
+    get: () =>
+      apiFetch<import("@/lib/types/SettingsGetResponse").SettingsGetResponse>(
+        "/api/settings",
+      ),
+    put: (key: string, body: { value: unknown }) =>
+      apiFetch<import("@/lib/types/PutSettingResponse").PutSettingResponse>(
+        `/api/settings/${encodeURIComponent(key)}`,
+        { method: "PUT", body: JSON.stringify(body) },
+      ),
+    reset: () =>
+      apiFetch<import("@/lib/types/SettingsResetResponse").SettingsResetResponse>(
+        "/api/settings/reset",
+        { method: "POST" },
+      ),
+    reseed: () =>
+      apiFetch<import("@/lib/types/SettingsResetResponse").SettingsResetResponse>(
+        "/api/settings/reseed",
+        {
+          method: "POST",
+          headers: { "X-Rudy-Reseed-Confirm": "1" },
+        },
+      ),
+    recoveryAck: () =>
+      apiFetch<import("@/lib/types/SettingsRecoveryAckResponse").SettingsRecoveryAckResponse>(
+        "/api/settings/recovery/ack",
+        { method: "POST" },
+      ),
+    listProfiles: () =>
+      apiFetch<import("@/lib/types/SettingsProfilesListResponse").SettingsProfilesListResponse>(
+        "/api/settings/profiles",
+      ),
+    createProfile: (
+      body: import("@/lib/types/SettingsProfileCreateRequest").SettingsProfileCreateRequest,
+    ) =>
+      apiFetch<import("@/lib/types/SettingsProfileCreateResponse").SettingsProfileCreateResponse>(
+        "/api/settings/profiles",
+        { method: "POST", body: JSON.stringify(body) },
+      ),
+    applyProfile: (name: string) =>
+      apiFetch<import("@/lib/types/SettingsProfileApplyResponse").SettingsProfileApplyResponse>(
+        `/api/settings/profiles/apply/${encodeURIComponent(name)}`,
+        { method: "POST" },
+      ),
+  },
   // Observability — backed by the SQLite log store + the tracing
   // capture layer in `crates/cortex/src/log_layer.rs`. Live tailing
   // arrives over the WebTransport `LogEvent` stream (see

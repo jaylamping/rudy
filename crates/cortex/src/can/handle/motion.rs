@@ -101,6 +101,7 @@ impl LinuxCanCore {
     /// commissioning defaults into inventory on first run (write + save to flash).
     pub fn seed_boot_low_limits(&self, state: &SharedState) {
         let inv_path = state.cfg.paths.inventory.clone();
+        let db_ctx = state.runtime_inventory_persist();
         let motors: Vec<Actuator> = state
             .inventory
             .read()
@@ -177,7 +178,7 @@ impl LinuxCanCore {
             }
 
             let role = motor.common.role.clone();
-            match inventory::write_atomic(&inv_path, |inv| {
+            match inventory::write_atomic(&inv_path, db_ctx.clone(), |inv| {
                 let actuator = inv
                     .devices
                     .iter_mut()
@@ -269,7 +270,7 @@ fn mark_active_report_persisted(
     }
 
     let role_owned = role.to_string();
-    let new_inv = inventory::write_atomic(inv_path, |inv| {
+    let new_inv = inventory::write_atomic(inv_path, state.runtime_inventory_persist(), |inv| {
         let actuator = inv
             .devices
             .iter_mut()
@@ -376,6 +377,7 @@ mod tests {
                 db_path: dir.path().join("logs.db"),
                 ..LogsConfig::default()
             },
+            runtime: crate::config::RuntimeDbConfig::default(),
         };
         let specs = spec::load_robstride_specs(dir.path(), Some(&spec_path)).expect("load specs");
         let inv = Inventory::load(&inv_path).expect("load inventory");

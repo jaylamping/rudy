@@ -62,7 +62,7 @@ pub async fn get_config(
         },
         features: ServerFeatures {
             mock_can: state.cfg.can.mock,
-            require_verified: state.cfg.safety.require_verified,
+            require_verified: state.read_effective().safety.require_verified,
         },
         paths: ServerPaths { inventory },
         deployment,

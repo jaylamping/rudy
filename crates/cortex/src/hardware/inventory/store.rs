@@ -1,13 +1,21 @@
 //! Atomic inventory file writes and seed copy.
 
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result};
+use rusqlite::Connection;
+
+use crate::settings::data;
 
 use super::Inventory;
 
+/// Optional runtime DB: after each successful change, the inventory JSON is
+/// written to `inventory_doc` in the same file as `settings_kv`. When
+/// `mirror_yaml` is `false`, the YAML on disk is **not** written (rare; tests).
 pub fn write_atomic(
     path: &Path,
+    db: Option<(Arc<Mutex<Connection>>, bool)>,
     mutate: impl FnOnce(&mut Inventory) -> Result<()>,
 ) -> Result<Inventory> {
     let mut inv = Inventory::load(path)
@@ -16,6 +24,19 @@ pub fn write_atomic(
 
     inv.validate()
         .context("post-mutation inventory validation failed")?;
+
+    if let Some((arc, mirror_yaml)) = db {
+        let json =
+            serde_json::to_string(&inv).context("serialise inventory json for runtime db")?;
+        let c = arc
+            .lock()
+            .map_err(|e| anyhow::anyhow!("runtime db mutex: {e}"))?;
+        data::set_inventory_json(&*c, &json).context("persist inventory to runtime SQLite")?;
+        drop(c);
+        if !mirror_yaml {
+            return Ok(inv);
+        }
+    }
 
     let yaml = serde_yaml::to_string(&inv).context("serialising inventory back to YAML")?;
 

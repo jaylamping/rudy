@@ -397,7 +397,7 @@ fn update_actuator_firmware_version_yaml(
     use chrono::Utc;
 
     let role_owned = role.to_string();
-    let new_inv = inventory::write_atomic(inv_path, |inv| {
+    let new_inv = inventory::write_atomic(inv_path, state.runtime_inventory_persist(), |inv| {
         let actuator = inv
             .devices
             .iter_mut()

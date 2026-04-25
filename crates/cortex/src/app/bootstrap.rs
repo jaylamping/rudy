@@ -10,9 +10,10 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{fmt, reload, EnvFilter, Registry};
 
+use crate::settings::data;
 use crate::{
-    audit, can, config, deployment, http, inventory, log_layer, log_store, reminders, spec, state,
-    system, telemetry, types::LogEntry, wt,
+    audit, can, config, deployment, http, inventory, log_layer, log_store, reminders, settings,
+    spec, state, system, telemetry, types::LogEntry, wt,
 };
 
 /// Run the cortex daemon: same behavior as the binary `main`, but callable with
@@ -106,7 +107,16 @@ pub async fn run(args: Vec<String>) -> Result<()> {
             )
         })?;
 
-    let inv = inventory::Inventory::load(&cfg.paths.inventory)
+    let settings_init = if cfg.runtime.enabled {
+        Some(
+            settings::init(&cfg)
+                .context("open runtime settings DB (see [runtime] in cortex.toml)")?,
+        )
+    } else {
+        None
+    };
+
+    let inv = load_bootstrap_inventory(&cfg, settings_init.as_ref())
         .with_context(|| format!("loading inventory {:?}", cfg.paths.inventory))?;
 
     for d in &inv.devices {
@@ -153,6 +163,7 @@ pub async fn run(args: Vec<String>) -> Result<()> {
     // sides hold clones of the same channel.
     let app_state = Arc::new(state::AppState::new_with_log_tx(
         cfg.clone(),
+        settings_init,
         specs,
         inv,
         audit,
@@ -183,7 +194,9 @@ pub async fn run(args: Vec<String>) -> Result<()> {
 
     can::spawn(app_state.clone())?;
 
-    if app_state.cfg.safety.scan_on_boot && !app_state.cfg.can.mock && app_state.real_can.is_some()
+    if app_state.read_effective().safety.scan_on_boot
+        && !app_state.cfg.can.mock
+        && app_state.real_can.is_some()
     {
         let st = app_state.clone();
         tokio::spawn(async move {
@@ -309,6 +322,48 @@ fn watchdog_interval_from_env() -> Option<Duration> {
 /// on every successful change so the operator's chosen verbosity
 /// survives a daemon restart (otherwise debug-tracing a flaky CAN
 /// session would silently revert at the next bounce).
+fn load_bootstrap_inventory(
+    cfg: &config::Config,
+    settings: Option<&settings::RuntimeConfigInit>,
+) -> Result<inventory::Inventory> {
+    if let Some(s) = settings {
+        if let Some(db) = &s.db {
+            let c = db
+                .lock()
+                .map_err(|e| anyhow::anyhow!("runtime db lock: {e}"))?;
+            if let Some(body) = data::get_inventory_json(&*c).context("read inventory_doc")? {
+                if !body.is_empty() {
+                    let inv: inventory::Inventory = serde_json::from_str(&body)
+                        .context("deserialize inventory from runtime db")?;
+                    inv.validate()
+                        .context("inventory from DB failed validate()")?;
+                    return Ok(inv);
+                }
+            }
+        }
+    }
+
+    let inv =
+        inventory::Inventory::load(&cfg.paths.inventory).context("load inventory from yaml")?;
+
+    if let Some(s) = settings {
+        if let Some(db) = &s.db {
+            let json = serde_json::to_string(&inv).context("inventory json for db seed")?;
+            let c = db
+                .lock()
+                .map_err(|e| anyhow::anyhow!("runtime db lock: {e}"))?;
+            if data::get_inventory_json(&*c)
+                .context("get inventory after yaml load")?
+                .is_none()
+            {
+                data::set_inventory_json(&*c, &json).context("seed inventory_doc from yaml")?;
+            }
+        }
+    }
+
+    Ok(inv)
+}
+
 fn read_persisted_filter(cfg: &config::Config) -> Option<String> {
     let path = cfg
         .paths

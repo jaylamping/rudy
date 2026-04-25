@@ -87,9 +87,10 @@ pub async fn remove_device(
     }
 
     let inv_path = state.cfg.paths.inventory.clone();
+    let db_ctx = state.runtime_inventory_persist();
     let role_for_closure = role.clone();
     let new_inv = tokio::task::spawn_blocking(move || {
-        inventory::write_atomic(&inv_path, |inv| {
+        inventory::write_atomic(&inv_path, db_ctx, |inv| {
             let before = inv.devices.len();
             inv.devices
                 .retain(|d| !matches!(d, Device::Actuator(a) if a.common.role == role_for_closure));

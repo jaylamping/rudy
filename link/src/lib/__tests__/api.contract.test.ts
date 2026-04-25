@@ -71,6 +71,53 @@ describe("REST contract — URL + method per call", () => {
   // Each row is [human-readable name, () => api.someCall(), expected URL, expected method].
   const cases: Array<[string, () => Promise<unknown>, string, string]> = [
     ["GET /api/config", () => api.config(), "/api/config", "GET"],
+    ["GET /api/settings", () => api.settings.get(), "/api/settings", "GET"],
+    [
+      "PUT /api/settings/*key",
+      () => api.settings.put("safety.require_verified", { value: true }),
+      "/api/settings/safety.require_verified",
+      "PUT",
+    ],
+    [
+      "POST /api/settings/reset",
+      () => api.settings.reset(),
+      "/api/settings/reset",
+      "POST",
+    ],
+    [
+      "POST /api/settings/reseed",
+      () => api.settings.reseed(),
+      "/api/settings/reseed",
+      "POST",
+    ],
+    [
+      "POST /api/settings/recovery/ack",
+      () => api.settings.recoveryAck(),
+      "/api/settings/recovery/ack",
+      "POST",
+    ],
+    [
+      "GET /api/settings/profiles",
+      () => api.settings.listProfiles(),
+      "/api/settings/profiles",
+      "GET",
+    ],
+    [
+      "POST /api/settings/profiles",
+      () =>
+        api.settings.createProfile({
+          name: "bench",
+          values: { "safety.scan_on_boot": true },
+        }),
+      "/api/settings/profiles",
+      "POST",
+    ],
+    [
+      "POST /api/settings/profiles/apply/*name",
+      () => api.settings.applyProfile("bench"),
+      "/api/settings/profiles/apply/bench",
+      "POST",
+    ],
     ["GET /api/devices", () => api.listDevices(), "/api/devices", "GET"],
     [
       "DELETE /api/devices/:role",
@@ -265,6 +312,13 @@ describe("GET /api/motors/:role/motion", () => {
     const result = await api.motion.current("shoulder_actuator_a");
     expect(result?.run_id).toBe("abc");
     expect(result?.kind).toBe("sweep");
+  });
+});
+
+describe("POST /api/settings/reseed", () => {
+  it("sends X-Rudy-Reseed-Confirm: 1", async () => {
+    await api.settings.reseed();
+    expect(captured?.headers["x-rudy-reseed-confirm"]).toBe("1");
   });
 });
 

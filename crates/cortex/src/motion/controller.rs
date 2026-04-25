@@ -280,7 +280,9 @@ fn stop_reason_from_preflight(e: &PreflightFailure) -> MotionStopReason {
         | PreflightFailure::UnknownActuator
         | PreflightFailure::Absent
         | PreflightFailure::NotVerified => MotionStopReason::BootStateLost,
-        PreflightFailure::LimbQuarantined { .. } => MotionStopReason::BootStateLost,
+        PreflightFailure::LimbQuarantined { .. } | PreflightFailure::SettingsRecovery => {
+            MotionStopReason::BootStateLost
+        }
         PreflightFailure::Internal(s) => MotionStopReason::BusError(s.clone()),
     }
 }

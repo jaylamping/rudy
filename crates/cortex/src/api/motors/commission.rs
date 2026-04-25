@@ -269,11 +269,12 @@ pub async fn commission(
     // permission, validation), the on-disk file is unchanged because
     // `write_atomic` writes-then-renames a sibling tempfile.
     let path = state.cfg.paths.inventory.clone();
+    let db_ctx = state.runtime_inventory_persist();
     let role_for_closure = role.clone();
     let now_iso = Utc::now().to_rfc3339();
     let now_iso_for_closure = now_iso.clone();
     let new_inv = tokio::task::spawn_blocking(move || {
-        inventory::write_atomic(&path, |inv| {
+        inventory::write_atomic(&path, db_ctx, |inv| {
             for d in &mut inv.devices {
                 if let inventory::Device::Actuator(a) = d {
                     if a.common.role == role_for_closure {

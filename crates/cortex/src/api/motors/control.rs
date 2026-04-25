@@ -103,7 +103,7 @@ pub async fn enable(
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ApiError>)> {
     let motor = require_present(&state, "enable", &role)?;
 
-    if state.cfg.safety.require_verified && !motor.common.verified {
+    if state.read_effective().safety.require_verified && !motor.common.verified {
         audit(&state, "enable", &role, AuditResult::Denied);
         return Err(err(
             StatusCode::FORBIDDEN,
