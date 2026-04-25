@@ -5,6 +5,7 @@ use axum::{
     http::StatusCode,
     Json,
 };
+use chrono::Utc;
 
 use crate::boot_state;
 use crate::state::SharedState;
@@ -52,6 +53,14 @@ fn summary_for(
     m: &crate::inventory::Actuator,
     latest: Option<MotorFeedback>,
 ) -> MotorSummary {
+    let now_ms = Utc::now().timestamp_millis();
+    let feedback_age_ms = latest.as_ref().map(|fb| now_ms.saturating_sub(fb.t_ms));
+    let type2_age_ms = state
+        .last_type2_at
+        .read()
+        .expect("last_type2_at poisoned")
+        .get(&m.common.role)
+        .map(|t| now_ms.saturating_sub(*t));
     MotorSummary {
         role: m.common.role.clone(),
         can_bus: m.common.can_bus.clone(),
@@ -65,6 +74,8 @@ fn summary_for(
         homing_speed_rad_s: m.common.homing_speed_rad_s,
         default_homing_speed_rad_s: state.read_effective().safety.effective_homing_speed_rad_s(),
         latest,
+        feedback_age_ms,
+        type2_age_ms,
         boot_state: boot_state::current(state, &m.common.role),
         limb: m.common.limb.clone(),
         joint_kind: m.common.joint_kind,

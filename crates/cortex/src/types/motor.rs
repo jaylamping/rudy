@@ -29,6 +29,16 @@ pub struct MotorSummary {
     /// Global effective home-ramp speed (rad/s) from `cortex.toml` for SPA display.
     pub default_homing_speed_rad_s: f32,
     pub latest: Option<MotorFeedback>,
+    /// Age of `latest` in ms at serialization time. This can be refreshed by
+    /// type-17 fallback polling, so use `type2_age_ms` for motion safety.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub feedback_age_ms: Option<i64>,
+    /// Age of the last high-rate type-2 position frame in ms. `None` means no
+    /// type-2 frame has been decoded for this motor since daemon start.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub type2_age_ms: Option<i64>,
     /// Per-power-cycle gate state. UI renders a colored badge driven off
     /// the variant; OutOfBand carries enough detail to display
     /// "X.X deg outside [Y.Y, Z.Z]" without a second roundtrip.
