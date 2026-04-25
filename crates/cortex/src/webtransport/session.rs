@@ -591,7 +591,7 @@ async fn dispatch_client_frame(
             vel_rad_s,
             session_id,
         } => {
-            if !ensure_wt_motion_control(&state, &role, session_id.as_deref(), "motion_jog") {
+            if !ensure_wt_motion_control(state, &role, session_id.as_deref(), "motion_jog") {
                 return;
             }
             let Some(vel_rad_s) = clamp_wt_jog_velocity(vel_rad_s) else {
@@ -621,7 +621,7 @@ async fn dispatch_client_frame(
             }
         }
         ClientFrame::MotionHeartbeat { role, session_id } => {
-            if !ensure_wt_motion_control(&state, &role, session_id.as_deref(), "motion_heartbeat") {
+            if !ensure_wt_motion_control(state, &role, session_id.as_deref(), "motion_heartbeat") {
                 return;
             }
             // No-op if the role isn't actively jogging — the controller
@@ -635,7 +635,7 @@ async fn dispatch_client_frame(
             }
         }
         ClientFrame::MotionStop { role, session_id } => {
-            if !ensure_wt_motion_control(&state, &role, session_id.as_deref(), "motion_stop") {
+            if !ensure_wt_motion_control(state, &role, session_id.as_deref(), "motion_stop") {
                 return;
             }
             let stopped = state.motion.stop(&role).await;
