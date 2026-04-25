@@ -6,7 +6,7 @@
     },
     "pi-cortex": {
       "command": "node",
-      "args": ["${workspaceFolder}/tools/mcp/pi-cortex/dist/index.js"]
+      "args": ["C:/code/rudy/tools/mcp/pi-cortex/dist/index.js"]
     }
   }
 }
