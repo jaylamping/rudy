@@ -29,6 +29,10 @@ pub fn router() -> Router<SharedState> {
         .route("/motors/:role/save", post(control::save_to_flash))
         .route("/motors/:role/enable", post(control::enable))
         .route("/motors/:role/stop", post(control::stop))
+        .route(
+            "/motors/:role/calibrate_encoder",
+            post(control::calibrate_encoder),
+        )
         .route("/motors/:role/set_zero", post(control::set_zero))
         .route("/motors/:role/commission", post(commission::commission))
         .route(

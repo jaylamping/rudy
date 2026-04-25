@@ -36,6 +36,7 @@ fn cfg_with(audit_log: &str, db_path: Option<&str>) -> Config {
             tracking_error_grace_ticks: super::safety::default_tracking_error_grace_ticks(),
             tracking_freshness_max_age_ms: super::safety::default_tracking_freshness_max_age_ms(),
             tracking_error_debounce_ticks: super::safety::default_tracking_error_debounce_ticks(),
+            fatal_warn_mask: super::safety::default_fatal_warn_mask(),
             band_violation_debounce_ticks: super::safety::default_band_violation_debounce_ticks(),
             boot_tracking_error_max_rad: super::safety::default_boot_tracking_error_max_rad(),
             target_tolerance_rad: super::safety::default_target_tolerance_rad(),
@@ -77,6 +78,10 @@ fn safety_config_json_roundtrip_preserves_tracking_gates() {
     assert_eq!(
         back.tracking_error_debounce_ticks,
         super::safety::default_tracking_error_debounce_ticks()
+    );
+    assert_eq!(
+        back.fatal_warn_mask,
+        super::safety::default_fatal_warn_mask()
     );
     assert_eq!(
         back.band_violation_debounce_ticks,

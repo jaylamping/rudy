@@ -184,6 +184,12 @@ describe("REST contract — URL + method per call", () => {
       "POST",
     ],
     [
+      "POST /api/motors/:role/calibrate_encoder",
+      () => api.calibrateEncoder("shoulder_actuator_a"),
+      "/api/motors/shoulder_actuator_a/calibrate_encoder",
+      "POST",
+    ],
+    [
       "POST /api/motors/:role/set_zero",
       () => api.setZero("shoulder_actuator_a"),
       "/api/motors/shoulder_actuator_a/set_zero",
@@ -281,6 +287,18 @@ describe("POST /api/motors/:role/set_zero", () => {
   it("always sends confirm_advanced:true in a JSON body", async () => {
     await api.setZero("shoulder_actuator_a");
     expect(captured?.url).toBe("/api/motors/shoulder_actuator_a/set_zero");
+    expect(captured?.method).toBe("POST");
+    expect(captured?.headers["content-type"]).toBe("application/json");
+    expect(captured?.body).toEqual({ confirm_advanced: true });
+  });
+});
+
+describe("POST /api/motors/:role/calibrate_encoder", () => {
+  it("always sends confirm_advanced:true in a JSON body", async () => {
+    await api.calibrateEncoder("shoulder_actuator_a");
+    expect(captured?.url).toBe(
+      "/api/motors/shoulder_actuator_a/calibrate_encoder",
+    );
     expect(captured?.method).toBe("POST");
     expect(captured?.headers["content-type"]).toBe("application/json");
     expect(captured?.body).toEqual({ confirm_advanced: true });

@@ -39,6 +39,13 @@ pub struct SetZeroBody {
     pub confirm_advanced: bool,
 }
 
+/// JSON body for `POST /api/motors/:role/calibrate_encoder`.
+#[derive(Debug, Default, Deserialize)]
+pub struct CalibrateEncoderBody {
+    #[serde(default)]
+    pub confirm_advanced: bool,
+}
+
 fn audit(state: &SharedState, action: &str, role: &str, result: AuditResult) {
     state.audit.write(AuditEntry {
         timestamp: Utc::now(),
@@ -282,6 +289,64 @@ pub async fn stop(
     Ok(Json(serde_json::json!({ "ok": true, "role": role })))
 }
 
+/// Trigger the RS03 high-speed magnetic encoder calibration mode.
+///
+/// This mirrors Motor Studio V13's "Encoder Calibation" button. Static
+/// inspection of the Qt executable shows that button calls the vendor's
+/// "Set the calibration mode for the high-speed encoder" action; in the
+/// RS03 private CAN protocol that is communication type 5, the otherwise
+/// undocumented gap between type-4 stop and type-6 set-zero.
+///
+/// The command may move the motor autonomously. It is only exposed behind
+/// `confirm_advanced: true`, and callers should use it during bench
+/// commissioning with the joint unloaded / free to rotate.
+pub async fn calibrate_encoder(
+    State(state): State<SharedState>,
+    Path(role): Path<String>,
+    body: Option<Json<CalibrateEncoderBody>>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ApiError>)> {
+    let confirm = body.map(|Json(b)| b.confirm_advanced).unwrap_or(false);
+    if !confirm {
+        return Err(err(
+            StatusCode::BAD_REQUEST,
+            "requires_confirmation",
+            Some(
+                "POST /api/motors/:role/calibrate_encoder may spin the motor \
+                 autonomously while firmware calibrates the high-speed magnetic \
+                 encoder. Re-send with body {\"confirm_advanced\": true} only \
+                 when the joint is mechanically unloaded and safe to rotate."
+                    .into(),
+            ),
+        ));
+    }
+
+    let motor = require_present(&state, "calibrate_encoder", &role)?;
+
+    if let Some(core) = state.real_can.clone() {
+        tokio::task::spawn_blocking({
+            let motor = motor.clone();
+            move || core.calibrate_encoder(&motor)
+        })
+        .await
+        .expect("calibrate_encoder task panicked")
+        .map_err(|e| {
+            audit_encoder_calibration(&state, &role, AuditResult::Denied);
+            can_err("calibrate_encoder", &role, &e)
+        })?;
+    }
+
+    state.mark_stopped(&role);
+    boot_state::reset_to_unknown(&state, &role);
+
+    audit_encoder_calibration(&state, &role, AuditResult::Ok);
+    Ok(Json(serde_json::json!({
+        "ok": true,
+        "role": role,
+        "command": "rs03_comm_type_5",
+        "operator_next_step": "wait for firmware calibration to finish, then power-cycle and verify no encoder-calibration fault is present",
+    })))
+}
+
 pub async fn save_to_flash(
     State(state): State<SharedState>,
     Path(role): Path<String>,
@@ -422,6 +487,22 @@ fn audit_set_zero(state: &SharedState, role: &str, result: AuditResult) {
         details: serde_json::json!({
             "persisted": false,
             "confirm_advanced": true,
+        }),
+        result,
+    });
+}
+
+fn audit_encoder_calibration(state: &SharedState, role: &str, result: AuditResult) {
+    state.audit.write(AuditEntry {
+        timestamp: Utc::now(),
+        session_id: None,
+        remote: None,
+        action: "calibrate_encoder_advanced".into(),
+        target: Some(role.into()),
+        details: serde_json::json!({
+            "confirm_advanced": true,
+            "source": "motor_studio_v13_static_analysis",
+            "rs03_comm_type": 5,
         }),
         result,
     });

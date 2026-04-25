@@ -19,6 +19,12 @@ impl LinuxCanCore {
         Ok(())
     }
 
+    pub fn calibrate_encoder(&self, motor: &Actuator) -> Result<()> {
+        let handle = self.handle_for(&motor.common.can_bus)?;
+        handle.calibrate_encoder(self.host_id, motor.common.can_id)?;
+        Ok(())
+    }
+
     pub fn save_to_flash(&self, motor: &Actuator) -> Result<()> {
         let handle = self.handle_for(&motor.common.can_bus)?;
         handle.save_params(self.host_id, motor.common.can_id)?;

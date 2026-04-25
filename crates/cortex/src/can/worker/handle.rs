@@ -107,6 +107,16 @@ impl BusHandle {
         recv_blocking(rx, REPLY_TIMEOUT)?
     }
 
+    pub fn calibrate_encoder(&self, host_id: u8, motor_id: u8) -> io::Result<()> {
+        let (tx, rx) = mpsc::channel();
+        self.submit(Cmd::CalibrateEncoder {
+            motor_id,
+            host_id,
+            reply: tx,
+        })?;
+        recv_blocking(rx, REPLY_TIMEOUT)?
+    }
+
     pub fn set_zero(&self, host_id: u8, motor_id: u8) -> io::Result<()> {
         let (tx, rx) = mpsc::channel();
         self.submit(Cmd::SetZero {

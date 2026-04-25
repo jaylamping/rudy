@@ -47,6 +47,12 @@ pub enum Cmd {
         host_id: u8,
         reply: Sender<io::Result<()>>,
     },
+    /// RS03 type-5 high-speed magnetic encoder calibration mode.
+    CalibrateEncoder {
+        motor_id: u8,
+        host_id: u8,
+        reply: Sender<io::Result<()>>,
+    },
     /// `cmd_set_zero`.
     SetZero {
         motor_id: u8,

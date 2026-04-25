@@ -39,6 +39,19 @@ pub fn cmd_stop(bus: &CanBus, host_id: u8, motor_id: u8, clear_fault: bool) -> i
     send_frame(bus, CommType::Stop, host_id, motor_id, &d[..1])
 }
 
+/// Enter the RS03 high-speed magnetic encoder calibration mode.
+///
+/// Motor Studio V13 exposes this as "Encoder Calibation" /
+/// `pushButtonCaliEncoder` and reports "Set the calibration mode for the
+/// high-speed encoder--device". The vendor manual documents feedback mode
+/// `1 = Cali mode` but omits communication type 5 between stop (4) and
+/// set-zero (6); the proprietary tool uses that gap for this calibration
+/// request. This is a commissioning-time command: the motor may move
+/// autonomously while the firmware measures encoder offset.
+pub fn cmd_calibrate_encoder(bus: &CanBus, host_id: u8, motor_id: u8) -> io::Result<()> {
+    send_frame(bus, CommType::CalibrateEncoder, host_id, motor_id, &[])
+}
+
 pub fn cmd_enable(bus: &CanBus, host_id: u8, motor_id: u8) -> io::Result<()> {
     send_frame(bus, CommType::Enable, host_id, motor_id, &[])
 }

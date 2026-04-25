@@ -84,6 +84,17 @@ pub struct SafetyConfig {
     #[serde(default = "default_tracking_error_debounce_ticks")]
     pub tracking_error_debounce_ticks: u32,
 
+    /// Bitmask of `warn_sta` bits that should block autonomous motion.
+    ///
+    /// The RS03 manual documents only warning bit 0 as motor overtemperature
+    /// warning. Firmware 0.3.1.41 commonly reports bit 5 (`0x20`) on our
+    /// shoulder actuator while `fault_sta=0`; vendor docs do not classify it
+    /// as a safety interlock, and the motor remains operable. Keep bit 0 fatal
+    /// by default, surface all warning bits in telemetry, and let operators
+    /// widen this mask if a future vendor note identifies more fatal warnings.
+    #[serde(default = "default_fatal_warn_mask")]
+    pub fatal_warn_mask: u32,
+
     /// Deprecated compatibility knob for old runtime settings snapshots.
     ///
     /// Home-ramp travel-band violations now abort on the first **fresh**
@@ -360,6 +371,10 @@ pub(crate) fn default_tracking_freshness_max_age_ms() -> u64 {
 
 pub(crate) fn default_tracking_error_debounce_ticks() -> u32 {
     15
+}
+
+pub(crate) fn default_fatal_warn_mask() -> u32 {
+    0x1
 }
 
 pub(crate) fn default_band_violation_debounce_ticks() -> u32 {

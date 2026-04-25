@@ -155,6 +155,14 @@ export const api = {
     apiFetch<{ ok: boolean }>(`/api/motors/${encodeURIComponent(role)}/stop`, { method: "POST" }),
   saveToFlash: (role: string) =>
     apiFetch<{ ok: boolean }>(`/api/motors/${encodeURIComponent(role)}/save`, { method: "POST" }),
+  calibrateEncoder: (role: string) =>
+    apiFetch<{ ok: boolean; role: string; command: string; operator_next_step: string }>(
+      `/api/motors/${encodeURIComponent(role)}/calibrate_encoder`,
+      {
+        method: "POST",
+        body: JSON.stringify({ confirm_advanced: true }),
+      },
+    ),
   // RAM-only diagnostic re-zero. The `confirm_advanced: true` flag is
   // required by the daemon (see `crates/cortex/src/api/control.rs`) so
   // a misclick or a copy-pasted curl can't silently shift a commissioned

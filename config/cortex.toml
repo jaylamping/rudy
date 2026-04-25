@@ -172,6 +172,12 @@ hold_kd_nm_s_per_rad = 1.7
 # mit_lpf_cutoff_hz = 6.0
 # mit_min_jerk_blend_ms = 0.0
 
+# `warn_sta` bits that should block autonomous motion. RS03 manual documents
+# bit0 as motor-overtemperature warning. Firmware 0.3.1.41 can report bit5
+# (0x20) persistently with `fault_sta=0`; vendor docs do not classify it as a
+# fault/interlock, so cortex surfaces it but does not block motion by default.
+fatal_warn_mask = 0x1
+
 # Tolerance for the boot orchestrator's add_offset readback check
 # (commissioned-zero quick-home plan, Phase C). On every boot the
 # orchestrator reads firmware param 0x702B over CAN and compares it

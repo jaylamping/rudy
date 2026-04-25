@@ -363,6 +363,7 @@ mod tests {
                 tracking_error_grace_ticks: 15,
                 tracking_freshness_max_age_ms: 100,
                 tracking_error_debounce_ticks: 15,
+                fatal_warn_mask: 0x1,
                 band_violation_debounce_ticks: 15,
                 boot_tracking_error_max_rad: 0.2,
                 target_tolerance_rad: 0.005,

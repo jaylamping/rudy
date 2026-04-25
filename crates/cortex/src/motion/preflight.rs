@@ -13,7 +13,7 @@
 //! 1. Inventory presence + `present` / `verified` flags.
 //! 2. Boot-state gate (only `InBand` and `Homed` permit motion).
 //! 3. Stale-telemetry refusal (`safety.max_feedback_age_ms`).
-//! 4. Active motor faults: non-zero `fault_sta` / `warn_sta` on the fresh row.
+//! 4. Active motor faults: non-zero `fault_sta` or fatal `warn_sta` bits on the fresh row.
 //! 5. Path-aware travel-band check on the projected position (velocity
 //!    projection) **or** on `current → target_position_rad` when set, via
 //!    [`crate::can::travel::enforce_position_with_path`].
@@ -34,6 +34,14 @@ use crate::can::travel::{enforce_position_with_path, BandCheck};
 use crate::inventory::Actuator;
 use crate::state::SharedState;
 use crate::types::{LimbQuarantineMotor, MotorFeedback};
+
+pub(crate) fn has_fatal_fault_or_warning(
+    fault_sta: u32,
+    warn_sta: u32,
+    fatal_warn_mask: u32,
+) -> bool {
+    fault_sta != 0 || (warn_sta & fatal_warn_mask) != 0
+}
 
 /// Why a motion request was refused. Each variant maps to a distinct
 /// REST status code and a distinct
@@ -326,7 +334,11 @@ impl PreflightChecks<'_> {
             None => return Err(PreflightFailure::NoTelemetry),
         };
 
-        if feedback.fault_sta != 0 || feedback.warn_sta != 0 {
+        if has_fatal_fault_or_warning(
+            feedback.fault_sta,
+            feedback.warn_sta,
+            self.state.read_effective().safety.fatal_warn_mask,
+        ) {
             return Err(PreflightFailure::ActiveFault {
                 fault_sta: feedback.fault_sta,
                 warn_sta: feedback.warn_sta,
@@ -389,5 +401,30 @@ impl PreflightChecks<'_> {
             feedback,
             boot_state: bs,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::has_fatal_fault_or_warning;
+
+    #[test]
+    fn nonfatal_rs03_warn_bit5_does_not_block_motion_by_default() {
+        assert!(!has_fatal_fault_or_warning(0, 0x20, 0x1));
+    }
+
+    #[test]
+    fn documented_motor_overtemp_warning_blocks_motion_by_default() {
+        assert!(has_fatal_fault_or_warning(0, 0x1, 0x1));
+    }
+
+    #[test]
+    fn any_fault_status_blocks_even_when_warning_is_nonfatal() {
+        assert!(has_fatal_fault_or_warning(0x80, 0x20, 0x1));
+    }
+
+    #[test]
+    fn operator_can_widen_fatal_warning_mask() {
+        assert!(has_fatal_fault_or_warning(0, 0x20, 0x21));
     }
 }

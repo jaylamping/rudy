@@ -246,9 +246,9 @@ function CommissioningCard({
   offlineTip: string;
 }) {
   const qc = useQueryClient();
-  const [confirm, setConfirm] = useState<"commission" | "set_zero" | null>(
-    null,
-  );
+  const [confirm, setConfirm] = useState<
+    "commission" | "set_zero" | "calibrate_encoder" | null
+  >(null);
 
   // The current commissioned offset / commissioned_at live on the
   // typed `Motor` shape but aren't on `MotorSummary` (yet — Phase F.1
@@ -283,6 +283,15 @@ function CommissioningCard({
 
   const setZero = useMutation({
     mutationFn: () => api.setZero(motor.role),
+    onSuccess: () => {
+      setConfirm(null);
+      qc.invalidateQueries({ queryKey: queryKeys.motors.all() });
+      qc.invalidateQueries({ queryKey: queryKeys.params.byRole(motor.role) });
+    },
+  });
+
+  const calibrateEncoder = useMutation({
+    mutationFn: () => api.calibrateEncoder(motor.role),
     onSuccess: () => {
       setConfirm(null);
       qc.invalidateQueries({ queryKey: queryKeys.motors.all() });
@@ -383,6 +392,45 @@ function CommissioningCard({
               )}
             </div>
           </details>
+
+          <details className="group rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+            <summary className="cursor-pointer select-none font-medium text-amber-300 hover:text-amber-200">
+              Advanced: encoder calibration
+            </summary>
+            <div className="mt-3 space-y-2 text-xs text-muted-foreground">
+              <p>
+                Mirrors Motor Studio's high-speed magnetic encoder calibration
+                button. It sends the RS03 vendor calibration-mode command
+                (communication type 5). The motor may rotate by itself; only
+                run with the joint unloaded and mechanically safe.
+              </p>
+              <OfflineActionTooltip isLive={isLive} offlineTip={offlineTip}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={
+                    calibrateEncoder.isPending || !motor.present || !isLive
+                  }
+                  onClick={() => setConfirm("calibrate_encoder")}
+                >
+                  {calibrateEncoder.isPending
+                    ? "Starting..."
+                    : "Run encoder calibration"}
+                </Button>
+              </OfflineActionTooltip>
+              {calibrateEncoder.isError && (
+                <p className="text-destructive">
+                  {(calibrateEncoder.error as ApiError).message}
+                </p>
+              )}
+              {calibrateEncoder.isSuccess && (
+                <p className="text-emerald-400">
+                  Calibration command sent. Wait for firmware to finish, then
+                  power-cycle and verify telemetry/faults before enabling.
+                </p>
+              )}
+            </div>
+          </details>
         </CardContent>
       </Card>
 
@@ -460,6 +508,29 @@ function CommissioningCard({
           confirmVariant="destructive"
           onCancel={() => setConfirm(null)}
           onConfirm={() => setZero.mutate()}
+        />
+      )}
+      {confirm === "calibrate_encoder" && (
+        <ConfirmDialog
+          title="Run encoder calibration"
+          description={
+            <>
+              <p>
+                Send the RS03 high-speed magnetic encoder calibration command
+                to <code className="font-mono">{motor.role}</code>. This is
+                based on Motor Studio V13's encoder calibration button.
+              </p>
+              <p className="mt-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-400">
+                <strong>The motor may rotate autonomously.</strong> Remove load,
+                keep the joint clear, and do not hold the shaft during
+                calibration. Re-home or re-commission before normal motion.
+              </p>
+            </>
+          }
+          confirmLabel="Run encoder calibration"
+          confirmVariant="destructive"
+          onCancel={() => setConfirm(null)}
+          onConfirm={() => calibrateEncoder.mutate()}
         />
       )}
     </>

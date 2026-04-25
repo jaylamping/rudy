@@ -98,7 +98,7 @@ pub const MAX_HOMER_VEL_RAD_S: f32 = 100.0_f32.to_radians();
 #[allow(clippy::too_many_arguments)]
 fn tracking_error_should_abort(
     homer_has_real_can: bool,
-    is_fresh: bool,
+    has_new_feedback_sample: bool,
     ticks: u32,
     grace_ticks: u32,
     err_rad: f32,
@@ -107,7 +107,7 @@ fn tracking_error_should_abort(
     consec_over: &mut u32,
     role: &str,
 ) -> bool {
-    if !homer_has_real_can || !is_fresh || ticks <= grace_ticks {
+    if !homer_has_real_can || !has_new_feedback_sample || ticks <= grace_ticks {
         return false;
     }
     if err_rad > budget_rad {
@@ -554,6 +554,7 @@ pub async fn run_with_overrides(
     let mut last_vel_commanded: f32 = 0.0;
     let mut total_can_sends: u32 = 0;
     let mut total_can_send_failures: u32 = 0;
+    let mut last_feedback_t_ms: Option<i64> = None;
 
     // Emit once-per-run: every knob and every starting condition that
     // could matter when post-mortem'ing a failure. Operators looking at
@@ -619,12 +620,16 @@ pub async fn run_with_overrides(
         }
         ticks = ticks.saturating_add(1);
 
-        let is_fresh = if homer_has_real_can {
+        let mut has_valid_feedback_sample = !homer_has_real_can;
+        let has_new_feedback_sample = if homer_has_real_can {
             let now_ms = Utc::now().timestamp_millis();
             match state.latest.read().expect("latest poisoned").get(&role) {
                 Some(fb) => {
                     let age_ms = now_ms - fb.t_ms;
                     if age_ms <= freshness_ms {
+                        has_valid_feedback_sample = true;
+                        let is_new_sample = last_feedback_t_ms != Some(fb.t_ms);
+                        last_feedback_t_ms = Some(fb.t_ms);
                         last_measured = fb.mech_pos_rad;
                         // Same fresh row feeds the dwell velocity gate
                         // below. Captured atomically with `last_measured`
@@ -634,7 +639,7 @@ pub async fn run_with_overrides(
                         // success on a racing motor whose velocity
                         // hadn't yet settled in this sample's snapshot).
                         last_measured_vel = fb.mech_vel_rad_s;
-                        true
+                        is_new_sample
                     } else {
                         warn!(
                             role = %role,
@@ -659,7 +664,7 @@ pub async fn run_with_overrides(
             true
         };
 
-        if homer_has_real_can && !is_fresh {
+        if homer_has_real_can && !has_valid_feedback_sample {
             break Err(("stale_telemetry".into(), last_measured));
         }
 
@@ -678,7 +683,7 @@ pub async fn run_with_overrides(
         // and this gate is a no-op, preserving existing test behavior.
         let in_velocity_tolerance = last_measured_vel.abs() < dwell_max_vel;
         let in_tolerance = in_position_tolerance && in_velocity_tolerance;
-        if is_fresh {
+        if has_new_feedback_sample {
             if in_tolerance {
                 consec_in_tolerance = consec_in_tolerance.saturating_add(1);
             } else {
@@ -690,13 +695,19 @@ pub async fn run_with_overrides(
 
         // Dwell gate: require N consecutive fresh in-tolerance samples before
         // declaring success (see `SafetyConfig::target_dwell_ticks`).
-        if (homer_has_real_can || ticks > 1) && is_fresh && consec_in_tolerance >= dwell_need {
+        if (homer_has_real_can || ticks > 1)
+            && has_new_feedback_sample
+            && consec_in_tolerance >= dwell_need
+        {
             break Ok((last_measured, ticks));
         }
 
         let remaining_before_step = unwrapped_target - setpoint_unwrapped;
-        let step = remaining_before_step.signum() * remaining_before_step.abs().min(step_size_rad);
-        setpoint_unwrapped += step;
+        if !homer_has_real_can || has_new_feedback_sample {
+            let step =
+                remaining_before_step.signum() * remaining_before_step.abs().min(step_size_rad);
+            setpoint_unwrapped += step;
+        }
 
         let remaining = unwrapped_target - setpoint_unwrapped;
 
@@ -722,7 +733,7 @@ pub async fn run_with_overrides(
         );
         if band_violation_should_abort(
             homer_has_real_can,
-            is_fresh,
+            has_new_feedback_sample,
             band_violation,
             &mut consec_band_over,
             &role,
@@ -901,8 +912,8 @@ pub async fn run_with_overrides(
 
         // Per-tick trace at debug. Ten-ish fields is a lot for one
         // line, but every field here has been wished for at least
-        // once in past homing post-mortems — `is_fresh` tells you
-        // whether the tracking-error gate ran this tick, the two
+        // once in past homing post-mortems — `has_new_feedback_sample`
+        // tells you whether the tracking-error gate ran this tick, the two
         // `consec_*` counters tell you how close we are to a debounce
         // trip, `edge_capped` tells you whether the band-edge cap is
         // the active limiter, and the position/setpoint/vel triple
@@ -911,7 +922,7 @@ pub async fn run_with_overrides(
         debug!(
             role = %role,
             tick = ticks,
-            is_fresh,
+            has_new_feedback_sample,
             last_measured,
             last_measured_vel,
             setpoint = setpoint_unwrapped,
@@ -967,7 +978,7 @@ pub async fn run_with_overrides(
             (-shortest_signed_delta(setpoint_unwrapped, last_measured) * direction).max(0.0);
         if tracking_error_should_abort(
             homer_has_real_can,
-            is_fresh,
+            has_new_feedback_sample,
             ticks,
             grace_ticks,
             err_rad,

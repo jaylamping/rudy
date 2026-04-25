@@ -202,6 +202,25 @@ fn handle_cmd(
             }
             let _ = reply.send(result);
         }
+        Cmd::CalibrateEncoder {
+            motor_id,
+            host_id,
+            reply,
+        } => {
+            let result = {
+                let guard = bus.lock().expect("bus mutex poisoned");
+                session::cmd_calibrate_encoder(&guard, host_id, motor_id)
+            };
+            log_send_result(iface, "calibrate_encoder", motor_id, &result);
+            if result.is_ok() {
+                if let Some(state) = state.upgrade() {
+                    if let Some(role) = role_for_can_id(&state, iface, motor_id) {
+                        state.mark_stopped(&role);
+                    }
+                }
+            }
+            let _ = reply.send(result);
+        }
         Cmd::SetZero {
             motor_id,
             host_id,
