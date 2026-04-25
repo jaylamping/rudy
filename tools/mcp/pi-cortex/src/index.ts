@@ -13,6 +13,7 @@ import {
   scriptCortexStatus,
   scriptCortexUpdateLogs,
   scriptInventorySnapshot,
+  scriptRuntimeSnapshot,
   scriptSettingsSnapshot,
 } from "./pi-actions.js";
 import { formatRunFailure, runRemoteBash } from "./ssh.js";
@@ -214,7 +215,8 @@ export async function main(): Promise<void> {
     "inventory_snapshot",
     {
       title: "Inventory + optional cortex.toml",
-      description: "SSH: head of /var/lib/rudy/inventory.yaml; optional /etc/rudy/cortex.toml.",
+      description:
+        "Legacy seed-file snapshot. Prefer runtime_snapshot for authoritative live state.",
       inputSchema: inventorySchema,
     },
     async (args: z.infer<typeof inventorySchema>) => {
@@ -223,6 +225,20 @@ export async function main(): Promise<void> {
         scriptInventorySnapshot(Boolean(args.include_cortex_toml), maxB),
         45_000,
       );
+      return textResult(text, isError);
+    },
+  );
+
+  server.registerTool(
+    "runtime_snapshot",
+    {
+      title: "Runtime API snapshot",
+      description:
+        "SSH: GET live cortex APIs (/api/settings, /api/devices, /api/motors). Does not read YAML/TOML seed files.",
+      inputSchema: z.object({}),
+    },
+    async () => {
+      const { text, isError } = await runPiScript(scriptRuntimeSnapshot(base), 90_000);
       return textResult(text, isError);
     },
   );

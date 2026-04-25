@@ -109,6 +109,24 @@ head -c ${maxBytes} /var/lib/rudy/inventory.yaml 2>/dev/null || echo "<missing>"
 ${tomlBlock}`;
 }
 
+/** Authoritative runtime state from cortex HTTP APIs. Avoid seed/config files. */
+export function scriptRuntimeSnapshot(baseUrl: string): string {
+  const u = baseUrl.replace(/'/g, "");
+  return `set -euo pipefail
+BASE='${u}'
+fetch_json() {
+  name="$1"
+  path="$2"
+  echo "=== $name ($path) ==="
+  curl -fsS --connect-timeout 3 --max-time 25 "$BASE$path" || echo "<curl failed: $path>"
+  echo
+}
+fetch_json "settings" "/api/settings"
+fetch_json "devices" "/api/devices"
+fetch_json "motors" "/api/motors"
+`;
+}
+
 /** Prefer GET /api/settings; fall back to read-only SQLite settings_kv via tomllib + sqlite3. */
 export function scriptSettingsSnapshot(baseUrl: string): string {
   // shell-escape baseUrl for curl (minimal: disallow quotes)
