@@ -9,6 +9,17 @@ use driver::CanBus;
 
 use super::command::{Cmd, ReplyBytes, WriteValue, REPLY_TIMEOUT};
 
+/// Firmware-frame MIT `OperationCtrl` setpoint for streaming (position,
+/// velocity, torque FF, kp, kd). Passed to [`BusHandle::set_mit_command`].
+#[derive(Clone, Copy, Debug)]
+pub struct MitStreamSetpoint {
+    pub position_rad: f32,
+    pub velocity_rad_s: f32,
+    pub torque_ff_nm: f32,
+    pub kp_nm_per_rad: f32,
+    pub kd_nm_s_per_rad: f32,
+}
+
 /// Handle to a per-bus worker. Cheap to clone (the inner `Sender` is an
 /// `Arc`-equivalent under the hood). Dropping the last handle closes the
 /// channel, which causes the worker thread to exit cleanly on its next
@@ -178,21 +189,17 @@ impl BusHandle {
         host_id: u8,
         motor_id: u8,
         role: &str,
-        position_rad: f32,
-        velocity_rad_s: f32,
-        torque_ff_nm: f32,
-        kp_nm_per_rad: f32,
-        kd_nm_s_per_rad: f32,
+        setpoint: MitStreamSetpoint,
     ) -> io::Result<()> {
         let (tx, rx) = mpsc::channel();
         self.submit(Cmd::SetMitCommand {
             motor_id,
             host_id,
-            position_rad,
-            velocity_rad_s,
-            torque_ff_nm,
-            kp_nm_per_rad,
-            kd_nm_s_per_rad,
+            position_rad: setpoint.position_rad,
+            velocity_rad_s: setpoint.velocity_rad_s,
+            torque_ff_nm: setpoint.torque_ff_nm,
+            kp_nm_per_rad: setpoint.kp_nm_per_rad,
+            kd_nm_s_per_rad: setpoint.kd_nm_s_per_rad,
             role: role.to_string(),
             reply: tx,
         })?;

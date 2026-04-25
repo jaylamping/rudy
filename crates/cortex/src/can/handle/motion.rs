@@ -4,6 +4,7 @@ use std::time::Duration;
 use anyhow::{anyhow, Result};
 
 use crate::can::angle::PrincipalAngle;
+use crate::can::worker::MitStreamSetpoint;
 use crate::inventory::{self, Actuator, Device};
 use crate::state::SharedState;
 
@@ -117,11 +118,13 @@ impl LinuxCanCore {
             self.host_id,
             motor.common.can_id,
             &motor.common.role,
-            firmware_pos,
-            firmware_vel,
-            torque_ff_nm,
-            kp_nm_per_rad,
-            kd_nm_s_per_rad,
+            MitStreamSetpoint {
+                position_rad: firmware_pos,
+                velocity_rad_s: firmware_vel,
+                torque_ff_nm,
+                kp_nm_per_rad,
+                kd_nm_s_per_rad,
+            },
         )?;
         Ok(())
     }

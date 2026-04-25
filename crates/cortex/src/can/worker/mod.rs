@@ -38,7 +38,7 @@ mod pin;
 mod thread;
 
 pub use command::{Cmd, ReplyBytes, WriteValue, REPLY_TIMEOUT};
-pub use handle::BusHandle;
+pub use handle::{BusHandle, MitStreamSetpoint};
 pub use pin::{auto_assign_cpu, available_cpus};
 pub use thread::spawn;
 
