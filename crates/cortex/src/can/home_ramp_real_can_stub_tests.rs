@@ -534,7 +534,7 @@ async fn motor_landing_in_tolerance_breaks_immediately_no_bounce() {
     // somewhere in that band depending on tick timing. Pin the property
     // (in-band, below the cap) rather than the exact value.
     assert!(
-        final_pos >= 0.05 && final_pos <= 0.099,
+        (0.05..=0.099).contains(&final_pos),
         "expected final_pos in the effective tolerance window [0.05, 0.099], got {final_pos}"
     );
 }

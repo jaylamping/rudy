@@ -76,6 +76,12 @@ struct CpuTotals {
     total: u64,
 }
 
+impl Default for SystemPoller {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SystemPoller {
     pub fn new() -> Self {
         Self {
