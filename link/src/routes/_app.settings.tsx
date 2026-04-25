@@ -6,11 +6,21 @@ import { queryKeys, settingsQueryOptions } from "@/api";
 import { api, ApiError } from "@/lib/api";
 import type { SettingEntry } from "@/lib/types/SettingEntry";
 import type { SettingsGetResponse } from "@/lib/types/SettingsGetResponse";
+import type { SettingsApplyMode } from "@/lib/types/SettingsApplyMode";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { ConfirmDialog } from "@/components/params/confirm-dialog";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 export const Route = createFileRoute("/_app/settings")({
   component: SettingsPage,
@@ -178,7 +188,7 @@ function SettingsPage() {
               <th className="p-2 font-medium">Key</th>
               <th className="p-2 font-medium">Value</th>
               <th className="p-2 font-medium">Seed</th>
-              <th className="p-2 font-medium">Apply</th>
+              <th className="p-2 font-medium">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -287,6 +297,8 @@ async function copySettingsExport(data: SettingsExportData) {
 function EntryRow({ entry: e }: { entry: SettingEntry }) {
   const qc = useQueryClient();
   const [draft, setDraft] = useState(() => valueForEdit(e));
+  const [saveNotice, setSaveNotice] = useState<string | null>(null);
+  const [restartPrompt, setRestartPrompt] = useState<RestartPrompt | null>(null);
 
   useEffect(() => {
     setDraft(valueForEdit(e));
@@ -297,10 +309,17 @@ function EntryRow({ entry: e }: { entry: SettingEntry }) {
       const v = parseValue(e, draft);
       return api.settings.put(e.key, { value: v });
     },
+    onMutate: () => {
+      setSaveNotice(null);
+      setRestartPrompt(null);
+    },
     onSuccess: async (saved) => {
       qc.setQueryData<SettingsGetResponse>(queryKeys.settings.all(), (old) =>
         old ? settingsWithSavedEntry(old, saved.key, saved.effective) : old,
       );
+      const notice = applyModeNotice(saved.apply_mode, saved.note);
+      setSaveNotice(notice);
+      setRestartPrompt(restartPromptForSave(saved.apply_mode, notice, saved.key));
       await qc.invalidateQueries({ queryKey: queryKeys.settings.all() });
     },
   });
@@ -315,12 +334,12 @@ function EntryRow({ entry: e }: { entry: SettingEntry }) {
           ) : null}
         </td>
         <td className="p-2" colSpan={2}>
-          <code className="break-all text-xs">{JSON.stringify(e.effective)}</code>
+          <div className="flex items-start gap-1.5">
+            <code className="break-all text-xs">{JSON.stringify(e.effective)}</code>
+            <OverrideIndicator entry={e} />
+          </div>
         </td>
-        <td className="p-2 text-xs text-muted-foreground">
-          {e.apply_mode}
-          {e.in_db && e.dirty ? <Badge variant="outline">override</Badge> : null}
-        </td>
+        <td className="p-2 text-xs text-muted-foreground" />
       </tr>
     );
   }
@@ -339,11 +358,13 @@ function EntryRow({ entry: e }: { entry: SettingEntry }) {
               motors stopped
             </Badge>
           ) : null}
-          {e.dirty ? <Badge className="text-[10px]">dirty</Badge> : null}
         </div>
       </td>
       <td className="p-2">
-        <Editor entry={e} value={draft} onChange={setDraft} />
+        <div className="flex items-start gap-1.5">
+          <Editor entry={e} value={draft} onChange={setDraft} />
+          <OverrideIndicator entry={e} />
+        </div>
       </td>
       <td className="p-2">
         <code className="break-all text-xs text-muted-foreground">
@@ -351,11 +372,9 @@ function EntryRow({ entry: e }: { entry: SettingEntry }) {
         </code>
       </td>
       <td className="p-2">
-        <div className="text-xs text-muted-foreground">{e.apply_mode}</div>
         <Button
           type="button"
           size="sm"
-          className="mt-1"
           disabled={put.isPending}
           onClick={() => void put.mutateAsync().catch(() => {})}
         >
@@ -366,11 +385,114 @@ function EntryRow({ entry: e }: { entry: SettingEntry }) {
             {apiErrorMessage(put.error)}
           </div>
         ) : null}
+        {saveNotice ? (
+          <div className="pt-1 text-[11px] text-amber-600">{saveNotice}</div>
+        ) : null}
         <div className="pt-1">
-          <ResetRowToSeed entry={e} />
+          <ResetRowToSeed entry={e} onRestartNeeded={setRestartPrompt} />
         </div>
+        <RestartRequiredDialog
+          prompt={restartPrompt}
+          onClose={() => setRestartPrompt(null)}
+        />
       </td>
     </tr>
+  );
+}
+
+function OverrideIndicator({ entry: e }: { entry: SettingEntry }) {
+  if (!e.in_db || !e.dirty) return null;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          aria-label="Runtime override differs from TOML seed"
+          className="mt-1 inline-block h-2 w-2 shrink-0 rounded-full bg-amber-500"
+        />
+      </TooltipTrigger>
+      <TooltipContent>Runtime override differs from TOML seed</TooltipContent>
+    </Tooltip>
+  );
+}
+
+function applyModeNotice(mode: SettingsApplyMode, note: string | null): string | null {
+  if (mode === "runtime_immediate") return null;
+  if (note) return note;
+  if (mode === "requires_restart") return "Saved. Restart cortex for full effect.";
+  return "Saved, but this setting is not runtime-immediate.";
+}
+
+type RestartPrompt = {
+  key: string;
+  message: string;
+};
+
+function restartPromptForSave(
+  mode: SettingsApplyMode,
+  message: string | null,
+  key: string,
+): RestartPrompt | null {
+  if (!message || mode === "runtime_immediate") return null;
+  return { key, message };
+}
+
+function RestartRequiredDialog({
+  prompt,
+  onClose,
+}: {
+  prompt: RestartPrompt | null;
+  onClose: () => void;
+}) {
+  const restart = useMutation({
+    mutationFn: () => api.restart(),
+    onSuccess: () => {
+      window.setTimeout(() => window.location.reload(), 2500);
+    },
+  });
+
+  return (
+    <Dialog open={prompt !== null} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Restart required</DialogTitle>
+          <DialogDescription>
+            {prompt?.message ?? "This change needs a cortex restart for full effect."}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-2 text-sm text-muted-foreground">
+          <p>
+            Saved <code>{prompt?.key}</code>. Restarting drops torque on every
+            present motor, exits cortex, and systemd should bring it back.
+          </p>
+          {restart.isSuccess ? (
+            <p className="text-amber-600">
+              Restart requested. Reloading shortly after cortex comes back.
+            </p>
+          ) : null}
+          {restart.isError ? (
+            <p className="text-destructive">{apiErrorMessage(restart.error)}</p>
+          ) : null}
+        </div>
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onClose}
+            disabled={restart.isPending || restart.isSuccess}
+          >
+            Later
+          </Button>
+          <Button
+            type="button"
+            variant="destructive"
+            onClick={() => restart.mutate()}
+            disabled={restart.isPending || restart.isSuccess}
+          >
+            {restart.isPending ? "Restarting..." : "Restart now"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -477,12 +599,31 @@ function Editor({
   );
 }
 
-function ResetRowToSeed({ entry: e }: { entry: SettingEntry }) {
+function ResetRowToSeed({
+  entry: e,
+  onRestartNeeded,
+}: {
+  entry: SettingEntry;
+  onRestartNeeded: (prompt: RestartPrompt | null) => void;
+}) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const m = useMutation({
     mutationFn: () => api.settings.put(e.key, { value: e.seed as unknown }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: queryKeys.settings.all() }),
+    onMutate: () => {
+      setNotice(null);
+      onRestartNeeded(null);
+    },
+    onSuccess: (saved) => {
+      qc.setQueryData<SettingsGetResponse>(queryKeys.settings.all(), (old) =>
+        old ? settingsWithSavedEntry(old, saved.key, saved.effective) : old,
+      );
+      const nextNotice = applyModeNotice(saved.apply_mode, saved.note);
+      setNotice(nextNotice);
+      onRestartNeeded(restartPromptForSave(saved.apply_mode, nextNotice, saved.key));
+      void qc.invalidateQueries({ queryKey: queryKeys.settings.all() });
+    },
   });
   return (
     <>
@@ -490,12 +631,14 @@ function ResetRowToSeed({ entry: e }: { entry: SettingEntry }) {
         type="button"
         variant="ghost"
         size="sm"
-        className="h-7 px-1 text-xs"
+        className="h-7 w-7 px-0"
+        aria-label={`Reset ${e.key} to seed value`}
+        title="Reset to TOML seed"
         onClick={() => setOpen(true)}
       >
-        <RotateCcw className="mr-1 h-3 w-3" />
-        To seed
+        <RotateCcw className="h-3 w-3" />
       </Button>
+      {notice ? <div className="pt-1 text-[11px] text-amber-600">{notice}</div> : null}
       {open ? (
         <ConfirmDialog
           title="Reset to seed value?"
