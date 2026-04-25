@@ -114,6 +114,8 @@ export function ActuatorStatusCard({ className }: { className?: string }) {
 function MotorRow({ motor }: { motor: MotorSummary }) {
   const fb = motor.latest;
   const ageS = fb ? (Date.now() - Number(fb.t_ms)) / 1000 : null;
+  const type2AgeS =
+    motor.type2_age_ms == null ? null : Number(motor.type2_age_ms) / 1000;
   const bs = motor.boot_state;
   const bootDot = bootStateDotClass(bs);
   const roleColor = bootStateRoleTextClass(bs);
@@ -175,6 +177,16 @@ function MotorRow({ motor }: { motor: MotorSummary }) {
                 )}
               >
                 {fmtAge(ageS)}
+              </span>
+              <span
+                title="last high-rate type-2 position frame"
+                className={cn(
+                  type2AgeS != null &&
+                    type2AgeS * 1000 > STALE_MS &&
+                    "text-rose-400",
+                )}
+              >
+                t2 {fmtAge(type2AgeS)}
               </span>
             </>
           ) : (

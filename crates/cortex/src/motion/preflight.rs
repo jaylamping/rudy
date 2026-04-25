@@ -26,6 +26,7 @@
 
 use chrono::Utc;
 use std::sync::atomic::Ordering;
+use tracing::warn;
 
 use crate::boot_state::{self, BootState};
 use crate::can::angle::UnwrappedAngle;
@@ -345,6 +346,13 @@ impl PreflightChecks<'_> {
             match last_type2 {
                 Some(t) if now_ms.saturating_sub(t) <= max_age_ms => {}
                 Some(t) => {
+                    warn!(
+                        role = %self.role,
+                        feedback_age_ms = now_ms.saturating_sub(feedback.t_ms),
+                        last_type2_age_ms = now_ms.saturating_sub(t),
+                        max_age_ms,
+                        "motion preflight refused: stale type-2 position telemetry"
+                    );
                     return Err(PreflightFailure::StaleTelemetry {
                         age_ms: now_ms.saturating_sub(feedback.t_ms),
                         max_age_ms,
@@ -352,6 +360,12 @@ impl PreflightChecks<'_> {
                     });
                 }
                 None => {
+                    warn!(
+                        role = %self.role,
+                        feedback_age_ms = now_ms.saturating_sub(feedback.t_ms),
+                        max_age_ms,
+                        "motion preflight refused: no type-2 position telemetry decoded"
+                    );
                     return Err(PreflightFailure::StaleTelemetry {
                         age_ms: now_ms.saturating_sub(feedback.t_ms),
                         max_age_ms,

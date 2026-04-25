@@ -72,7 +72,7 @@ const motorFeedbackReducer: WtReducer<
           return m;
         }
         changed = true;
-        return { ...m, latest: fb };
+        return { ...m, latest: fb, feedback_age_ms: 0n, type2_age_ms: 0n };
       });
       return changed ? next : prev;
     });

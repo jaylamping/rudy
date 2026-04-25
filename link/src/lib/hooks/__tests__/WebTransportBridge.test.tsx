@@ -122,6 +122,8 @@ function motorSummaryFixture(
     homing_speed_rad_s: null,
     default_homing_speed_rad_s: 0.4,
     latest: null,
+    feedback_age_ms: undefined,
+    type2_age_ms: undefined,
     boot_state: { kind: "unknown" },
     limb: null,
     joint_kind: null,

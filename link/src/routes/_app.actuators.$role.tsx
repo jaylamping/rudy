@@ -175,6 +175,10 @@ function ActuatorHeader({ motor }: { motor: MotorSummary }) {
       ? (Date.now() - lastSeenMs) / 1_000
       : null;
   const hot = fb ? fb.temp_c >= HOT_DEGC : false;
+  const type2AgeMs =
+    motor.type2_age_ms == null ? null : Number(motor.type2_age_ms);
+  const feedbackAgeMs =
+    motor.feedback_age_ms == null ? null : Number(motor.feedback_age_ms);
 
   return (
     <header className="rounded-lg border border-border bg-card p-4">
@@ -259,7 +263,7 @@ function ActuatorHeader({ motor }: { motor: MotorSummary }) {
         </div>
       </div>
 
-      <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+      <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-6">
         <Stat
           label="position"
           value={
@@ -282,6 +286,18 @@ function ActuatorHeader({ motor }: { motor: MotorSummary }) {
           value={fb?.temp_c}
           unit="degC"
           tone={hot ? "warn" : undefined}
+        />
+        <Stat
+          label="feedback age"
+          value={feedbackAgeMs != null ? feedbackAgeMs / 1000 : undefined}
+          unit="s"
+          tone={feedbackAgeMs != null && feedbackAgeMs > 250 ? "warn" : undefined}
+        />
+        <Stat
+          label="type-2 age"
+          value={type2AgeMs != null ? type2AgeMs / 1000 : undefined}
+          unit="s"
+          tone={type2AgeMs == null || type2AgeMs > 250 ? "warn" : undefined}
         />
       </div>
     </header>

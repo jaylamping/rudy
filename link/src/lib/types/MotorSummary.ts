@@ -27,6 +27,16 @@ homing_speed_rad_s: number | null,
  */
 default_homing_speed_rad_s: number, latest: MotorFeedback | null, 
 /**
+ * Age of `latest` in ms at serialization time. This can be refreshed by
+ * type-17 fallback polling, so use `type2_age_ms` for motion safety.
+ */
+feedback_age_ms?: bigint, 
+/**
+ * Age of the last high-rate type-2 position frame in ms. `None` means no
+ * type-2 frame has been decoded for this motor since daemon start.
+ */
+type2_age_ms?: bigint, 
+/**
  * Per-power-cycle gate state. UI renders a colored badge driven off
  * the variant; OutOfBand carries enough detail to display
  * "X.X deg outside [Y.Y, Z.Z]" without a second roundtrip.
