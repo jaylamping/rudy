@@ -22,7 +22,7 @@
 
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, RefreshCw, Trash2 } from "lucide-react";
+import { Activity, Cpu, Loader2, RefreshCw, Trash2, Zap } from "lucide-react";
 import { useState } from "react";
 import { ConfirmDialog } from "@/components/params";
 import { queryKeys, useConfigQuery } from "@/api";
@@ -402,12 +402,12 @@ function ActuatorsSection({
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <ActuatorTable
+              <ActuatorCardGrid
                 actuators={other}
                 motorByRole={motorByRole}
                 onRequestRemove={onRequestRemove}
                 removePendingRole={removePendingRole}
-                showLimbColumn
+                showLimb
               />
             </CardContent>
           </Card>
@@ -449,7 +449,7 @@ function LimbActuatorCard({
             No actuators assigned to this limb yet.
           </p>
         ) : (
-          <ActuatorTable
+          <ActuatorCardGrid
             actuators={actuators}
             motorByRole={motorByRole}
             onRequestRemove={onRequestRemove}
@@ -486,120 +486,129 @@ function TrunkActuatorCard({
         </Badge>
       </CardHeader>
       <CardContent>
-        <ActuatorTable
+        <ActuatorCardGrid
           actuators={actuators}
           motorByRole={motorByRole}
           onRequestRemove={onRequestRemove}
           removePendingRole={removePendingRole}
-          showLimbColumn
+          showLimb
         />
       </CardContent>
     </Card>
   );
 }
 
-function ActuatorTable({
+function ActuatorCardGrid({
   actuators,
   motorByRole,
   onRequestRemove,
   removePendingRole,
-  showLimbColumn = false,
+  showLimb = false,
 }: {
   actuators: ActuatorDevice[];
   motorByRole: Map<string, MotorSummary>;
   onRequestRemove: (a: ActuatorDevice) => void;
   removePendingRole: string | null;
-  showLimbColumn?: boolean;
+  showLimb?: boolean;
 }) {
   return (
-    <div className="overflow-x-auto rounded-md border border-border">
-      <table className="w-full min-w-[560px] text-left text-sm">
-        <thead className="border-b border-border bg-muted/30">
-          <tr>
-            <th className="px-3 py-2 font-medium">Role</th>
-            {showLimbColumn ? (
-              <th className="px-3 py-2 font-medium">Limb</th>
-            ) : null}
-            <th className="px-3 py-2 font-medium">Bus</th>
-            <th className="px-3 py-2 font-medium">ID</th>
-            <th className="px-3 py-2 font-medium">Family</th>
-            <th className="px-3 py-2 font-medium">Boot</th>
-            <th className="px-3 py-2 text-right font-medium">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {actuators.map((a) => {
-            const motor = motorByRole.get(a.role);
-            const boot = motor ? bootStateShortLabel(motor.boot_state) : "—";
-            const isEnabled = motor?.enabled ?? false;
-            const fam =
-              a.family.kind === "robstride"
-                ? `RobStride ${a.family.model}`
-                : a.family.kind;
-            const removeBtn = (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                aria-label={`Remove ${a.role}`}
-                onClick={() => onRequestRemove(a)}
-                disabled={removePendingRole === a.role || isEnabled}
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            );
-            return (
-              <tr
-                key={a.role}
-                className="border-b border-border/50 last:border-b-0"
-              >
-                <td className="px-3 py-2">
-                  <Link
-                    to="/actuators/$role"
-                    params={{ role: a.role }}
-                    className="font-medium hover:underline"
+    <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+      {actuators.map((a) => {
+        const motor = motorByRole.get(a.role);
+        const boot = motor ? bootStateShortLabel(motor.boot_state) : "Unknown";
+        const isEnabled = motor?.enabled ?? false;
+        const fam =
+          a.family.kind === "robstride"
+            ? `RobStride ${a.family.model}`
+            : a.family.kind;
+        const removeBtn = (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+            aria-label={`Remove ${a.role}`}
+            onClick={() => onRequestRemove(a)}
+            disabled={removePendingRole === a.role || isEnabled}
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        );
+
+        return (
+          <div
+            key={a.role}
+            className="group rounded-lg border border-border/80 bg-gradient-to-br from-card via-card to-muted/20 p-3 shadow-sm transition-colors hover:border-primary/40"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <Link
+                  to="/actuators/$role"
+                  params={{ role: a.role }}
+                  className="block truncate font-mono text-sm font-semibold text-foreground hover:underline"
+                >
+                  {a.role}
+                </Link>
+                <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                  <Badge
+                    variant={isEnabled ? "success" : "secondary"}
+                    className="font-normal"
                   >
-                    {a.role}
-                  </Link>
-                </td>
-                {showLimbColumn ? (
-                  <td className="px-3 py-2 text-muted-foreground">
-                    {a.limb ?? "—"}
-                  </td>
-                ) : null}
-                <td className="px-3 py-2 font-mono text-xs">{a.can_bus}</td>
-                <td className="px-3 py-2 font-mono text-xs">
-                  0x{a.can_id.toString(16).padStart(2, "0")}
-                </td>
-                <td className="px-3 py-2 text-muted-foreground">{fam}</td>
-                <td className="px-3 py-2">
-                  {motor ? (
-                    <Badge variant="secondary" className="font-normal">
-                      {boot}
-                    </Badge>
-                  ) : (
-                    "—"
-                  )}
-                </td>
-                <td className="px-3 py-2 text-right">
-                  {isEnabled ? (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span className="inline-flex">{removeBtn}</span>
-                      </TooltipTrigger>
-                      <TooltipContent side="top">
-                        Stop the motor first.
-                      </TooltipContent>
-                    </Tooltip>
-                  ) : (
-                    removeBtn
-                  )}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+                    {isEnabled ? "Enabled" : "Idle"}
+                  </Badge>
+                  <Badge variant="outline" className="font-normal">
+                    {boot}
+                  </Badge>
+                </div>
+              </div>
+              {isEnabled ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="inline-flex">{removeBtn}</span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">Stop the motor first.</TooltipContent>
+                </Tooltip>
+              ) : (
+                removeBtn
+              )}
+            </div>
+
+            <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
+              <DeviceMeta icon={Zap} label="CAN" value={a.can_bus} />
+              <DeviceMeta
+                icon={Cpu}
+                label="ID"
+                value={`0x${a.can_id.toString(16).padStart(2, "0")}`}
+              />
+              <DeviceMeta icon={Activity} label="Family" value={fam} />
+              {showLimb ? (
+                <DeviceMeta icon={Activity} label="Limb" value={a.limb ?? "—"} />
+              ) : null}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function DeviceMeta({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: typeof Activity;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-md border border-border/70 bg-background/50 px-2.5 py-2">
+      <div className="flex items-center gap-1.5 text-[0.65rem] uppercase tracking-wide text-muted-foreground">
+        <Icon className="h-3 w-3" />
+        {label}
+      </div>
+      <div className="mt-1 truncate font-mono text-[0.72rem] text-foreground">
+        {value}
+      </div>
     </div>
   );
 }
