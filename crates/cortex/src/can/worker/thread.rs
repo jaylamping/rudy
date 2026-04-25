@@ -232,11 +232,11 @@ fn apply_type2(
 
     let now_ms = Utc::now().timestamp_millis();
 
-    let (prev_t_ms, prev_vbus, prev_torque, prev_temp, prev_fault) = {
+    let (prev_t_ms, prev_vbus, prev_torque, prev_fault) = {
         let guard = state.latest.read().expect("latest poisoned");
         match guard.get(&role) {
-            Some(f) => (Some(f.t_ms), f.vbus_v, f.torque_nm, f.temp_c, f.fault_sta),
-            None => (None, 0.0, 0.0, 0.0, 0),
+            Some(f) => (Some(f.t_ms), f.vbus_v, f.torque_nm, f.fault_sta),
+            None => (None, 0.0, 0.0, 0),
         }
     };
 
@@ -252,11 +252,11 @@ fn apply_type2(
             prev_torque
         },
         vbus_v: prev_vbus,
-        temp_c: if fb.temp_c > 0.0 {
-            fb.temp_c
-        } else {
-            prev_temp
-        },
+        // MOS temp from type-2 is always authoritative once decoded (ADR-0002:
+        // uint16 BE, °C = raw/10). Do not gate on `> 0`: 0 °C is valid, and
+        // holding `prev_temp` when the frame carries 0.0 was masking real
+        // readings / leaving stale aux-merge values.
+        temp_c: fb.temp_c,
         fault_sta: prev_fault,
         warn_sta: 0,
     };

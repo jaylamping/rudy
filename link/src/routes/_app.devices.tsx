@@ -416,6 +416,11 @@ function ActuatorCardGrid({
         const boot = motor ? bootStateShortLabel(motor.boot_state) : "Unknown";
         const isEnabled = motor?.enabled ?? false;
         const isOnline = !!motor;
+        const tempC = motor?.latest?.temp_c;
+        const tempLabel =
+          tempC != null && Number.isFinite(tempC)
+            ? `${tempC.toFixed(1)} °C`
+            : "—";
 
         return (
           <div
@@ -452,6 +457,10 @@ function ActuatorCardGrid({
                   </Badge>
                 ) : null}
               </div>
+              <p className="text-xs text-muted-foreground">
+                Temp:{" "}
+                <span className="font-mono text-foreground">{tempLabel}</span>
+              </p>
             </div>
           </div>
         );
