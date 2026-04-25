@@ -31,7 +31,7 @@ pub fn write_atomic(
         let c = arc
             .lock()
             .map_err(|e| anyhow::anyhow!("runtime db mutex: {e}"))?;
-        data::set_inventory_json(&*c, &json).context("persist inventory to runtime SQLite")?;
+        data::set_inventory_json(&c, &json).context("persist inventory to runtime SQLite")?;
         drop(c);
         if !mirror_yaml {
             return Ok(inv);

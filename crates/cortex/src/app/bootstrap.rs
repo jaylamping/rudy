@@ -331,7 +331,7 @@ fn load_bootstrap_inventory(
             let c = db
                 .lock()
                 .map_err(|e| anyhow::anyhow!("runtime db lock: {e}"))?;
-            if let Some(body) = data::get_inventory_json(&*c).context("read inventory_doc")? {
+            if let Some(body) = data::get_inventory_json(&c).context("read inventory_doc")? {
                 if !body.is_empty() {
                     let inv: inventory::Inventory = serde_json::from_str(&body)
                         .context("deserialize inventory from runtime db")?;
@@ -352,11 +352,11 @@ fn load_bootstrap_inventory(
             let c = db
                 .lock()
                 .map_err(|e| anyhow::anyhow!("runtime db lock: {e}"))?;
-            if data::get_inventory_json(&*c)
+            if data::get_inventory_json(&c)
                 .context("get inventory after yaml load")?
                 .is_none()
             {
-                data::set_inventory_json(&*c, &json).context("seed inventory_doc from yaml")?;
+                data::set_inventory_json(&c, &json).context("seed inventory_doc from yaml")?;
             }
         }
     }

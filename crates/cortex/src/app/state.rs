@@ -240,6 +240,7 @@ impl AppState {
     /// `main.rs` uses this to share the broadcast with the
     /// `LogCaptureLayer` it builds before AppState exists; tests use the
     /// short form.
+    #[allow(clippy::too_many_arguments)]
     pub fn new_with_log_tx(
         cfg: Config,
         runtime: Option<crate::settings::RuntimeConfigInit>,

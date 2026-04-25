@@ -56,7 +56,7 @@ pub async fn get_all(
         let d = db
             .lock()
             .map_err(|_| err(StatusCode::INTERNAL_SERVER_ERROR, "settings_db_lock", None))?;
-        data::list_kv(&*d)
+        data::list_kv(&d)
             .map_err(|e: anyhow::Error| {
                 err(
                     StatusCode::INTERNAL_SERVER_ERROR,
@@ -182,7 +182,7 @@ fn persist_effective(
     let mut d = db
         .lock()
         .map_err(|_| err(StatusCode::INTERNAL_SERVER_ERROR, "settings_db_lock", None))?;
-    data::replace_all_kv(&mut *d, &rows).map_err(|e: anyhow::Error| {
+    data::replace_all_kv(&mut d, &rows).map_err(|e: anyhow::Error| {
         err(
             StatusCode::INTERNAL_SERVER_ERROR,
             "settings_persist",
@@ -210,7 +210,7 @@ pub async fn put_one(
     if !def.tunable {
         return Err(err(StatusCode::BAD_REQUEST, "read_only", Some(key.clone())));
     }
-    lock_gate::require_control(&state, &headers).map_err(|e| e)?;
+    lock_gate::require_control(&state, &headers)?;
 
     if def.requires_motors_stopped && !state.enabled.read().expect("enabled poisoned").is_empty() {
         return Err(err(
@@ -300,7 +300,7 @@ pub async fn post_reset(
             None,
         ));
     }
-    lock_gate::require_control(&state, &headers).map_err(|e| e)?;
+    lock_gate::require_control(&state, &headers)?;
     if !state.enabled.read().expect("enabled poisoned").is_empty() {
         return Err(err(StatusCode::CONFLICT, "motors_not_stopped", None));
     }
@@ -341,7 +341,7 @@ pub async fn post_reseed(
             Some("set X-Rudy-Reseed-Confirm: 1".into()),
         ));
     }
-    lock_gate::require_control(&state, &headers).map_err(|e| e)?;
+    lock_gate::require_control(&state, &headers)?;
     if !state.enabled.read().expect("enabled poisoned").is_empty() {
         return Err(err(StatusCode::CONFLICT, "motors_not_stopped", None));
     }
@@ -371,14 +371,14 @@ fn do_reset_reseed(
         .lock()
         .map_err(|_| err(StatusCode::INTERNAL_SERVER_ERROR, "settings_db_lock", None))?;
     let rows: Vec<(String, JsonValue)> = file_defaults_to_kv(&state.cfg);
-    data::replace_all_kv(&mut *d, &rows).map_err(|e: anyhow::Error| {
+    data::replace_all_kv(&mut d, &rows).map_err(|e: anyhow::Error| {
         err(
             StatusCode::INTERNAL_SERVER_ERROR,
             "settings_persist",
             Some(e.to_string()),
         )
     })?;
-    let kv: BTreeMap<String, String> = data::list_kv(&*d)
+    let kv: BTreeMap<String, String> = data::list_kv(&d)
         .map_err(|e: anyhow::Error| {
             err(
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -415,7 +415,7 @@ pub async fn post_recovery_ack(
     State(state): State<SharedState>,
     headers: HeaderMap,
 ) -> Result<Json<SettingsRecoveryAckResponse>, (StatusCode, Json<ApiError>)> {
-    lock_gate::require_control(&state, &headers).map_err(|e| e)?;
+    lock_gate::require_control(&state, &headers)?;
     state
         .settings_recovery_pending
         .store(false, Ordering::SeqCst);
@@ -450,7 +450,7 @@ pub async fn get_profiles(
     let d = db
         .lock()
         .map_err(|_| err(StatusCode::INTERNAL_SERVER_ERROR, "settings_db_lock", None))?;
-    let rows = data::list_meta_with_prefix(&*d, "profile:").map_err(|e: anyhow::Error| {
+    let rows = data::list_meta_with_prefix(&d, "profile:").map_err(|e: anyhow::Error| {
         err(
             StatusCode::INTERNAL_SERVER_ERROR,
             "list_profiles",
@@ -491,7 +491,7 @@ pub async fn post_create_profile(
             None,
         ));
     }
-    lock_gate::require_control(&state, &headers).map_err(|e| e)?;
+    lock_gate::require_control(&state, &headers)?;
     let mkey = registry::profile_meta_key(&req.name).ok_or_else(|| {
         err(
             StatusCode::BAD_REQUEST,
@@ -499,7 +499,7 @@ pub async fn post_create_profile(
             Some("use [a-zA-Z0-9_-] only".into()),
         )
     })?;
-    for (k, _) in &req.values {
+    for k in req.values.keys() {
         if registry::def_by_key(k).is_none() {
             return Err(err(
                 StatusCode::BAD_REQUEST,
@@ -519,7 +519,7 @@ pub async fn post_create_profile(
     let d = db
         .lock()
         .map_err(|_| err(StatusCode::INTERNAL_SERVER_ERROR, "settings_db_lock", None))?;
-    data::set_meta(&*d, &mkey, &body).map_err(|e: anyhow::Error| {
+    data::set_meta(&d, &mkey, &body).map_err(|e: anyhow::Error| {
         err(
             StatusCode::INTERNAL_SERVER_ERROR,
             "meta_set",
@@ -556,7 +556,7 @@ pub async fn post_apply_profile(
             None,
         ));
     }
-    lock_gate::require_control(&state, &headers).map_err(|e| e)?;
+    lock_gate::require_control(&state, &headers)?;
     if !state.enabled.read().expect("enabled poisoned").is_empty() {
         return Err(err(StatusCode::CONFLICT, "motors_not_stopped", None));
     }
@@ -566,7 +566,7 @@ pub async fn post_apply_profile(
     let d = db
         .lock()
         .map_err(|_| err(StatusCode::INTERNAL_SERVER_ERROR, "settings_db_lock", None))?;
-    let json_str = data::get_meta(&*d, &mkey)
+    let json_str = data::get_meta(&d, &mkey)
         .map_err(|e: anyhow::Error| {
             err(
                 StatusCode::INTERNAL_SERVER_ERROR,

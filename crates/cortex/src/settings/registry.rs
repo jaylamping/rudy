@@ -372,10 +372,7 @@ pub fn value_from_file_cfg(cfg: &Config, key: &str) -> Option<Json> {
 
 /// Build a map of seed key → JSON for diff / reset.
 pub fn file_seed_map(cfg: &Config) -> std::collections::BTreeMap<String, Json> {
-    file_defaults_to_kv(cfg)
-        .into_iter()
-        .map(|(k, v)| (k, v))
-        .collect()
+    file_defaults_to_kv(cfg).into_iter().collect()
 }
 
 /// True when the key is present in `settings_kv` (operator override or imported row).
