@@ -66,11 +66,9 @@ pub fn cmd_save_params(bus: &CanBus, host_id: u8, motor_id: u8) -> io::Result<()
 
 #[inline]
 fn active_report_payload(enable: bool) -> [u8; 8] {
-    // RS03 type-24 docs use byte 7 (`F_CMD`) for the switch:
-    // 0x00 = disable, 0x01 = enable.
-    let mut payload = [0u8; 8];
-    payload[7] = u8::from(enable);
-    payload
+    // Motor Tool sends this sentinel prefix for type-24 active reporting:
+    // 01 02 03 04 05 06 F_CMD, with F_CMD 0=disable / 1=enable.
+    [1, 2, 3, 4, 5, 6, u8::from(enable), 0]
 }
 
 pub fn cmd_active_report(bus: &CanBus, host_id: u8, motor_id: u8, enable: bool) -> io::Result<()> {
@@ -397,8 +395,8 @@ mod tests {
     }
 
     #[test]
-    fn active_report_payload_sets_f_cmd_in_byte7() {
-        assert_eq!(active_report_payload(false), [0, 0, 0, 0, 0, 0, 0, 0]);
-        assert_eq!(active_report_payload(true), [0, 0, 0, 0, 0, 0, 0, 1]);
+    fn active_report_payload_matches_motor_tool() {
+        assert_eq!(active_report_payload(false), [1, 2, 3, 4, 5, 6, 0, 0]);
+        assert_eq!(active_report_payload(true), [1, 2, 3, 4, 5, 6, 1, 0]);
     }
 }

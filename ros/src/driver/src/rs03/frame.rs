@@ -44,7 +44,7 @@ pub fn comm_type_from_id(id: u32) -> u8 {
 /// | 0x11  | `ReadParam` reply          | 8..15     | type-17 read response              |
 /// | 0x15  | `FaultFeedback`            | 8..15     | unsolicited fault frames           |
 /// | 0x16  | `SaveParams` ack           | 8..15     | echoed by some firmware revs       |
-/// | 0x18  | `ActiveReport`             | 16..23    | runtime-state push (type-24)       |
+/// | 0x18  | `ActiveReport` reply       | 8..15     | runtime-state push (type-24)       |
 ///
 /// Comm types with operator-supplied bytes in the source-id slot
 /// (`OperationCtrl`, `Enable`, `Stop`, `WriteParam`, …) are deliberately
@@ -59,15 +59,14 @@ pub fn passive_observer_node_id(can_id: u32) -> Option<u8> {
     let node = match comm {
         // Source id is in bits 16..23 (device → host frames whose layout
         // mirrors the type-2 motor feedback header).
-        c if c == CommType::GetDeviceId as u8
-            || c == CommType::MotorFeedback as u8
-            || c == CommType::ActiveReport as u8 =>
+        c if c == CommType::GetDeviceId as u8 || c == CommType::MotorFeedback as u8 =>
         {
             ((raw >> 16) & 0xFF) as u8
         }
         // Source id is in bits 8..15 (type-17 reply convention reused by
         // fault and save-params acks).
         c if c == CommType::ReadParam as u8
+            || c == CommType::ActiveReport as u8
             || c == CommType::FaultFeedback as u8
             || c == CommType::SaveParams as u8 =>
         {
@@ -134,8 +133,8 @@ mod tests {
 
     #[test]
     fn passive_observer_active_report() {
-        // Type-24 active-report push: same source-id layout as type-2.
-        let raw = (CommType::ActiveReport as u32) << 24 | (0x33u32 << 16) | 0xFD;
+        // Type-24 active-report push: source node id in bits 8..15.
+        let raw = (CommType::ActiveReport as u32) << 24 | (0x33u32 << 8) | 0xFD;
         assert_eq!(passive_observer_node_id(with_eff_flag(raw)), Some(0x33));
     }
 

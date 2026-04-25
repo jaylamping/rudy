@@ -67,6 +67,47 @@ pub fn decode_motor_feedback(can_id: u32, data: &[u8]) -> Result<MotorFeedback, 
     })
 }
 
+/// Decode a type-24 active-report telemetry frame.
+///
+/// Motor Tool emits active-report telemetry as `0x18SSMMFD`: status in
+/// bits 16..23, source motor in bits 8..15, host in bits 0..7. The 8-byte
+/// payload uses the same position / velocity / torque / temperature packing
+/// as type-2 feedback.
+pub fn decode_active_report_feedback(
+    can_id: u32,
+    data: &[u8],
+) -> Result<MotorFeedback, ProtocolError> {
+    if data.len() < 8 {
+        return Err(ProtocolError::ShortFrame {
+            got: data.len(),
+            need: 8,
+        });
+    }
+    let raw_id = strip_eff_flag(can_id);
+    let status_byte = ((raw_id >> 16) & 0xFF) as u8;
+    let src_motor = ((raw_id >> 8) & 0xFF) as u8;
+    let dest_host = (raw_id & 0xFF) as u8;
+
+    let raw_pos = u16::from_be_bytes([data[0], data[1]]);
+    let raw_vel = u16::from_be_bytes([data[2], data[3]]);
+    let raw_torque = u16::from_be_bytes([data[4], data[5]]);
+    let raw_temp = u16::from_be_bytes([data[6], data[7]]);
+
+    Ok(MotorFeedback {
+        src_motor,
+        dest_host,
+        status_byte,
+        pos_rad: u16_to_range(raw_pos, POS_LO, POS_HI),
+        vel_rad_s: u16_to_range(raw_vel, VEL_LO, VEL_HI),
+        torque_nm: u16_to_range(raw_torque, TORQUE_LO, TORQUE_HI),
+        temp_c: (raw_temp as f32) / 10.0,
+        raw_pos,
+        raw_vel,
+        raw_torque,
+        raw_temp,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -88,5 +129,16 @@ mod tests {
     fn decode_type2_too_short_errors() {
         let err = decode_motor_feedback(0, &[0u8; 4]).unwrap_err();
         assert_eq!(err, ProtocolError::ShortFrame { got: 4, need: 8 });
+    }
+
+    #[test]
+    fn decode_active_report_uses_reply_id_layout() {
+        let can_id = 0x1880_08FDu32;
+        let data = [0x80, 0x00, 0x80, 0x00, 0x80, 0x00, 0x01, 0x18];
+        let fb = decode_active_report_feedback(can_id, &data).unwrap();
+        assert_eq!(fb.status_byte, 0x80);
+        assert_eq!(fb.src_motor, 0x08);
+        assert_eq!(fb.dest_host, 0xFD);
+        assert_eq!(fb.raw_temp, 0x0118);
     }
 }

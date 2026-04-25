@@ -5,7 +5,7 @@ use std::sync::Weak;
 
 use chrono::Utc;
 use driver::rs03::fault_feedback::decode_fault_dwords;
-use driver::rs03::feedback::decode_motor_feedback;
+use driver::rs03::feedback::{decode_active_report_feedback, decode_motor_feedback};
 use driver::rs03::frame::{comm_type_from_id, passive_observer_node_id, strip_eff_flag};
 use driver::CommType;
 use tracing::{debug, trace};
@@ -44,10 +44,29 @@ pub fn route_frame(
         let raw = strip_eff_flag(can_id);
         let src_motor = ((raw >> 16) & 0xFF) as u8;
         match decode_motor_feedback(can_id, &data[..dlc]) {
-            Ok(fb) => apply_type2(state, iface, src_motor, fb),
+            Ok(fb) => apply_position_feedback(state, iface, src_motor, fb, "type-2"),
             Err(e) => {
                 health.record_type2_decode_fail();
                 debug!(iface = %iface, error = ?e, "type-2 decode failed");
+            }
+        }
+        return;
+    }
+
+    if comm == CommType::ActiveReport as u8 {
+        if dlc < 8 {
+            return;
+        }
+        let raw = strip_eff_flag(can_id);
+        let src_motor = ((raw >> 8) & 0xFF) as u8;
+        if src_motor == 0 || src_motor > 0x7F {
+            return;
+        }
+        match decode_active_report_feedback(can_id, &data[..dlc]) {
+            Ok(fb) => apply_position_feedback(state, iface, src_motor, fb, "active-report"),
+            Err(e) => {
+                health.record_type2_decode_fail();
+                debug!(iface = %iface, error = ?e, "active-report decode failed");
             }
         }
         return;
@@ -96,11 +115,12 @@ pub fn route_frame(
     }
 }
 
-fn apply_type2(
+fn apply_position_feedback(
     state: &Weak<AppState>,
     iface: &str,
     src_motor: u8,
     fb: driver::rs03::feedback::MotorFeedback,
+    source: &'static str,
 ) {
     let Some(state) = state.upgrade() else {
         return;
@@ -166,7 +186,8 @@ fn apply_type2(
         role = %role,
         can_id = src_motor,
         gap_ms = gap_ms,
-        "type-2 frame applied"
+        source = source,
+        "position feedback frame applied"
     );
 
     let classify_outcome =
