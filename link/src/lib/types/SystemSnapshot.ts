@@ -17,7 +17,15 @@ t_ms: bigint, cpu_pct: number,
 /**
  * 1, 5, 15-minute load average from `/proc/loadavg`.
  */
-load: [number, number, number], mem_used_mb: bigint, mem_total_mb: bigint, temps_c: SystemTemps, throttled: SystemThrottled, uptime_s: bigint, hostname: string, kernel: string, 
+load: [number, number, number], mem_used_mb: bigint, mem_total_mb: bigint, temps_c: SystemTemps, throttled: SystemThrottled, 
+/**
+ * Host/Pi uptime from `/proc/uptime`.
+ */
+uptime_s: bigint, 
+/**
+ * Cortex daemon uptime since this process started.
+ */
+cortex_uptime_s: bigint, hostname: string, kernel: string, 
 /**
  * True when values are synthetic (no Linux host or `cfg.can.mock = true`).
  */
