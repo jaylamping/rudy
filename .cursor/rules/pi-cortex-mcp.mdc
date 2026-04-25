@@ -1,0 +1,14 @@
+---
+description: Prefer pi-cortex MCP for Rudy Pi operations
+alwaysApply: true
+---
+
+# Rudy Pi MCP Usage
+
+When user asks about Rudy Pi, cortex service, CAN bus, Pi logs, Pi health, deploy/update status, runtime settings, inventory, audit logs, or systemd state on the Pi:
+
+- Prefer `pi-cortex` MCP tools before shell or manual SSH.
+- Use MCP for read-only checks when available: status, logs, CAN status, inventory, audit, settings.
+- Use MCP mutating tools only for explicit user requests: restart cortex, force update, CAN bounce.
+- Do not run arbitrary remote shell for Pi tasks unless MCP lacks needed surface or user explicitly asks.
+- If MCP fails, report failure and fallback path clearly.
