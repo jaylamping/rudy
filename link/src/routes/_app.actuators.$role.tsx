@@ -8,7 +8,7 @@
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Home, Lock, LockOpen, Radio, WifiOff } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { queryKeys } from "@/api";
 import { api } from "@/lib/api";
 import { HomingProgressBar } from "@/components/actuator/homing-progress";
@@ -30,8 +30,12 @@ import { ActuatorTravelTab } from "@/components/actuator/actuator-travel-tab";
 import { ActuatorTestsTab } from "@/components/actuator/actuator-tests-tab";
 import { ActuatorInventoryTab } from "@/components/actuator/actuator-inventory-tab";
 import { PingDeviceButton } from "@/components/actuator/ping-device-button";
+import { useThrottledIntervalSnapshot } from "@/lib/hooks/useThrottledIntervalSnapshot";
 import { radToDeg } from "@/lib/units";
 import { useDeviceLive, useMotorLastSeenMs } from "@/store";
+
+/** Card-style live header stats: readable cadence vs WT + rAF firehose. */
+const HEADER_TELEM_MS = 300;
 
 const HOT_DEGC = 65;
 
@@ -167,7 +171,23 @@ function ActuatorHeader({ motor }: { motor: MotorSummary }) {
   }, [isLive, lastSeenMs]);
   void staleTick;
 
-  const fb = motor.latest;
+  const motorRef = useRef(motor);
+  motorRef.current = motor;
+  const telSnap = useThrottledIntervalSnapshot(
+    () => {
+      const m = motorRef.current;
+      return {
+        latest: m.latest,
+        feedback_age_ms: m.feedback_age_ms,
+        type2_age_ms: m.type2_age_ms,
+      };
+    },
+    HEADER_TELEM_MS,
+    motor.role,
+    motor.latest != null,
+  );
+
+  const fb = telSnap.latest;
   const hasTelemetry = lastSeenMs != null;
   const stale = hasTelemetry && !isLive;
   const ageS =
@@ -176,9 +196,11 @@ function ActuatorHeader({ motor }: { motor: MotorSummary }) {
       : null;
   const hot = fb ? fb.temp_c >= HOT_DEGC : false;
   const type2AgeMs =
-    motor.type2_age_ms == null ? null : Number(motor.type2_age_ms);
+    telSnap.type2_age_ms == null ? null : Number(telSnap.type2_age_ms);
   const feedbackAgeMs =
-    motor.feedback_age_ms == null ? null : Number(motor.feedback_age_ms);
+    telSnap.feedback_age_ms == null
+      ? null
+      : Number(telSnap.feedback_age_ms);
 
   return (
     <header className="rounded-lg border border-border bg-card p-4">
@@ -270,6 +292,7 @@ function ActuatorHeader({ motor }: { motor: MotorSummary }) {
             fb?.mech_pos_rad != null ? radToDeg(fb.mech_pos_rad) : undefined
           }
           unit="°"
+          fractionDigits={2}
         />
         <Stat
           label="velocity"
@@ -279,24 +302,28 @@ function ActuatorHeader({ motor }: { motor: MotorSummary }) {
               : undefined
           }
           unit="°/s"
+          fractionDigits={1}
         />
-        <Stat label="vbus" value={fb?.vbus_v} unit="V" />
+        <Stat label="vbus" value={fb?.vbus_v} unit="V" fractionDigits={1} />
         <Stat
           label="temp"
           value={fb?.temp_c}
           unit="degC"
+          fractionDigits={1}
           tone={hot ? "warn" : undefined}
         />
         <Stat
           label="feedback age"
           value={feedbackAgeMs != null ? feedbackAgeMs / 1000 : undefined}
           unit="s"
+          fractionDigits={2}
           tone={feedbackAgeMs != null && feedbackAgeMs > 250 ? "warn" : undefined}
         />
         <Stat
           label="type-2 age"
           value={type2AgeMs != null ? type2AgeMs / 1000 : undefined}
           unit="s"
+          fractionDigits={2}
           tone={type2AgeMs == null || type2AgeMs > 250 ? "warn" : undefined}
         />
       </div>
@@ -489,11 +516,13 @@ function Stat({
   value,
   unit,
   tone,
+  fractionDigits = 2,
 }: {
   label: string;
   value: number | undefined | null;
   unit: string;
   tone?: "warn";
+  fractionDigits?: number;
 }) {
   return (
     <div className="rounded-md border border-border/60 bg-background px-2 py-1.5">
@@ -504,7 +533,7 @@ function Stat({
           (tone === "warn" ? " text-amber-400" : "")
         }
       >
-        {value == null ? "-" : value.toFixed(3)} {unit}
+        {value == null ? "-" : value.toFixed(fractionDigits)} {unit}
       </div>
     </div>
   );

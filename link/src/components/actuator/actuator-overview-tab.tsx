@@ -7,6 +7,7 @@
 import { Home, Maximize2 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useRef } from "react";
 import { queryKeys } from "@/api";
 import { api, ApiError } from "@/lib/api";
 import { HomingProgressBar } from "@/components/actuator/homing-progress";
@@ -19,10 +20,13 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { UrdfViewer } from "@/components/viz/urdf-viewer";
+import { useThrottledIntervalSnapshot } from "@/lib/hooks/useThrottledIntervalSnapshot";
 import { useLimbHealth } from "@/lib/hooks/useLimbHealth";
 import { formatAngleDeg, radToDeg } from "@/lib/units";
 import type { MotorSummary } from "@/lib/types/MotorSummary";
 import { useDeviceLive, useDeviceOfflineTip } from "@/store";
+
+const OVERVIEW_LIVE_TELEM_MS = 300;
 
 const METRICS: { key: MotorMetric; title: string }[] = [
   { key: "pos", title: "Position" },
@@ -92,6 +96,17 @@ function GoHomeBar({ motor }: { motor: MotorSummary }) {
   const isLive = useDeviceLive(motor.role);
   const offlineTip = useDeviceOfflineTip(motor.role);
   const limb = useLimbHealth(motor.role);
+  const motorRef = useRef(motor);
+  motorRef.current = motor;
+  const liveDegSnap = useThrottledIntervalSnapshot(
+    () => {
+      const m = motorRef.current;
+      return m.latest != null ? radToDeg(m.latest.mech_pos_rad) : null;
+    },
+    OVERVIEW_LIVE_TELEM_MS,
+    motor.role,
+    motor.latest != null,
+  );
   const home = useMutation({
     mutationFn: () => api.homeMotor(motor.role, 0),
     onSuccess: () => {
@@ -107,9 +122,7 @@ function GoHomeBar({ motor }: { motor: MotorSummary }) {
       ? limb.blockReason
       : "";
   const live =
-    motor.latest != null
-      ? radToDeg(motor.latest.mech_pos_rad).toFixed(2)
-      : null;
+    liveDegSnap != null ? liveDegSnap.toFixed(1) : null;
   const autoHoming = bs.kind === "auto_homing";
 
   return (
