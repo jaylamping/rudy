@@ -29,6 +29,12 @@ import { api } from "@/lib/api";
 import { DevicesSection } from "@/components/devices/devices-section";
 import { OnboardingWizard } from "@/components/devices/onboarding-wizard";
 import { bootStateShortLabel } from "@/lib/bootStateUi";
+import { describeFaultBits, describeWarnBits } from "@/lib/motorFaultDecode";
+import {
+  motorTelemetryShortLabel,
+  motorTelemetryTone,
+  type MotorTelemetryTone,
+} from "@/lib/motorTelemetryTone";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -38,6 +44,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useLiveInterval } from "@/lib/hooks/useLiveInterval";
 import type { Device } from "@/lib/types/Device";
 import type { MotorSummary } from "@/lib/types/MotorSummary";
@@ -400,6 +411,60 @@ function TrunkActuatorCard({
   );
 }
 
+function telemetryBadgeVariant(
+  tone: MotorTelemetryTone,
+): "success" | "destructive" | "warning" | "secondary" {
+  switch (tone) {
+    case "ok":
+      return "success";
+    case "crit":
+      return "destructive";
+    case "warn":
+    case "stale":
+      return "warning";
+    case "missing":
+      return "secondary";
+  }
+}
+
+function buildTelemetryHoverText(
+  motor: MotorSummary,
+  tone: MotorTelemetryTone,
+): string {
+  const fb = motor.latest;
+  const lines: string[] = [];
+  if (!fb) {
+    lines.push("No `latest` snapshot on this motor row yet.");
+    lines.push("Wait for WebTransport motor_feedback or REST poll.");
+    return lines.join("\n");
+  }
+  lines.push(
+    `fault_sta=0x${(fb.fault_sta >>> 0).toString(16).padStart(8, "0")}  warn_sta=0x${(fb.warn_sta >>> 0).toString(16).padStart(8, "0")}`,
+  );
+  lines.push(
+    `latest age: ${((Date.now() - Number(fb.t_ms)) / 1000).toFixed(1)}s (same rules as Overview actuators card)`,
+  );
+  lines.push("");
+  if (tone === "crit") {
+    lines.push("Fault bits:");
+    for (const L of describeFaultBits(fb.fault_sta)) {
+      lines.push(`• ${L}`);
+    }
+    lines.push("");
+    lines.push("Recovery: actuator → Controls → Clear fault when safe.");
+  } else if (tone === "warn") {
+    lines.push("Warning bits:");
+    for (const L of describeWarnBits(fb.warn_sta)) {
+      lines.push(`• ${L}`);
+    }
+  } else if (tone === "stale") {
+    lines.push("Latest frame is older than the dashboard stale threshold.");
+  } else {
+    lines.push("Telemetry is fresh; fault and warn registers read zero.");
+  }
+  return lines.join("\n");
+}
+
 function ActuatorCardGrid({
   actuators,
   motorByRole,
@@ -415,7 +480,14 @@ function ActuatorCardGrid({
         const motor = motorByRole.get(a.role);
         const boot = motor ? bootStateShortLabel(motor.boot_state) : "Unknown";
         const isEnabled = motor?.enabled ?? false;
-        const isOnline = !!motor;
+        const telemTone: MotorTelemetryTone = motor
+          ? motorTelemetryTone(motor)
+          : "missing";
+        const telemLabel = motorTelemetryShortLabel(telemTone);
+        const telemTip =
+          motor == null
+            ? "No row in GET /api/motors yet (inventory vs motors list out of sync)."
+            : buildTelemetryHoverText(motor, telemTone);
         const tempC = motor?.latest?.temp_c;
         const tempLabel =
           tempC != null && Number.isFinite(tempC)
@@ -445,12 +517,25 @@ function ActuatorCardGrid({
                 <Badge variant="outline" className="font-normal">
                   {boot}
                 </Badge>
-                <Badge
-                  variant={isOnline ? "success" : "warning"}
-                  className="font-normal"
-                >
-                  {isOnline ? "Seen" : "No telemetry"}
-                </Badge>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="inline-flex cursor-help rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                      <Badge
+                        variant={telemetryBadgeVariant(telemTone)}
+                        className="font-normal"
+                      >
+                        {telemLabel}
+                      </Badge>
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent
+                    side="top"
+                    align="start"
+                    className="max-w-sm whitespace-pre-line text-left text-xs"
+                  >
+                    {telemTip}
+                  </TooltipContent>
+                </Tooltip>
                 {showLimb ? (
                   <Badge variant="secondary" className="font-normal">
                     {a.limb ?? "No limb"}

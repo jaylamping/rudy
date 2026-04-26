@@ -22,6 +22,11 @@ import {
   motorsWithFaultNonzero,
   motorsWithWarnOnly,
 } from "@/lib/motorFaultDecode";
+import {
+  MOTOR_TELEM_STALE_MS,
+  motorTelemetryTone,
+  type MotorTelemetryTone,
+} from "@/lib/motorTelemetryTone";
 import { cn } from "@/lib/utils";
 import { radToDeg } from "@/lib/units";
 import type { MotorSummary } from "@/lib/types/MotorSummary";
@@ -32,12 +37,9 @@ import {
 } from "@/components/ui/tooltip";
 import { DashboardCard } from "./dashboard-card";
 
-const STALE_MS = 3_000;
 const HOT_DEGC = 65;
 /** Same cadence as actuator detail header / overview live text. */
 const DASHBOARD_ACTUATOR_TELEM_MS = 300;
-
-type Tone = "ok" | "warn" | "crit" | "stale" | "missing";
 
 export function ActuatorStatusCard({ className }: { className?: string }) {
   // Live data flows in via the WebTransport bridge (see
@@ -247,7 +249,7 @@ function MotorRow({ motor }: { motor: MotorSummary }) {
               <span
                 title="last update"
                 className={cn(
-                  ageS != null && ageS * 1000 > STALE_MS && "text-amber-400",
+                  ageS != null && ageS * 1000 > MOTOR_TELEM_STALE_MS && "text-amber-400",
                 )}
               >
                 {fmtAge(ageS)}
@@ -256,7 +258,7 @@ function MotorRow({ motor }: { motor: MotorSummary }) {
                 title="last high-rate type-2 position frame"
                 className={cn(
                   type2AgeS != null &&
-                    type2AgeS * 1000 > STALE_MS &&
+                    type2AgeS * 1000 > MOTOR_TELEM_STALE_MS &&
                     "text-rose-400",
                 )}
               >
@@ -272,18 +274,9 @@ function MotorRow({ motor }: { motor: MotorSummary }) {
   );
 }
 
-function getTone(m: MotorSummary): Tone {
-  const fb = m.latest;
-  if (!fb) return "missing";
-  if (fb.fault_sta !== 0) return "crit";
-  if (fb.warn_sta !== 0) return "warn";
-  if (Date.now() - Number(fb.t_ms) > STALE_MS) return "stale";
-  return "ok";
-}
-
 function countByTone(motors: MotorSummary[]) {
   const c = { ok: 0, warn: 0, crit: 0, stale: 0, missing: 0 };
-  for (const m of motors) c[getTone(m)] += 1;
+  for (const m of motors) c[motorTelemetryTone(m)] += 1;
   return c;
 }
 
@@ -292,7 +285,7 @@ function Pill({
   tone,
 }: {
   children: React.ReactNode;
-  tone: Tone;
+  tone: MotorTelemetryTone;
 }) {
   return (
     <span
