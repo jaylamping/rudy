@@ -9,6 +9,7 @@ use serde_json::json;
 use tower::ServiceExt;
 
 use cortex::inventory::{Device, Inventory, TravelLimits};
+use cortex::motion::MotionIntent;
 use cortex::types::{
     ApiError, MotorFeedback, MotorSummary, ParamSnapshot, Reminder, SafetyEvent, ServerConfig,
     ServerFeatures, SystemSnapshot, WebTransportAdvert,
@@ -182,6 +183,57 @@ async fn estop_returns_ok_envelope() {
     let r: Resp = body_json(resp).await;
     assert!(r.ok);
     assert_eq!(r.stopped, total_present);
+}
+
+/// Regression: e-stop must cancel server-side motion tasks. Otherwise
+/// `mark_stopped` clears `enabled` and the next controller tick takes the
+/// `SetVelocity` re-arm path, re-enabling the drive after `cmd_stop`.
+#[tokio::test]
+async fn estop_clears_motion_registry() {
+    let (state, _dir) = common::make_state();
+    common::force_homed(&state);
+    common::seed_feedback(&state);
+    let role = "shoulder_actuator_a";
+    {
+        let mut inv = state.inventory.write().expect("inventory");
+        let a = common::actuator_mut(&mut inv, role).expect("role in inventory");
+        a.common.travel_limits = Some(TravelLimits {
+            min_rad: -0.5,
+            max_rad: 0.5,
+            updated_at: None,
+        });
+    }
+    state
+        .motion
+        .start(
+            &state,
+            role,
+            MotionIntent::Sweep {
+                speed_rad_s: 0.1,
+                turnaround_rad: 0.05,
+            },
+        )
+        .await
+        .expect("start sweep");
+    assert!(state.motion.current(role).is_some());
+
+    let app = cortex::build_app(state.clone());
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/estop")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    assert!(
+        state.motion.current(role).is_none(),
+        "motion registry must be idle after e-stop"
+    );
 }
 
 /// `POST /api/restart` returns a 202 envelope (the daemon would exit

@@ -168,6 +168,27 @@ impl MotionRegistry {
         true
     }
 
+    /// Stop every running motion and wait until all controller tasks have
+    /// exited (each issues a final `cmd_stop` in [`controller::run`]). Used by
+    /// global `/api/estop` and `/api/restart` so active velocity / MIT streams
+    /// cannot re-arm drives on the next tick after a host-side `mark_stopped`.
+    ///
+    /// Returns how many tasks were joined.
+    pub async fn stop_all(&self) -> usize {
+        let handles: Vec<MotionHandle> = {
+            let mut guard = self.inner.write().expect("motion registry poisoned");
+            guard.drain().map(|(_, h)| h).collect()
+        };
+        let n = handles.len();
+        for h in &handles {
+            h.stop.notify_one();
+        }
+        for h in handles {
+            let _ = h.join.await;
+        }
+        n
+    }
+
     /// Hot-swap the intent for an already-running motion (slider drag
     /// while a jog is held). Returns `false` if no motion is active for
     /// `role`. The controller picks up the new intent on the next

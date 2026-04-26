@@ -1,6 +1,9 @@
 //! POST /api/estop — global e-stop.
 //!
-//! Issues `cmd_stop` (RS03 type-4) to every present motor in inventory and
+//! First tears down every [`crate::motion::MotionRegistry`] controller so
+//! server-side loops cannot call `SetVelocity` / MIT stream on the next tick
+//! (that path re-enables after `mark_stopped` and would undo the stop). Then
+//! issues `cmd_stop` (RS03 type-4) to every present motor in inventory and
 //! broadcasts a `SafetyEvent::Estop` so all WT subscribers update their UI.
 //! Bypasses the single-operator lock by design — anyone with network reach
 //! to cortex must always be able to stop the robot.
@@ -26,6 +29,9 @@ pub async fn estop(
     headers: axum::http::HeaderMap,
 ) -> Result<Json<EstopResp>, (StatusCode, Json<ApiError>)> {
     let session = session_from_headers(&headers);
+
+    let _motion_tasks_stopped = state.motion.stop_all().await;
+
     let motors: Vec<Actuator> = state
         .inventory
         .read()

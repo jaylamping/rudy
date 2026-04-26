@@ -54,6 +54,8 @@ pub async fn restart(
 ) -> Result<(StatusCode, Json<RestartResp>), (StatusCode, Json<ApiError>)> {
     let session = session_from_headers(&headers);
 
+    let _motion_tasks_stopped = state.motion.stop_all().await;
+
     // Best-effort drop-torque pass before exit. We fan to *every present*
     // motor (not just `enabled`) because the in-memory enabled-set is
     // best-effort and we'd rather send an idempotent stop frame to a
