@@ -39,9 +39,10 @@ use crate::types::{LimbQuarantineMotor, MotorFeedback};
 pub(crate) fn has_fatal_fault_or_warning(
     fault_sta: u32,
     warn_sta: u32,
+    fatal_fault_mask: u32,
     fatal_warn_mask: u32,
 ) -> bool {
-    fault_sta != 0 || (warn_sta & fatal_warn_mask) != 0
+    (fault_sta & fatal_fault_mask) != 0 || (warn_sta & fatal_warn_mask) != 0
 }
 
 /// Why a motion request was refused. Each variant maps to a distinct
@@ -378,6 +379,7 @@ impl PreflightChecks<'_> {
         if has_fatal_fault_or_warning(
             feedback.fault_sta,
             feedback.warn_sta,
+            self.state.read_effective().safety.fatal_fault_mask,
             self.state.read_effective().safety.fatal_warn_mask,
         ) {
             return Err(PreflightFailure::ActiveFault {
@@ -451,21 +453,31 @@ mod tests {
 
     #[test]
     fn nonfatal_rs03_warn_bit5_does_not_block_motion_by_default() {
-        assert!(!has_fatal_fault_or_warning(0, 0x20, 0x1));
+        assert!(!has_fatal_fault_or_warning(0, 0x20, !0x20, 0x1));
+    }
+
+    #[test]
+    fn nonfatal_rs03_fault_bit5_does_not_block_motion_by_default() {
+        assert!(!has_fatal_fault_or_warning(0x20, 0, !0x20, 0x1));
     }
 
     #[test]
     fn documented_motor_overtemp_warning_blocks_motion_by_default() {
-        assert!(has_fatal_fault_or_warning(0, 0x1, 0x1));
+        assert!(has_fatal_fault_or_warning(0, 0x1, !0x20, 0x1));
     }
 
     #[test]
     fn any_fault_status_blocks_even_when_warning_is_nonfatal() {
-        assert!(has_fatal_fault_or_warning(0x80, 0x20, 0x1));
+        assert!(has_fatal_fault_or_warning(0x80, 0x20, !0x20, 0x1));
     }
 
     #[test]
     fn operator_can_widen_fatal_warning_mask() {
-        assert!(has_fatal_fault_or_warning(0, 0x20, 0x21));
+        assert!(has_fatal_fault_or_warning(0, 0x20, !0x20, 0x21));
+    }
+
+    #[test]
+    fn operator_can_widen_fatal_fault_mask() {
+        assert!(has_fatal_fault_or_warning(0x20, 0, u32::MAX, 0x1));
     }
 }

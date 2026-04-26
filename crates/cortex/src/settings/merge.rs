@@ -44,6 +44,7 @@ pub fn file_defaults_to_kv(cfg: &Config) -> Vec<(String, Json)> {
             json!(s.tracking_error_debounce_ticks),
         ),
         ("safety.fatal_warn_mask".into(), json!(s.fatal_warn_mask)),
+        ("safety.fatal_fault_mask".into(), json!(s.fatal_fault_mask)),
         (
             "safety.band_violation_debounce_ticks".into(),
             json!(s.band_violation_debounce_ticks),
@@ -171,6 +172,7 @@ fn apply_key(
             s.tracking_error_debounce_ticks = v.as_u64().ok_or("expected u32")? as u32
         }
         "safety.fatal_warn_mask" => s.fatal_warn_mask = v.as_u64().ok_or("expected u32")? as u32,
+        "safety.fatal_fault_mask" => s.fatal_fault_mask = v.as_u64().ok_or("expected u32")? as u32,
         "safety.band_violation_debounce_ticks" => {
             s.band_violation_debounce_ticks = v.as_u64().ok_or("expected u32")? as u32
         }

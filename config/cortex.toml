@@ -177,6 +177,9 @@ hold_kd_nm_s_per_rad = 1.7
 # (0x20) persistently with `fault_sta=0`; vendor docs do not classify it as a
 # fault/interlock, so cortex surfaces it but does not block motion by default.
 fatal_warn_mask = 0x1
+# Same policy for `fault_sta` bit 5: after Motor Tool / type-4 clear-fault,
+# RS03 firmware may keep 0x20 asserted while accepting home/hold commands.
+fatal_fault_mask = 0xffffffdf
 
 # Tolerance for the boot orchestrator's add_offset readback check
 # (commissioned-zero quick-home plan, Phase C). On every boot the

@@ -289,6 +289,38 @@ pub async fn stop(
     Ok(Json(serde_json::json!({ "ok": true, "role": role })))
 }
 
+pub async fn clear_fault(
+    State(state): State<SharedState>,
+    Path(role): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ApiError>)> {
+    let motor = require_present(&state, "clear_fault", &role)?;
+
+    if let Some(core) = state.real_can.clone() {
+        tokio::task::spawn_blocking({
+            let motor = motor.clone();
+            move || {
+                core.clear_fault(&motor)?;
+                core.ensure_active_report_100hz(&motor)
+            }
+        })
+        .await
+        .expect("clear_fault task panicked")
+        .map_err(|e| {
+            audit(&state, "clear_fault", &role, AuditResult::Denied);
+            can_err("clear_fault", &role, &e)
+        })?;
+    }
+
+    state.mark_stopped(&role);
+
+    audit(&state, "clear_fault", &role, AuditResult::Ok);
+    Ok(Json(serde_json::json!({
+        "ok": true,
+        "role": role,
+        "active_report_100hz": true,
+    })))
+}
+
 /// Trigger the RS03 high-speed magnetic encoder calibration mode.
 ///
 /// This mirrors Motor Studio V13's "Encoder Calibation" button. Static

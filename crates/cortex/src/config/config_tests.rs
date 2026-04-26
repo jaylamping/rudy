@@ -37,6 +37,7 @@ fn cfg_with(audit_log: &str, db_path: Option<&str>) -> Config {
             tracking_freshness_max_age_ms: super::safety::default_tracking_freshness_max_age_ms(),
             tracking_error_debounce_ticks: super::safety::default_tracking_error_debounce_ticks(),
             fatal_warn_mask: super::safety::default_fatal_warn_mask(),
+            fatal_fault_mask: super::safety::default_fatal_fault_mask(),
             band_violation_debounce_ticks: super::safety::default_band_violation_debounce_ticks(),
             boot_tracking_error_max_rad: super::safety::default_boot_tracking_error_max_rad(),
             target_tolerance_rad: super::safety::default_target_tolerance_rad(),

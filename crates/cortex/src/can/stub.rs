@@ -33,6 +33,10 @@ impl RealCanHandle {
         Ok(())
     }
 
+    pub fn clear_fault(&self, _motor: &Actuator) -> Result<()> {
+        Ok(())
+    }
+
     pub fn calibrate_encoder(&self, _motor: &Actuator) -> Result<()> {
         anyhow::bail!("real CAN is only available on Linux targets")
     }

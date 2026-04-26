@@ -77,6 +77,7 @@ fn fixture_state() -> (
             tracking_freshness_max_age_ms: 600,
             tracking_error_debounce_ticks: 3,
             fatal_warn_mask: 0x1,
+            fatal_fault_mask: !0x20,
             band_violation_debounce_ticks: 3,
             boot_tracking_error_max_rad: 0.05,
             target_tolerance_rad: tol,

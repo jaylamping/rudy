@@ -29,6 +29,9 @@
 //! - `cfg.safety.auto_home_on_boot == false` → log info, return.
 //! - motor `commissioned_zero_offset == None` → log info, return (uncommissioned motors keep
 //!   prior behavior; the operator must manually click Verify & Home each boot).
+//! - real CAN: issue clear-fault stop and re-enable 100 Hz active
+//!   reporting before readback/home. This absorbs Motor Tool sessions that
+//!   leave RS03 with latched fault/warn bits or active reporting disabled.
 //! - `read_add_offset` fails (CAN error or firmware read-fail) → retry
 //!   once after 200 ms; if still failing, log warn and return without
 //!   force_setting any state. The next telemetry tick will retrigger
@@ -176,7 +179,13 @@ pub async fn maybe_run(state: SharedState, role: String) {
         return;
     };
 
-    // Step 4: read add_offset from firmware, with one retry. If still
+    // Step 4: normalize RS03 runtime state left behind by external tools.
+    if !prepare_motor_for_boot_home(&state, &motor).await {
+        clear_attempted(&state, &role);
+        return;
+    }
+
+    // Step 5: read add_offset from firmware, with one retry. If still
     // failing, leave state untouched and let a future telemetry tick
     // retrigger; clear attempted so retrigger is possible.
     let current_offset = match read_add_offset_with_retry(&state, &motor).await {
@@ -191,7 +200,7 @@ pub async fn maybe_run(state: SharedState, role: String) {
         }
     };
 
-    // Step 5: tolerance check. Mismatch → OffsetChanged terminal state
+    // Step 6: tolerance check. Mismatch → OffsetChanged terminal state
     // (operator action required).
     let tolerance = state
         .read_effective()
@@ -219,7 +228,7 @@ pub async fn maybe_run(state: SharedState, role: String) {
         return;
     }
 
-    // Step 6: latest mech_pos and freshness check.
+    // Step 7: latest mech_pos and freshness check.
     let now_ms = Utc::now().timestamp_millis();
     let max_age_ms = max_feedback_age_ms(&state) as i64;
     let mech_pos_rad = match state.latest.read().expect("latest poisoned").get(&role) {
@@ -245,7 +254,7 @@ pub async fn maybe_run(state: SharedState, role: String) {
         }
     };
 
-    // Step 7: raw-angle band check. If outside band, the classifier
+    // Step 8: raw-angle band check. If outside band, the classifier
     // has already set OutOfBand; clear attempted so a future
     // OutOfBand → InBand transition retriggers this orchestrator.
     let limits = motor.common.travel_limits.clone();
@@ -263,7 +272,7 @@ pub async fn maybe_run(state: SharedState, role: String) {
         }
     }
 
-    // Step 8: transition to AutoHoming and run the home ramp.
+    // Step 9: transition to AutoHoming and run the home ramp.
     let predefined_home_rad = motor.common.predefined_home_rad;
     let target_rad = predefined_home_rad.unwrap_or(0.0);
     boot_state::force_set_auto_homing(&state, &role, mech_pos_rad, target_rad);
@@ -392,7 +401,7 @@ pub async fn maybe_run(state: SharedState, role: String) {
         }
     });
 
-    // Step 9: drive the home-ramp homer to the predefined target.
+    // Step 10: drive the home-ramp homer to the predefined target.
     // Use the boot-specific tracking-error budget
     // (`safety.boot_tracking_error_max_rad`, default ~11.5°) instead
     // of the operator-driven default (~3°). The orchestrator runs
@@ -473,6 +482,56 @@ pub async fn maybe_run(state: SharedState, role: String) {
             // Leave attempted set: the operator's POST /home is the
             // documented recovery path and shouldn't be racing the
             // orchestrator on the next telemetry tick.
+        }
+    }
+}
+
+/// Put firmware back into cortex's expected runtime shape before automatic
+/// readback/home. Motor Tool can leave RS03 with active reporting disabled or
+/// with warning/fault bits latched; both should be repaired at boot before
+/// operator motion is attempted.
+async fn prepare_motor_for_boot_home(
+    state: &SharedState,
+    motor: &crate::inventory::Actuator,
+) -> bool {
+    let Some(core) = state.real_can.clone() else {
+        return true;
+    };
+
+    let role = motor.common.role.clone();
+    let motor_for_task = motor.clone();
+    match tokio::task::spawn_blocking(move || {
+        core.clear_fault(&motor_for_task)?;
+        core.ensure_active_report_100hz(&motor_for_task)
+    })
+    .await
+    {
+        Ok(Ok(())) => {
+            state.mark_stopped(&role);
+            audit_boot_recovery(state, &role, AuditResult::Ok);
+            info!(
+                role = %role,
+                "boot_orchestrator: cleared fault latch and ensured active reporting",
+            );
+            true
+        }
+        Ok(Err(e)) => {
+            audit_boot_recovery(state, &role, AuditResult::Denied);
+            warn!(
+                role = %role,
+                error = ?e,
+                "boot_orchestrator: runtime recovery failed; will retry on next qualifying telemetry",
+            );
+            false
+        }
+        Err(e) => {
+            audit_boot_recovery(state, &role, AuditResult::Denied);
+            warn!(
+                role = %role,
+                error = ?e,
+                "boot_orchestrator: runtime recovery task failed; will retry on next qualifying telemetry",
+            );
+            false
         }
     }
 }
@@ -602,6 +661,21 @@ fn audit_auto_homing_started(state: &SharedState, role: &str, from_rad: f32, tar
             "target_rad": target_rad,
         }),
         result: AuditResult::Ok,
+    });
+}
+
+fn audit_boot_recovery(state: &SharedState, role: &str, result: AuditResult) {
+    state.audit.write(AuditEntry {
+        timestamp: Utc::now(),
+        session_id: None,
+        remote: None,
+        action: "boot_orchestrator_runtime_recovery".into(),
+        target: Some(role.into()),
+        details: serde_json::json!({
+            "clear_fault": true,
+            "active_report_100hz": true,
+        }),
+        result,
     });
 }
 

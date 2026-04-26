@@ -95,6 +95,16 @@ pub struct SafetyConfig {
     #[serde(default = "default_fatal_warn_mask")]
     pub fatal_warn_mask: u32,
 
+    /// Bitmask of `fault_sta` bits that should block autonomous motion.
+    ///
+    /// RS03 firmware 0.3.1.41 can keep bit 5 (`0x20`) set after the documented
+    /// clear-fault stop and still accept homing/hold commands. Treat that bit
+    /// like the matching warning bit: visible in telemetry, non-fatal by
+    /// default, and overridable by operators if vendor docs later classify it
+    /// as an interlock.
+    #[serde(default = "default_fatal_fault_mask")]
+    pub fatal_fault_mask: u32,
+
     /// Deprecated compatibility knob for old runtime settings snapshots.
     ///
     /// Home-ramp travel-band violations now abort on the first **fresh**
@@ -375,6 +385,10 @@ pub(crate) fn default_tracking_error_debounce_ticks() -> u32 {
 
 pub(crate) fn default_fatal_warn_mask() -> u32 {
     0x1
+}
+
+pub(crate) fn default_fatal_fault_mask() -> u32 {
+    !0x20
 }
 
 pub(crate) fn default_band_violation_debounce_ticks() -> u32 {

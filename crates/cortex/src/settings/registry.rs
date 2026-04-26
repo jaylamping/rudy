@@ -170,6 +170,20 @@ pub const ALL: &[SettingDef] = &[
         tunable: true,
     },
     SettingDef {
+        key: "safety.fatal_fault_mask",
+        label: "Fatal fault mask",
+        description:
+            "fault_sta bits that block motion; default excludes RS03 bit5 observed after Motor Tool recovery.",
+        category: "safety",
+        unit: None,
+        value_kind: "u32",
+        min: Some(0.0),
+        max: None,
+        requires_motors_stopped: true,
+        apply_mode: WireApplyMode::RuntimeImmediate,
+        tunable: true,
+    },
+    SettingDef {
         key: "safety.band_violation_debounce_ticks",
         label: "Band violation debounce (ticks)",
         description: "Deprecated; homing aborts on first fresh travel-band violation.",
@@ -426,6 +440,7 @@ pub fn value_from_merged(s: &SafetyConfig, t: &TelemetryConfig, key: &str) -> Op
         "safety.tracking_freshness_max_age_ms" => json!(s.tracking_freshness_max_age_ms),
         "safety.tracking_error_debounce_ticks" => json!(s.tracking_error_debounce_ticks),
         "safety.fatal_warn_mask" => json!(s.fatal_warn_mask),
+        "safety.fatal_fault_mask" => json!(s.fatal_fault_mask),
         "safety.band_violation_debounce_ticks" => json!(s.band_violation_debounce_ticks),
         "safety.boot_tracking_error_max_rad" => json!(s.boot_tracking_error_max_rad),
         "safety.target_tolerance_rad" => json!(s.target_tolerance_rad),
