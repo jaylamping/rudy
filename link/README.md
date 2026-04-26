@@ -76,7 +76,6 @@ src/
     _app.tsx               layout route: AppShell (pathless layout - no auth
                            guard, console is tailnet/localhost only)
     _app.telemetry.tsx     /telemetry
-    _app.jog.tsx           /jog    (Phase 2 stub)
     _app.viz.tsx           /viz    (Phase 2 stub)
     _app.logs.tsx          /logs   (Phase 2 stub)
   components/
