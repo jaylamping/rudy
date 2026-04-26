@@ -5,6 +5,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { ArrowRight } from "lucide-react";
+import { useRef } from "react";
 import { queryKeys } from "@/api";
 import { api } from "@/lib/api";
 import {
@@ -14,6 +15,7 @@ import {
   bootStateSortRank,
 } from "@/lib/bootStateUi";
 import { useLiveInterval } from "@/lib/hooks/useLiveInterval";
+import { useThrottledIntervalSnapshot } from "@/lib/hooks/useThrottledIntervalSnapshot";
 import { cn } from "@/lib/utils";
 import { radToDeg } from "@/lib/units";
 import type { MotorSummary } from "@/lib/types/MotorSummary";
@@ -21,6 +23,8 @@ import { DashboardCard } from "./dashboard-card";
 
 const STALE_MS = 3_000;
 const HOT_DEGC = 65;
+/** Same cadence as actuator detail header / overview live text. */
+const DASHBOARD_ACTUATOR_TELEM_MS = 300;
 
 type Tone = "ok" | "warn" | "crit" | "stale" | "missing";
 
@@ -112,10 +116,27 @@ export function ActuatorStatusCard({ className }: { className?: string }) {
 }
 
 function MotorRow({ motor }: { motor: MotorSummary }) {
-  const fb = motor.latest;
+  const motorRef = useRef(motor);
+  motorRef.current = motor;
+  const liveSnap = useThrottledIntervalSnapshot(
+    () => {
+      const m = motorRef.current;
+      return {
+        latest: m.latest,
+        type2_age_ms: m.type2_age_ms,
+      };
+    },
+    DASHBOARD_ACTUATOR_TELEM_MS,
+    motor.role,
+    motor.latest != null,
+  );
+
+  const fb = liveSnap.latest;
   const ageS = fb ? (Date.now() - Number(fb.t_ms)) / 1000 : null;
   const type2AgeS =
-    motor.type2_age_ms == null ? null : Number(motor.type2_age_ms) / 1000;
+    liveSnap.type2_age_ms == null
+      ? null
+      : Number(liveSnap.type2_age_ms) / 1000;
   const bs = motor.boot_state;
   const bootDot = bootStateDotClass(bs);
   const roleColor = bootStateRoleTextClass(bs);
@@ -159,7 +180,7 @@ function MotorRow({ motor }: { motor: MotorSummary }) {
           {fb ? (
             <>
               <span title="position (°)">
-                {radToDeg(fb.mech_pos_rad).toFixed(2)}°
+                {radToDeg(fb.mech_pos_rad).toFixed(1)}°
               </span>
               <span
                 title="temperature"
