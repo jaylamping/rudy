@@ -16,9 +16,20 @@ import {
 } from "@/lib/bootStateUi";
 import { useLiveInterval } from "@/lib/hooks/useLiveInterval";
 import { useThrottledIntervalSnapshot } from "@/lib/hooks/useThrottledIntervalSnapshot";
+import {
+  formatFaultRollup,
+  formatWarnRollup,
+  motorsWithFaultNonzero,
+  motorsWithWarnOnly,
+} from "@/lib/motorFaultDecode";
 import { cn } from "@/lib/utils";
 import { radToDeg } from "@/lib/units";
 import type { MotorSummary } from "@/lib/types/MotorSummary";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { DashboardCard } from "./dashboard-card";
 
 const STALE_MS = 3_000;
@@ -48,6 +59,8 @@ export function ActuatorStatusCard({ className }: { className?: string }) {
     return a.role.localeCompare(b.role);
   });
   const tally = countByTone(motors);
+  const faultMotors = motorsWithFaultNonzero(motors);
+  const warnMotors = motorsWithWarnOnly(motors);
   const driftedMotors = motors.filter((m) => m.drifted_param_count > 0);
   const firstDriftRole = driftedMotors[0]?.role;
 
@@ -82,10 +95,50 @@ export function ActuatorStatusCard({ className }: { className?: string }) {
         </div>
       )}
 
-      <div className="mb-3 flex items-center gap-3 text-xs">
+      <div className="mb-3 flex flex-wrap items-center gap-3 text-xs">
         <Pill tone="ok">{tally.ok} ok</Pill>
-        {tally.warn > 0 && <Pill tone="warn">{tally.warn} warn</Pill>}
-        {tally.crit > 0 && <Pill tone="crit">{tally.crit} fault</Pill>}
+        {tally.warn > 0 && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span
+                className="inline-flex cursor-help rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                tabIndex={0}
+              >
+                <Pill tone="warn">
+                  {tally.warn} warning{tally.warn === 1 ? "" : "s"}
+                </Pill>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent
+              side="bottom"
+              align="start"
+              className="max-h-[min(24rem,70vh)] max-w-md overflow-y-auto whitespace-pre-line text-left text-xs leading-snug"
+            >
+              {formatWarnRollup(warnMotors)}
+            </TooltipContent>
+          </Tooltip>
+        )}
+        {tally.crit > 0 && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span
+                className="inline-flex cursor-help rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                tabIndex={0}
+              >
+                <Pill tone="crit">
+                  {tally.crit} fault{tally.crit === 1 ? "" : "s"}
+                </Pill>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent
+              side="bottom"
+              align="start"
+              className="max-h-[min(24rem,70vh)] max-w-md overflow-y-auto whitespace-pre-line text-left text-xs leading-snug"
+            >
+              {formatFaultRollup(faultMotors)}
+            </TooltipContent>
+          </Tooltip>
+        )}
         {tally.stale > 0 && <Pill tone="stale">{tally.stale} stale</Pill>}
         {tally.missing > 0 && (
           <Pill tone="missing">{tally.missing} no data</Pill>
