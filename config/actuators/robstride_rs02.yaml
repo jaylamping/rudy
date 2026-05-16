@@ -1,0 +1,171 @@
+# RobStride RS02 integrated actuator — Rudy canonical hardware spec.
+#
+# Values mirror cad/actuators/robstride/rs02/RS02_user_manual.pdf.
+# Per-motor firmware versions and CAN IDs live in inventory.yaml.
+
+schema_version: 2
+actuator_model: RS02
+manual_ref: cad/actuators/robstride/rs02/RS02_user_manual.pdf
+
+protocol:
+  physical_layer: CAN_2_0B
+  bitrate_bps: 1000000
+  frame_format: extended_29bit
+  data_length: 8
+
+  # CAN arbitration ID layout (29 bits)
+  id_layout:
+    comm_type_bits: [24, 28]   # inclusive
+    data_area_2_bits: [8, 23]
+    dest_addr_bits: [0, 7]
+
+  # Communication types relevant to the driver (decimal values).
+  comm_types:
+    get_device_id: 0
+    op_control: 1
+    feedback: 2
+    motor_enable: 3
+    motor_stop: 4
+    set_mechanical_zero: 6
+    set_can_id: 7
+    param_read: 17
+    param_write: 18              # RAM only; use save_params (22) to persist
+    fault_feedback: 21
+    save_params: 22
+    set_baud: 23
+    active_report: 24
+    set_protocol: 25
+    read_version: 26
+
+# Physical capabilities (manual §1.2, §1.3, §1.4, §2.1).
+hardware:
+  voltage_rated_vdc: 48
+  voltage_range_vdc: [24, 60]
+  torque_rated_nm: 6.0
+  torque_peak_nm: 17.0
+  phase_current_rated_apk: 7.0
+  phase_current_peak_apk: 23.0
+  no_load_speed_rpm: 410
+  encoder_resolution_bits: 14      # absolute, per turn
+  gear_ratio: 7.75
+  torque_constant_nm_per_arms: 1.22
+  winding_limit_temp_c: 135        # manual notes actual physical limit ~180 C
+  board_overtemp_protection_c: 145
+
+# MIT-style operation-control (type 1) raw→physical scaling.
+# Each field is uint16 (0..65535) mapped linearly onto `range`.
+op_control_scaling:
+  position:
+    units: rad
+    range: [-12.566370614359172, 12.566370614359172]   # -4π .. +4π
+  velocity:
+    units: rad_per_s
+    range: [-44.0, 44.0]
+  kp:
+    units: dimensionless
+    range: [0.0, 500.0]
+  kd:
+    units: dimensionless
+    range: [0.0, 5.0]
+  torque_ff:
+    units: nm
+    range: [-17.0, 17.0]
+
+# Firmware-level limits (written via param_write + save_params).
+# These are the hardware envelope; per-joint envelopes in inventory are tighter.
+firmware_limits:
+  run_mode:
+    index: 0x7005
+    type: uint8
+    values:
+      operation_mit: 0
+      position_pp: 1
+      velocity: 2
+      current: 3
+      position_csp: 5
+  limit_torque:
+    index: 0x700B
+    type: float
+    units: nm
+    hardware_range: [0.0, 14.0]
+  limit_spd:
+    index: 0x7017
+    type: float
+    units: rad_per_s
+    hardware_range: [0.0, 33.0]
+  limit_cur:
+    index: 0x7018
+    type: float
+    units: amps_peak
+    hardware_range: [0.0, 16.0]
+  can_timeout:
+    index: 0x7028
+    type: uint32
+    units: counts      # 20000 counts == 1 s; 0 disables the feature
+  zero_sta:
+    index: 0x7029
+    type: uint8
+    description: "0 => report 0..2π; 1 => report -π..π"
+  damper:
+    index: 0x702A
+    type: uint8
+    description: "0 => damping ON when unpowered (default); 1 => damping OFF"
+  add_offset:
+    index: 0x702B
+    type: float
+    units: rad
+
+# Observables.
+observables:
+  firmware_version:
+    index: 0x1003
+    type: string
+  mech_pos:
+    index: 0x7019
+    type: float
+    units: rad
+    description: "load-end mechanical angle after gearbox"
+  mech_vel:
+    index: 0x701B
+    type: float
+    units: rad_per_s
+    description: "load-end mechanical velocity"
+  iqf:
+    index: 0x701A
+    type: float
+    units: amps_rms
+    description: "Filtered q-axis current; torque fallback source via hardware torque constant"
+  vbus:
+    index: 0x701C
+    type: float
+    units: volts
+    description: "DC bus voltage"
+  motor_temp:
+    index: 0x3006
+    type: int16
+    units: deg_c_tenths
+    description: "Motor winding temperature, raw tenths of degC"
+  fault_sta:
+    index: 0x3022
+    type: uint32
+    description: "Fault bit field"
+  can_terminator_flag:
+    index: 0x3048
+    type: uint8
+    description: "CAN status / termination flag"
+
+# Starter-conservative limits to write during first commissioning.
+commissioning_defaults:
+  limit_torque_nm: 2.0
+  limit_spd_rad_s: 2.0
+  limit_cur_a: 5.0
+  can_timeout_counts: 20000   # 1 s; controller MUST heartbeat faster than this
+
+thermal:
+  max_winding_temp_c: 120
+  derating_start_c: 100
+
+notes:
+  - "Verify per-unit firmware version and CAN status before writing firmware limits."
+  - "Any param write (type 18) is RAM only. A type 22 save is required to persist."
+  - "Zero-calibration is only valid in MIT or CSP mode, not PP mode."
