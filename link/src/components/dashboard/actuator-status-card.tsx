@@ -42,6 +42,7 @@ import { DashboardCard } from "./dashboard-card";
 const HOT_DEGC = 65;
 /** Same cadence as actuator detail header / overview live text. */
 const DASHBOARD_ACTUATOR_TELEM_MS = 300;
+const RECENT_UPDATE_HIDE_MS = 5_000;
 
 export function ActuatorStatusCard({ className }: { className?: string }) {
   // Live data flows in via the WebTransport bridge (see
@@ -217,6 +218,8 @@ function MotorRow({ motor }: { motor: MotorSummary }) {
     liveSnap.type2_age_ms == null
       ? null
       : Number(liveSnap.type2_age_ms) / 1000;
+  const showAge = shouldShowAge(ageS);
+  const showType2Age = shouldShowAge(type2AgeS);
   const bs = motor.boot_state;
   const bootDot = bootStateDotClass(bs);
   const roleColor = bootStateRoleTextClass(bs);
@@ -271,24 +274,30 @@ function MotorRow({ motor }: { motor: MotorSummary }) {
               >
                 {fb.temp_c.toFixed(0)}degC
               </span>
-              <span
-                title="last update"
-                className={cn(
-                  ageS != null && ageS * 1000 > MOTOR_TELEM_STALE_MS && "text-amber-400",
-                )}
-              >
-                {fmtAge(ageS)}
-              </span>
-              <span
-                title="last high-rate type-2 position frame"
-                className={cn(
-                  type2AgeS != null &&
-                    type2AgeS * 1000 > MOTOR_TELEM_STALE_MS &&
-                    "text-rose-400",
-                )}
-              >
-                t2 {fmtAge(type2AgeS)}
-              </span>
+              {showAge && (
+                <span
+                  title="last update"
+                  className={cn(
+                    ageS != null &&
+                      ageS * 1000 > MOTOR_TELEM_STALE_MS &&
+                      "text-amber-400",
+                  )}
+                >
+                  {fmtAge(ageS)}
+                </span>
+              )}
+              {showType2Age && (
+                <span
+                  title="last high-rate type-2 position frame"
+                  className={cn(
+                    type2AgeS != null &&
+                      type2AgeS * 1000 > MOTOR_TELEM_STALE_MS &&
+                      "text-rose-400",
+                  )}
+                >
+                  t2 {fmtAge(type2AgeS)}
+                </span>
+              )}
             </>
           ) : (
             <span className="italic">no data</span>
@@ -334,4 +343,8 @@ function fmtAge(s: number | null): string {
   if (s < 1) return `${Math.max(0, Math.round(s * 1000))}ms`;
   if (s < 60) return `${s.toFixed(1)}s`;
   return `${Math.floor(s / 60)}m`;
+}
+
+function shouldShowAge(s: number | null): boolean {
+  return s == null || s * 1000 >= RECENT_UPDATE_HIDE_MS;
 }
