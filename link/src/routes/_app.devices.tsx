@@ -29,7 +29,11 @@ import { api } from "@/lib/api";
 import { DevicesSection } from "@/components/devices/devices-section";
 import { OnboardingWizard } from "@/components/devices/onboarding-wizard";
 import { bootStateShortLabel } from "@/lib/bootStateUi";
-import { describeFaultBits, describeWarnBits } from "@/lib/motorFaultDecode";
+import {
+  describeFaultBits,
+  describeWarnBits,
+  hasRecoveryLatchOnly,
+} from "@/lib/motorFaultDecode";
 import {
   motorTelemetryShortLabel,
   motorTelemetryTone,
@@ -419,6 +423,8 @@ function telemetryBadgeVariant(
       return "success";
     case "crit":
       return "destructive";
+    case "advisory":
+      return "secondary";
     case "warn":
     case "stale":
       return "warning";
@@ -452,6 +458,17 @@ function buildTelemetryHoverText(
     }
     lines.push("");
     lines.push("Recovery: actuator → Controls → Clear fault when safe.");
+  } else if (tone === "advisory") {
+    lines.push("Advisory indicator:");
+    if (hasRecoveryLatchOnly(fb.fault_sta, fb.warn_sta)) {
+      lines.push("• Bit 5 (0x20) is the RS03 recovery latch.");
+      lines.push("• Cortex ignores this bit alone for motion gating.");
+      lines.push("• Clear it when convenient; no immediate recovery required.");
+    } else {
+      for (const L of describeFaultBits(fb.fault_sta)) {
+        lines.push(`• ${L}`);
+      }
+    }
   } else if (tone === "warn") {
     lines.push("Warning bits:");
     for (const L of describeWarnBits(fb.warn_sta)) {

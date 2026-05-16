@@ -3,13 +3,15 @@
 
 import type { MotorSummary } from "@/lib/types/MotorSummary";
 
+export const RS03_RECOVERY_LATCH_FAULT_MASK = 1 << 5;
+
 const WARN_BIT_LABEL: Record<number, string> = {
   0: "Motor overtemperature warning — reduce load or improve cooling; cortex treats this as fatal to motion by default.",
   5: "Bit 5 (0x20) — common advisory on FW 0.3.1.41 (often uncogged / cogging cal); cortex ignores this bit alone for motion gating.",
 };
 
 const FAULT_BIT_LABEL: Record<number, string> = {
-  5: "Bit 5 (0x20) — RS03 can keep this latched after Motor Studio recovery; try Controls → Clear fault, or E-stop then clear.",
+  5: "Bit 5 (0x20) — RS03 recovery latch; cortex ignores this bit alone for motion gating. Clear it when convenient if it persists.",
 };
 
 function linesForBits(word: number, labels: Record<number, string>, kind: "fault" | "warn"): string[] {
@@ -33,16 +35,34 @@ export function describeWarnBits(warnSta: number): string[] {
   return linesForBits(warnSta, WARN_BIT_LABEL, "warn");
 }
 
-export function motorsWithFaultNonzero(motors: MotorSummary[]): MotorSummary[] {
-  return motors.filter((m) => m.latest != null && m.latest.fault_sta !== 0);
+export function actionableFaultSta(faultSta: number): number {
+  return faultSta & ~RS03_RECOVERY_LATCH_FAULT_MASK;
 }
 
-/** Same criterion as dashboard `getTone` === "warn". */
+export function hasRecoveryLatchOnly(faultSta: number, warnSta: number): boolean {
+  return warnSta === 0 && faultSta !== 0 && actionableFaultSta(faultSta) === 0;
+}
+
+export function motorsWithFaultNonzero(motors: MotorSummary[]): MotorSummary[] {
+  return motors.filter((m) => {
+    const fb = m.latest;
+    return fb != null && actionableFaultSta(fb.fault_sta) !== 0;
+  });
+}
+
+/** Same criterion as `motorTelemetryTone` === "warn". */
 export function motorsWithWarnOnly(motors: MotorSummary[]): MotorSummary[] {
   return motors.filter((m) => {
     const fb = m.latest;
     if (!fb) return false;
-    return fb.fault_sta === 0 && fb.warn_sta !== 0;
+    return actionableFaultSta(fb.fault_sta) === 0 && fb.warn_sta !== 0;
+  });
+}
+
+export function motorsWithRecoveryLatchOnly(motors: MotorSummary[]): MotorSummary[] {
+  return motors.filter((m) => {
+    const fb = m.latest;
+    return fb != null && hasRecoveryLatchOnly(fb.fault_sta, fb.warn_sta);
   });
 }
 
@@ -92,5 +112,24 @@ export function formatWarnRollup(motors: MotorSummary[]): string {
   }
   lines.push("");
   lines.push("If motion is blocked, address fatal warning bits first; see Settings → safety.fatal_warn_mask.");
+  return lines.join("\n");
+}
+
+export function formatRecoveryLatchRollup(motors: MotorSummary[]): string {
+  const lines: string[] = ["Actuators with RS03 recovery latch advisory:"];
+  if (motors.length === 0) {
+    lines.push("(No motors matched — try refreshing the page.)");
+    return lines.join("\n");
+  }
+  for (const m of motors) {
+    const fb = m.latest;
+    if (!fb) continue;
+    lines.push("");
+    lines.push(`• ${m.role}`);
+    lines.push(`  fault_sta=${hex32(fb.fault_sta)}  warn_sta=${hex32(fb.warn_sta)}`);
+    lines.push("  ‣ Bit 5 (0x20) is latched but non-blocking by itself.");
+  }
+  lines.push("");
+  lines.push("No immediate recovery required; use Controls → Clear fault when convenient.");
   return lines.join("\n");
 }

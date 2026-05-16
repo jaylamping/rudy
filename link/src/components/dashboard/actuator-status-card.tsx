@@ -18,8 +18,10 @@ import { useLiveInterval } from "@/lib/hooks/useLiveInterval";
 import { useThrottledIntervalSnapshot } from "@/lib/hooks/useThrottledIntervalSnapshot";
 import {
   formatFaultRollup,
+  formatRecoveryLatchRollup,
   formatWarnRollup,
   motorsWithFaultNonzero,
+  motorsWithRecoveryLatchOnly,
   motorsWithWarnOnly,
 } from "@/lib/motorFaultDecode";
 import {
@@ -62,6 +64,7 @@ export function ActuatorStatusCard({ className }: { className?: string }) {
   });
   const tally = countByTone(motors);
   const faultMotors = motorsWithFaultNonzero(motors);
+  const advisoryMotors = motorsWithRecoveryLatchOnly(motors);
   const warnMotors = motorsWithWarnOnly(motors);
   const driftedMotors = motors.filter((m) => m.drifted_param_count > 0);
   const firstDriftRole = driftedMotors[0]?.role;
@@ -99,6 +102,28 @@ export function ActuatorStatusCard({ className }: { className?: string }) {
 
       <div className="mb-3 flex flex-wrap items-center gap-3 text-xs">
         <Pill tone="ok">{tally.ok} ok</Pill>
+        {tally.advisory > 0 && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span
+                className="inline-flex cursor-help rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                tabIndex={0}
+              >
+                <Pill tone="advisory">
+                  {tally.advisory} advisor
+                  {tally.advisory === 1 ? "y" : "ies"}
+                </Pill>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent
+              side="bottom"
+              align="start"
+              className="max-h-[min(24rem,70vh)] max-w-md overflow-y-auto whitespace-pre-line text-left text-xs leading-snug"
+            >
+              {formatRecoveryLatchRollup(advisoryMotors)}
+            </TooltipContent>
+          </Tooltip>
+        )}
         {tally.warn > 0 && (
           <Tooltip>
             <TooltipTrigger asChild>
@@ -275,7 +300,7 @@ function MotorRow({ motor }: { motor: MotorSummary }) {
 }
 
 function countByTone(motors: MotorSummary[]) {
-  const c = { ok: 0, warn: 0, crit: 0, stale: 0, missing: 0 };
+  const c = { ok: 0, advisory: 0, warn: 0, crit: 0, stale: 0, missing: 0 };
   for (const m of motors) c[motorTelemetryTone(m)] += 1;
   return c;
 }
@@ -292,6 +317,7 @@ function Pill({
       className={cn(
         "rounded-sm px-1.5 py-0.5",
         tone === "ok" && "bg-emerald-500/10 text-emerald-400",
+        tone === "advisory" && "bg-sky-500/10 text-sky-400",
         tone === "warn" && "bg-amber-500/10 text-amber-400",
         tone === "crit" && "bg-rose-500/10 text-rose-400",
         tone === "stale" && "bg-amber-500/10 text-amber-400",
