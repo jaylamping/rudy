@@ -55,6 +55,7 @@ distinct concern; no single folder dominates.
 | Package       | Role                                                                                                                                  |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
 | `description` | URDF / xacro — kinematic source of truth                                                                                              |
+| `moveit_config` | MoveIt 2 config for sim-first arm-tip IK/planning                                                                                   |
 | `bringup`     | XML launch + YAML params                                                                                                              |
 | `msgs`        | Custom messages (placeholder)                                                                                                         |
 | `driver`      | Rust CAN stack + `driver_node` (SocketCAN; Linux-only I/O). Hybrid ament_cmake + Cargo package — see ADR-0004 for the deferred split. |

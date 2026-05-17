@@ -4,7 +4,7 @@ Robot model for Rudy (URDF + xacro).
 
 ## Contents
 
-- `urdf/robot.urdf.xacro` — Full kinematic tree: `base_link`, torso, waist yaw, left/right arms (4 DOF each). Joint limits match the prior `mr_robot` `robot.yaml` (RobStride RS03 nominal torque/speed caps).
+- `urdf/robot.urdf.xacro` — Full kinematic tree: `base_link`, torso, waist yaw, left/right arms (5 DOF each: shoulder pitch/roll, upper-arm yaw, elbow pitch, lower-arm yaw) plus `*_arm_tip` nub frames. Joint limits match the prior `mr_robot` `robot.yaml` where available (RobStride RS03 nominal torque/speed caps).
 
 ## Generate URDF for tools
 

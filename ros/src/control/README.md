@@ -4,8 +4,10 @@
 
 ## Current state
 
-- `TopicLoopbackHardware` — a minimal `hardware_interface::SystemInterface` that exposes a single
-  `loopback_joint` and mirrors commanded position into state (for CI + early bring-up).
+- `TopicLoopbackHardware` — a minimal `hardware_interface::SystemInterface` that exposes
+  URDF-declared position-command joints and mirrors commanded position into state (for CI +
+  early bring-up). Unit tests still get a single `loopback_joint` fallback when no
+  `HardwareInfo.joints` are provided.
 
 ## Why is this package in C++?
 

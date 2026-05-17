@@ -49,9 +49,11 @@ namespace control
 ///     process (`driver_node`) over ROS topics. Everything else in this repo (`driver`,
 ///     `rudydae`, the RobStride CAN stack) is already Rust.
 ///
-/// This class is the loopback variant of that shim — used today for CI smoke + bring-up. The
-/// next iteration adds a topic publisher/subscriber pair and renames it accordingly; the C++
-/// surface stays roughly this small (~60 lines) because all real logic lives in `driver`.
+/// This class is the loopback variant of that shim — used today for CI smoke + bring-up. It
+/// exposes URDF-declared position-command joints when `controller_manager` loads it, and falls
+/// back to one synthetic `loopback_joint` in unit tests that construct `HardwareInfo` by hand.
+/// The next iteration adds a topic publisher/subscriber pair and renames it accordingly; the C++
+/// surface stays small because all real logic lives in `driver`.
 class TopicLoopbackHardware : public hardware_interface::SystemInterface
 {
 public:
@@ -76,6 +78,7 @@ private:
   hardware_interface::HardwareInfo info_;
   std::unordered_map<std::string, double> pos_cmd_;
   std::unordered_map<std::string, double> pos_state_;
+  std::unordered_map<std::string, double> vel_state_;
 };
 
 }  // namespace control

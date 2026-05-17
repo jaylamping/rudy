@@ -1,7 +1,9 @@
 <?xml version="1.0"?>
 <!--
   Rudy humanoid — kinematic skeleton for Phase 1.
-  Joint limits mirror mr_robot config/robot.yaml (RS03 caps: 60 Nm, 50 rad/s).
+  Arm model targets 5 DOF per side: shoulder pitch/roll, upper-arm yaw,
+  elbow pitch, lower-arm yaw. Joint limits mirror mr_robot config/robot.yaml
+  where available (RS03 caps: 60 Nm, 50 rad/s).
   Frame convention: x forward, y left, z up. Left arm attaches on +y side of torso.
 -->
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="robot">
@@ -132,6 +134,8 @@
     sx="0.10" sy="0.10" sz="0.12" rgba="0.2 0.55 0.3 1" mass="0.5"/>
   <xacro:box_link name="l_upper_arm_link" sx="0.09" sy="0.09" sz="0.22" rgba="0.2 0.55 0.3 1" mass="0.7"/>
   <xacro:box_link name="l_forearm_link" sx="0.08" sy="0.08" sz="0.20" rgba="0.15 0.45 0.25 1" mass="0.5"/>
+  <xacro:box_link name="l_lower_arm_yaw_link" sx="0.07" sy="0.07" sz="0.07" rgba="0.15 0.45 0.25 1" mass="0.35"/>
+  <xacro:box_link name="l_arm_tip" sx="0.05" sy="0.05" sz="0.05" rgba="0.1 0.35 0.2 1" mass="0.15"/>
 
   <!-- arm_left from robot.yaml -->
   <xacro:robot_revolute
@@ -182,6 +186,24 @@
     origin_xyz="0 0 -0.18"
     origin_rpy="0 0 0"/>
 
+  <xacro:robot_revolute
+    name="l_lower_arm_yaw_joint"
+    parent="l_forearm_link"
+    child="l_lower_arm_yaw_link"
+    axis="0 0 1"
+    lower="-1.57"
+    upper="1.57"
+    soft_lower="-1.45"
+    soft_upper="1.45"
+    origin_xyz="0 0 -0.14"
+    origin_rpy="0 0 0"/>
+
+  <joint name="l_lower_arm_yaw_to_tip" type="fixed">
+    <origin xyz="0 0 -0.08" rpy="0 0 0"/>
+    <parent link="l_lower_arm_yaw_link"/>
+    <child link="l_arm_tip"/>
+  </joint>
+
   <!-- Right arm: mirror of left, with the shoulder housing rotated 180 deg about Z. -->
   <xacro:mesh_link name="r_shoulder_pitch_link"
     mesh="shoulder_housing.glb"
@@ -193,6 +215,8 @@
     sx="0.10" sy="0.10" sz="0.12" rgba="0.25 0.35 0.65 1" mass="0.5"/>
   <xacro:box_link name="r_upper_arm_link" sx="0.09" sy="0.09" sz="0.22" rgba="0.25 0.35 0.65 1" mass="0.7"/>
   <xacro:box_link name="r_forearm_link" sx="0.08" sy="0.08" sz="0.20" rgba="0.2 0.3 0.55 1" mass="0.5"/>
+  <xacro:box_link name="r_lower_arm_yaw_link" sx="0.07" sy="0.07" sz="0.07" rgba="0.2 0.3 0.55 1" mass="0.35"/>
+  <xacro:box_link name="r_arm_tip" sx="0.05" sy="0.05" sz="0.05" rgba="0.15 0.25 0.45 1" mass="0.15"/>
 
   <xacro:robot_revolute
     name="r_shoulder_pitch_joint"
@@ -241,4 +265,78 @@
     soft_upper="-0.12"
     origin_xyz="0 0 -0.18"
     origin_rpy="0 0 0"/>
+
+  <xacro:robot_revolute
+    name="r_lower_arm_yaw_joint"
+    parent="r_forearm_link"
+    child="r_lower_arm_yaw_link"
+    axis="0 0 1"
+    lower="-1.57"
+    upper="1.57"
+    soft_lower="-1.45"
+    soft_upper="1.45"
+    origin_xyz="0 0 -0.14"
+    origin_rpy="0 0 0"/>
+
+  <joint name="r_lower_arm_yaw_to_tip" type="fixed">
+    <origin xyz="0 0 -0.08" rpy="0 0 0"/>
+    <parent link="r_lower_arm_yaw_link"/>
+    <child link="r_arm_tip"/>
+  </joint>
+
+  <ros2_control name="RudySystem" type="system">
+    <hardware>
+      <plugin>control/TopicLoopbackHardware</plugin>
+    </hardware>
+    <joint name="l_shoulder_pitch_joint">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="l_shoulder_roll_joint">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="l_upper_arm_yaw_joint">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="l_elbow_pitch_joint">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="l_lower_arm_yaw_joint">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="r_shoulder_pitch_joint">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="r_shoulder_roll_joint">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="r_upper_arm_yaw_joint">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="r_elbow_pitch_joint">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="r_lower_arm_yaw_joint">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+  </ros2_control>
 </robot>

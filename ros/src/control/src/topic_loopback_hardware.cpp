@@ -34,25 +34,44 @@ hardware_interface::CallbackReturn TopicLoopbackHardware::on_init(
   info_ = info;
   pos_cmd_.clear();
   pos_state_.clear();
-  // Single joint loopback for bring-up tests; replace with URDF-driven joints + topic bridge later.
-  pos_cmd_["loopback_joint"] = 0.0;
-  pos_state_["loopback_joint"] = 0.0;
+  vel_state_.clear();
+
+  if (info_.joints.empty()) {
+    // Fallback for unit tests that construct HardwareInfo by hand.
+    pos_cmd_["loopback_joint"] = 0.0;
+    pos_state_["loopback_joint"] = 0.0;
+    return hardware_interface::CallbackReturn::SUCCESS;
+  }
+
+  for (const auto & joint : info_.joints) {
+    pos_cmd_[joint.name] = 0.0;
+    pos_state_[joint.name] = 0.0;
+    vel_state_[joint.name] = 0.0;
+  }
   return hardware_interface::CallbackReturn::SUCCESS;
 }
 
 std::vector<hardware_interface::StateInterface> TopicLoopbackHardware::export_state_interfaces()
 {
   std::vector<hardware_interface::StateInterface> out;
-  out.emplace_back(hardware_interface::StateInterface(
-    "loopback_joint", hardware_interface::HW_IF_POSITION, &pos_state_["loopback_joint"]));
+  for (auto & [name, value] : pos_state_) {
+    out.emplace_back(
+      hardware_interface::StateInterface(name, hardware_interface::HW_IF_POSITION, &value));
+  }
+  for (auto & [name, value] : vel_state_) {
+    out.emplace_back(
+      hardware_interface::StateInterface(name, hardware_interface::HW_IF_VELOCITY, &value));
+  }
   return out;
 }
 
 std::vector<hardware_interface::CommandInterface> TopicLoopbackHardware::export_command_interfaces()
 {
   std::vector<hardware_interface::CommandInterface> out;
-  out.emplace_back(hardware_interface::CommandInterface(
-    "loopback_joint", hardware_interface::HW_IF_POSITION, &pos_cmd_["loopback_joint"]));
+  for (auto & [name, value] : pos_cmd_) {
+    out.emplace_back(
+      hardware_interface::CommandInterface(name, hardware_interface::HW_IF_POSITION, &value));
+  }
   return out;
 }
 

@@ -10,6 +10,7 @@ Monorepo for the Rudy upper-body humanoid (RobStride RS03 actuators, CAN bus, Is
 
 - [`ros/`](ros/) — ROS 2 **Jazzy** colcon workspace (packages under `ros/src/`):
   - `description` — URDF / xacro robot model (kinematic source of truth)
+  - `moveit_config` — MoveIt 2 config for sim-first arm-tip IK/planning
   - `bringup` — XML launch files and runtime parameters
   - `msgs` — Custom message / service / action definitions (placeholder for now)
   - `driver` — **Rust** CAN driver + protocol (`driver_node`, hybrid ament_cmake + Cargo)

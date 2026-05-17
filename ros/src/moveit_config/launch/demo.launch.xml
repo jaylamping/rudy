@@ -1,0 +1,34 @@
+<?xml version="1.0"?>
+<launch>
+  <!-- MoveIt fake-execution scaffold for right-arm-tip planning. Hardware bridge comes later. -->
+  <arg name="use_sim_time" default="false"/>
+  <arg name="rviz_config" default="$(find-pkg-share moveit_config)/rviz/moveit.rviz"/>
+
+  <set_use_sim_time if="$(var use_sim_time)" value="$(var use_sim_time)"/>
+
+  <let name="robot_description"
+    value="$(command 'xacro $(find-pkg-share description)/urdf/robot.urdf.xacro')"/>
+  <let name="robot_description_semantic"
+    value="$(command 'xacro $(find-pkg-share moveit_config)/config/rudy.srdf.xacro')"/>
+
+  <node pkg="robot_state_publisher" exec="robot_state_publisher" output="screen">
+    <param name="robot_description" type="str" value="$(var robot_description)"/>
+  </node>
+
+  <node pkg="joint_state_publisher" exec="joint_state_publisher" output="screen"/>
+
+  <node pkg="moveit_ros_move_group" exec="move_group" output="screen">
+    <param name="robot_description" type="str" value="$(var robot_description)"/>
+    <param name="robot_description_semantic" type="str" value="$(var robot_description_semantic)"/>
+    <param from="$(find-pkg-share moveit_config)/config/kinematics.yaml"/>
+    <param from="$(find-pkg-share moveit_config)/config/joint_limits.yaml"/>
+    <param from="$(find-pkg-share moveit_config)/config/ompl_planning.yaml"/>
+    <param from="$(find-pkg-share moveit_config)/config/moveit_controllers.yaml"/>
+    <param from="$(find-pkg-share moveit_config)/config/planning_scene_monitor.yaml"/>
+  </node>
+
+  <node pkg="rviz2" exec="rviz2" output="screen" args="-d $(var rviz_config)">
+    <param name="robot_description" type="str" value="$(var robot_description)"/>
+    <param name="robot_description_semantic" type="str" value="$(var robot_description_semantic)"/>
+  </node>
+</launch>

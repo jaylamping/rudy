@@ -4,7 +4,7 @@
          type="control::TopicLoopbackHardware"
          base_class_type="hardware_interface::SystemInterface">
     <description>
-      Minimal loopback SystemInterface for Rudy bring-up (position command mirrors state).
+      Minimal loopback SystemInterface for Rudy bring-up (URDF joint position commands mirror state).
       Replaced/extended by topic bridge to Rust driver as the stack matures.
     </description>
   </class>

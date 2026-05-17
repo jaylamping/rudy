@@ -21,10 +21,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     binfmt-support \
     ros-jazzy-rmw-cyclonedds-cpp \
     ros-jazzy-diagnostic-aggregator \
+    ros-jazzy-xacro \
+    ros-jazzy-robot-state-publisher \
+    ros-jazzy-joint-state-publisher \
+    ros-jazzy-joint-state-publisher-gui \
     ros-jazzy-ros2-control \
     ros-jazzy-ros2-controllers \
     ros-jazzy-hardware-interface \
     ros-jazzy-pluginlib \
+    ros-jazzy-moveit \
+    ros-jazzy-moveit-kinematics \
+    ros-jazzy-moveit-planners-ompl \
+    ros-jazzy-moveit-ros-move-group \
+    ros-jazzy-moveit-ros-visualization \
     && rm -rf /var/lib/apt/lists/*
 
 # Rust (stable) + aarch64 target for Pi 5 cross-builds

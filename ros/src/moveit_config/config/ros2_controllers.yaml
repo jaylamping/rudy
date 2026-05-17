@@ -1,0 +1,24 @@
+controller_manager:
+  ros__parameters:
+    update_rate: 250
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    right_arm_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+
+right_arm_controller:
+  ros__parameters:
+    joints:
+      - r_shoulder_pitch_joint
+      - r_shoulder_roll_joint
+      - r_upper_arm_yaw_joint
+      - r_elbow_pitch_joint
+      - r_lower_arm_yaw_joint
+    command_interfaces:
+      - position
+    state_interfaces:
+      - position
+      - velocity
+    allow_partial_joints_goal: false
