@@ -621,18 +621,18 @@ function SensorsSection({
     })),
   ];
   const runtimeSuffix =
-    liveOnlySensors.length > 0 ? `, ${liveOnlySensors.length} live/configured` : "";
+    liveOnlySensors.length > 0 ? `, ${liveOnlySensors.length} from cortex.toml` : "";
 
   return (
     <DevicesSection
       title="Sensors"
-      description={`${rows.length} ${rows.length === 1 ? "sensor" : "sensors"} visible (${sensors.length} in inventory${runtimeSuffix}).`}
+      description={`${rows.length} ${rows.length === 1 ? "sensor" : "sensors"} configured (${sensors.length} in inventory${runtimeSuffix}).`}
     >
       <Card>
         <CardContent className="pt-4">
           {rows.length === 0 ? (
             <p className="rounded-md border border-dashed border-border bg-muted/20 px-3 py-6 text-center text-sm text-muted-foreground">
-              No sensors in inventory or runtime configuration yet.
+              No sensors configured yet.
             </p>
           ) : (
             <div className="overflow-x-auto rounded-md border border-border">
@@ -642,9 +642,9 @@ function SensorsSection({
                     <th className="px-3 py-2 font-medium">Role</th>
                     <th className="px-3 py-2 font-medium">Mount / frame</th>
                     <th className="px-3 py-2 font-medium">Family</th>
-                    <th className="px-3 py-2 font-medium">Source</th>
-                    <th className="px-3 py-2 font-medium">Address</th>
-                    <th className="px-3 py-2 font-medium">Status / note</th>
+                    <th className="px-3 py-2 font-medium">Config</th>
+                    <th className="px-3 py-2 font-medium">Bus / address</th>
+                    <th className="px-3 py-2 font-medium">Health</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -708,27 +708,27 @@ function sensorRowFamily(row: SensorRow): string {
 }
 
 function sensorRowSource(row: SensorRow): string {
-  return row.source === "inventory" ? row.sensor.can_bus : "runtime";
+  return row.source === "inventory" ? "inventory.yaml" : "cortex.toml";
 }
 
 function sensorRowAddress(row: SensorRow): string {
   return row.source === "inventory"
-    ? `0x${row.sensor.can_id.toString(16).padStart(2, "0")}`
-    : "cortex.toml";
+    ? `${row.sensor.can_bus} / 0x${row.sensor.can_id.toString(16).padStart(2, "0")}`
+    : "I2C config";
 }
 
 function SensorRowStatus({ row }: { row: SensorRow }) {
-  const sample = row.source === "inventory" ? row.sample : row.sample;
+  const sample = row.sample;
   if (!sample) {
-    return <>Inventory only; no live sample yet.</>;
+    return <>Waiting for live sample.</>;
   }
 
   return (
     <span className="inline-flex flex-wrap items-center gap-2">
       <SensorHealthBadge sample={sample} />
       {sample.message ? <span>{sample.message}</span> : null}
-      {row.source === "runtime" ? (
-        <span>Add to inventory.yaml to persist as a device.</span>
+      {row.source === "runtime" && !sample.message ? (
+        <span>Configured via cortex.toml.</span>
       ) : null}
     </span>
   );
