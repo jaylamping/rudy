@@ -12,6 +12,7 @@ setup(
         ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
         ("share/" + package_name, ["package.xml"]),
         ("share/" + package_name + "/configs", glob("configs/*.yaml")),
+        ("share/" + package_name + "/configs/scenarios", glob("configs/scenarios/*.yaml")),
         ("share/" + package_name + "/launch", glob("launch/*.xml")),
     ],
     install_requires=["setuptools", "pyyaml"],
@@ -24,6 +25,7 @@ setup(
     entry_points={
         "console_scripts": [
             "sim_train = simulation.scripts.train:main",
+            "sim2sim_compare = simulation.compare:main",
         ],
     },
 )

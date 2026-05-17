@@ -9,6 +9,9 @@
 ## Repo layout
 
 - **Configs**: `ros/src/simulation/configs/` (`domain_rand.yaml`, `contact.yaml`, `actuator_model.yaml`)
+- **Scenarios**: `ros/src/simulation/configs/scenarios/` (ADR-0009 replay catalog)
+- **Contract**: `ros/src/simulation/simulation/schema.py` (simulator-neutral command/state/report boundary)
+- **Reports**: `scripts/sim2sim_compare.py` (Isaac-vs-MuJoCo JSON report writer)
 - **Scaffold env**: `ros/src/simulation/simulation/envs/sim_env.py`
 - **Training entrypoint**: `sim_train` console script (scaffold)
 
@@ -21,4 +24,5 @@
 
 1. Import Rudy USD/URDF into Isaac Lab task config.
 2. Match observation/action spaces to **on-robot** sensors only (no privileged teacher features in deployment policy).
-3. Add deterministic regression tests that run in CI without a GPU (YAML + unit tests), and optional nightly GPU training jobs.
+3. Make Isaac and MuJoCo adapters emit `SimState` JSON traces for `joint_space_smoke`.
+4. Add deterministic regression tests that run in CI without a GPU (YAML + unit tests), and optional nightly GPU training jobs.
