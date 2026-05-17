@@ -50,6 +50,32 @@ def test_build_report_passes_for_matching_joint_trace():
     assert report.metrics.runtime_stop_count == 0
 
 
+def test_build_report_fails_when_position_error_exceeds_threshold():
+    root = Path(__file__).resolve().parents[1]
+    scenario = load_scenario(root / "configs" / "scenarios" / "joint_space_smoke.yaml")
+    reference = tuple(
+        SimState.from_mapping(state)
+        for state in [_state(0.0, 0.0, 0.0), _state(1.0, 0.4, 0.4)]
+    )
+    candidate = tuple(
+        SimState.from_mapping(state)
+        for state in [_state(0.0, 0.0, 0.0), _state(1.0, 0.7, 0.4)]
+    )
+
+    report = build_report(
+        scenario=scenario,
+        reference=reference,
+        candidate=candidate,
+        simulator_versions={"isaac": "test", "mujoco": "test"},
+        model_hashes={"urdf": "test"},
+    )
+
+    assert not report.passed
+    assert report.metrics.joint_position_max_abs_rad > scenario.thresholds[
+        "joint_position_max_abs_rad"
+    ]
+
+
 def test_cli_writes_json_report(tmp_path):
     root = Path(__file__).resolve().parents[1]
     scenario = root / "configs" / "scenarios" / "joint_space_smoke.yaml"
