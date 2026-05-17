@@ -253,3 +253,170 @@ mod wave_tests {
         assert!(v < 0.0);
     }
 }
+
+mod dynamics_tests {
+    use crate::inventory::{Actuator, ActuatorCommon, ActuatorFamily, RobstrideModel};
+    use crate::motion::dynamics::{
+        clamp_velocity_for_joint, velocity_exceeds_joint_limit, JointDynamics,
+    };
+    use std::collections::BTreeMap;
+
+    fn make_motor(dynamics: Option<JointDynamics>) -> Actuator {
+        Actuator {
+            common: ActuatorCommon {
+                role: "test.shoulder_roll".to_string(),
+                can_bus: "can1".to_string(),
+                can_id: 9,
+                present: true,
+                verified: true,
+                commissioned_at: None,
+                firmware_version: None,
+                travel_limits: None,
+                commissioned_zero_offset: None,
+                active_report_persisted: false,
+                predefined_home_rad: None,
+                homing_speed_rad_s: None,
+                hold_kp_nm_per_rad: None,
+                hold_kd_nm_s_per_rad: None,
+                mit_command_kp_nm_per_rad: None,
+                mit_command_kd_nm_s_per_rad: None,
+                mit_max_angle_step_rad: None,
+                limb: Some("right_arm".to_string()),
+                joint_kind: Some(crate::limb::JointKind::ShoulderRoll),
+                notes_yaml: None,
+                desired_params: BTreeMap::new(),
+                current_safety: None,
+                dynamics,
+            },
+            family: ActuatorFamily::Robstride {
+                model: RobstrideModel::Rs03,
+            },
+        }
+    }
+
+    #[test]
+    fn velocity_clamp_no_dynamics_passes_through() {
+        let motor = make_motor(None);
+        assert_eq!(clamp_velocity_for_joint(&motor, 5.0), 5.0);
+        assert_eq!(clamp_velocity_for_joint(&motor, -3.0), -3.0);
+    }
+
+    #[test]
+    fn velocity_clamp_with_limit_caps_magnitude() {
+        let d = JointDynamics {
+            max_velocity_rad_s: Some(1.5),
+            ..Default::default()
+        };
+        let motor = make_motor(Some(d));
+        assert_eq!(clamp_velocity_for_joint(&motor, 2.0), 1.5);
+        assert_eq!(clamp_velocity_for_joint(&motor, -2.0), -1.5);
+        assert_eq!(clamp_velocity_for_joint(&motor, 0.8), 0.8);
+    }
+
+    #[test]
+    fn velocity_exceeds_returns_none_under_limit() {
+        let d = JointDynamics {
+            max_velocity_rad_s: Some(2.0),
+            ..Default::default()
+        };
+        let motor = make_motor(Some(d));
+        assert_eq!(velocity_exceeds_joint_limit(&motor, 1.5), None);
+        assert_eq!(velocity_exceeds_joint_limit(&motor, -1.5), None);
+    }
+
+    #[test]
+    fn velocity_exceeds_returns_limit_when_over() {
+        let d = JointDynamics {
+            max_velocity_rad_s: Some(1.0),
+            ..Default::default()
+        };
+        let motor = make_motor(Some(d));
+        assert_eq!(velocity_exceeds_joint_limit(&motor, 1.5), Some(1.0));
+        assert_eq!(velocity_exceeds_joint_limit(&motor, -1.5), Some(1.0));
+    }
+
+    #[test]
+    fn loaded_joint_default_dynamics_means_fail_closed() {
+        let d = JointDynamics {
+            loaded: true,
+            gravity_torque_nm: Some(10.0),
+            gravity_margin: 0.25,
+            ..Default::default()
+        };
+        // No continuous_torque_nm, no structural_torque_nm, no firmware limits
+        // For a loaded joint with gravity_torque, ceiling should be 0 (fail closed)
+        assert!(d.loaded);
+        assert_eq!(d.continuous_torque_nm, None);
+        assert_eq!(d.structural_torque_nm, None);
+    }
+
+    #[test]
+    fn gravity_margin_calculation() {
+        let d = JointDynamics {
+            gravity_torque_nm: Some(8.0),
+            gravity_margin: 0.25,
+            ..Default::default()
+        };
+        let required = d.gravity_torque_nm.unwrap() * (1.0 + d.gravity_margin);
+        assert!((required - 10.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn bench_mode_forces_observe_only() {
+        use crate::config::SafetyConfig;
+        let mut safety = SafetyConfig::default();
+        safety.bench_mode = true;
+        safety.current_trip_observe_only = false;
+
+        let loaded = JointDynamics {
+            loaded: true,
+            ..Default::default()
+        };
+        assert!(safety.effective_observe_only(Some(&loaded)));
+        assert!(safety.effective_observe_only(None));
+    }
+
+    #[test]
+    fn loaded_joint_enforces_outside_bench_mode() {
+        use crate::config::SafetyConfig;
+        let mut safety = SafetyConfig::default();
+        safety.bench_mode = false;
+        safety.current_trip_observe_only = true;
+
+        let loaded = JointDynamics {
+            loaded: true,
+            ..Default::default()
+        };
+        // Loaded joint should NOT be observe-only even when global says so
+        assert!(!safety.effective_observe_only(Some(&loaded)));
+    }
+
+    #[test]
+    fn unloaded_joint_respects_global_observe_only() {
+        use crate::config::SafetyConfig;
+        let mut safety = SafetyConfig::default();
+        safety.bench_mode = false;
+        safety.current_trip_observe_only = true;
+
+        let unloaded = JointDynamics {
+            loaded: false,
+            ..Default::default()
+        };
+        assert!(safety.effective_observe_only(Some(&unloaded)));
+
+        safety.current_trip_observe_only = false;
+        assert!(!safety.effective_observe_only(Some(&unloaded)));
+    }
+
+    #[test]
+    fn no_dynamics_uses_global_observe_only() {
+        use crate::config::SafetyConfig;
+        let mut safety = SafetyConfig::default();
+        safety.bench_mode = false;
+        safety.current_trip_observe_only = true;
+        assert!(safety.effective_observe_only(None));
+
+        safety.current_trip_observe_only = false;
+        assert!(!safety.effective_observe_only(None));
+    }
+}

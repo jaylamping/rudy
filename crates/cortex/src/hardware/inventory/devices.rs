@@ -129,6 +129,11 @@ pub struct ActuatorCommon {
     /// the effective firmware/operator `limit_cur` unless an absolute clamp is set.
     #[serde(default)]
     pub current_safety: Option<CurrentSafetyTiers>,
+    /// Per-joint dynamics and safety envelope. Controls gravity torque checks,
+    /// velocity/acceleration limits, and whether this joint is considered "loaded".
+    /// `None` means no dynamics constraints (lightweight/unloaded joint).
+    #[serde(default)]
+    pub dynamics: Option<crate::motion::dynamics::JointDynamics>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

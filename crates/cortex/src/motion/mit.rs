@@ -89,6 +89,7 @@ mod tests {
             notes_yaml: None,
             desired_params: std::collections::BTreeMap::new(),
             current_safety: None,
+            dynamics: None,
         };
         let motor = Actuator {
             common,

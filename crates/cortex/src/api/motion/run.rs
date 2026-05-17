@@ -67,6 +67,8 @@ fn preflight_to_http(role: &str, e: PreflightFailure) -> (StatusCode, Json<ApiEr
         | PreflightFailure::StepTooLarge { .. }
         | PreflightFailure::ActiveFault { .. }
         | PreflightFailure::CurrentTripLatched { .. }
+        | PreflightFailure::TorqueBudgetExceeded { .. }
+        | PreflightFailure::VelocityExceedsJointLimit { .. }
         | PreflightFailure::SettingsRecovery => StatusCode::CONFLICT,
         PreflightFailure::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         PreflightFailure::LimbQuarantined {

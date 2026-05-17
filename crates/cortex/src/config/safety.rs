@@ -356,6 +356,23 @@ pub struct SafetyConfig {
     /// Minimum-jerk blend time (ms) between MIT targets; `0` disables.
     #[serde(default)]
     pub mit_min_jerk_blend_ms: f32,
+
+    /// Bench mode: when true, current watchdog stays observe-only even for
+    /// loaded joints. When false (production default), loaded joints get
+    /// enforced current trips regardless of `current_trip_observe_only`.
+    /// Operators must explicitly enable bench mode for commissioning/testing.
+    #[serde(default)]
+    pub bench_mode: bool,
+
+    /// Global default maximum velocity for pattern motion (rad/s).
+    /// Per-joint `dynamics.max_velocity_rad_s` overrides when lower.
+    #[serde(default = "default_max_motion_velocity_rad_s")]
+    pub max_motion_velocity_rad_s: f32,
+
+    /// Global default maximum acceleration (rad/s^2). Per-joint override
+    /// in `dynamics.max_acceleration_rad_s2` wins when lower.
+    #[serde(default = "default_max_motion_acceleration_rad_s2")]
+    pub max_motion_acceleration_rad_s2: f32,
 }
 
 impl SafetyConfig {
@@ -372,6 +389,25 @@ impl SafetyConfig {
             .filter(|v| v.is_finite() && *v > 0.0)
             .unwrap_or(derived);
         raw.min(crate::can::home_ramp::MAX_HOMER_VEL_RAD_S)
+    }
+
+    /// Whether current watchdog should operate in observe-only mode for a
+    /// given motor. In bench mode, always observe-only. Outside bench mode,
+    /// loaded joints enforce trips even if the global `current_trip_observe_only`
+    /// is true.
+    pub fn effective_observe_only(
+        &self,
+        dynamics: Option<&crate::motion::dynamics::JointDynamics>,
+    ) -> bool {
+        if self.bench_mode {
+            return true;
+        }
+        if let Some(d) = dynamics {
+            if d.loaded {
+                return false;
+            }
+        }
+        self.current_trip_observe_only
     }
 }
 
@@ -416,6 +452,9 @@ impl Default for SafetyConfig {
             mit_max_angle_step_rad: default_mit_max_angle_step_rad(),
             mit_lpf_cutoff_hz: default_mit_lpf_cutoff_hz(),
             mit_min_jerk_blend_ms: 0.0,
+            bench_mode: false,
+            max_motion_velocity_rad_s: default_max_motion_velocity_rad_s(),
+            max_motion_acceleration_rad_s2: default_max_motion_acceleration_rad_s2(),
         }
     }
 }
@@ -545,4 +584,12 @@ fn default_mit_max_angle_step_rad() -> f32 {
 
 fn default_mit_lpf_cutoff_hz() -> f32 {
     6.0
+}
+
+fn default_max_motion_velocity_rad_s() -> f32 {
+    2.0
+}
+
+fn default_max_motion_acceleration_rad_s2() -> f32 {
+    8.0
 }

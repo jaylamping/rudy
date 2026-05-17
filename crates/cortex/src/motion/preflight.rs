@@ -101,6 +101,17 @@ pub enum PreflightFailure {
         fault_sta: u32,
         warn_sta: u32,
     },
+    /// Joint's gravity hold torque exceeds the effective torque ceiling.
+    TorqueBudgetExceeded {
+        required_nm: f32,
+        ceiling_nm: f32,
+        ceiling_source: String,
+    },
+    /// Requested velocity exceeds the joint's configured maximum.
+    VelocityExceedsJointLimit {
+        requested_rad_s: f32,
+        max_rad_s: f32,
+    },
     Internal(String),
 }
 
@@ -123,6 +134,8 @@ impl PreflightFailure {
             PreflightFailure::CurrentTripLatched { .. } => "current_trip_latched",
             PreflightFailure::SettingsRecovery => "settings_recovery",
             PreflightFailure::ActiveFault { .. } => "motor_fault",
+            PreflightFailure::TorqueBudgetExceeded { .. } => "torque_budget_exceeded",
+            PreflightFailure::VelocityExceedsJointLimit { .. } => "velocity_exceeds_joint_limit",
             PreflightFailure::Internal(_) => "internal",
         }
     }
@@ -195,6 +208,19 @@ impl PreflightFailure {
                 warn_sta,
             } => format!(
                 "{role} reports fault_sta=0x{fault_sta:08x} warn_sta=0x{warn_sta:08x}; clear faults before motion"
+            ),
+            PreflightFailure::TorqueBudgetExceeded {
+                required_nm,
+                ceiling_nm,
+                ceiling_source,
+            } => format!(
+                "{role} gravity hold requires {required_nm:.1} Nm but effective ceiling is {ceiling_nm:.1} Nm ({ceiling_source}); reduce payload or increase limits"
+            ),
+            PreflightFailure::VelocityExceedsJointLimit {
+                requested_rad_s,
+                max_rad_s,
+            } => format!(
+                "{role} requested velocity {requested_rad_s:.2} rad/s exceeds joint limit {max_rad_s:.2} rad/s"
             ),
             PreflightFailure::Internal(s) => s.clone(),
         }
@@ -402,6 +428,42 @@ impl PreflightChecks<'_> {
             return Err(PreflightFailure::ActiveFault {
                 fault_sta: feedback.fault_sta,
                 warn_sta: feedback.warn_sta,
+            });
+        }
+
+        // Gravity torque budget check: refuse motion if the joint cannot
+        // safely hold against gravity with margin.
+        if let Some(budget) = crate::motion::dynamics::compute_torque_budget(self.state, &motor) {
+            if budget.headroom_nm < 0.0 {
+                warn!(
+                    role = %self.role,
+                    required_nm = budget.required_hold_nm,
+                    ceiling_nm = budget.ceiling_nm,
+                    ceiling_source = budget.ceiling_source,
+                    headroom_nm = budget.headroom_nm,
+                    "motion preflight refused: torque budget exceeded"
+                );
+                return Err(PreflightFailure::TorqueBudgetExceeded {
+                    required_nm: budget.required_hold_nm,
+                    ceiling_nm: budget.ceiling_nm,
+                    ceiling_source: budget.ceiling_source.to_string(),
+                });
+            }
+        }
+
+        // Per-joint velocity limit check
+        if let Some(max_vel) =
+            crate::motion::dynamics::velocity_exceeds_joint_limit(&motor, self.vel_rad_s)
+        {
+            warn!(
+                role = %self.role,
+                requested_rad_s = self.vel_rad_s,
+                max_rad_s = max_vel,
+                "motion preflight refused: velocity exceeds joint limit"
+            );
+            return Err(PreflightFailure::VelocityExceedsJointLimit {
+                requested_rad_s: self.vel_rad_s,
+                max_rad_s: max_vel,
             });
         }
 

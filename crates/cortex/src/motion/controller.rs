@@ -397,6 +397,10 @@ fn stop_reason_from_preflight(e: &PreflightFailure) -> MotionStopReason {
             fault_sta: *fault_sta,
             warn_sta: *warn_sta,
         },
+        PreflightFailure::TorqueBudgetExceeded { .. } => MotionStopReason::TorqueBudgetExceeded,
+        PreflightFailure::VelocityExceedsJointLimit { .. } => {
+            MotionStopReason::VelocityExceedsJointLimit
+        }
         PreflightFailure::Internal(s) => MotionStopReason::Bus(classify_motion_bus_string(s)),
     }
 }

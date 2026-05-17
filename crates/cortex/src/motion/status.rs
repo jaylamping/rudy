@@ -128,6 +128,10 @@ pub enum MotionStopReason {
         threshold_arms: f32,
         duration_ms: u64,
     },
+    /// Joint gravity torque exceeds effective torque ceiling.
+    TorqueBudgetExceeded,
+    /// Requested velocity exceeds per-joint limit.
+    VelocityExceedsJointLimit,
     /// Daemon shutdown.
     Shutdown,
 }
@@ -145,6 +149,8 @@ impl MotionStopReason {
             MotionStopReason::Bus(_) => "bus_error",
             MotionStopReason::MotorFault { .. } => "motor_fault",
             MotionStopReason::CurrentTrip { .. } => "current_trip",
+            MotionStopReason::TorqueBudgetExceeded => "torque_budget_exceeded",
+            MotionStopReason::VelocityExceedsJointLimit => "velocity_exceeds_joint_limit",
             MotionStopReason::Shutdown => "shutdown",
         }
     }
