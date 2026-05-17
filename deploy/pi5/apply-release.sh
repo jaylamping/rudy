@@ -27,6 +27,7 @@ if ! id -u rudy >/dev/null 2>&1; then
   useradd --system --home /var/lib/rudy --create-home --shell /usr/sbin/nologin rudy
 fi
 usermod -a -G netdev rudy || true
+usermod -a -G i2c rudy || true
 
 install -d -m 0755 /opt/rudy/bin /opt/rudy/config /etc/rudy /etc/rudy/docs/runbooks
 install -d -o rudy -g rudy -m 0755 /var/lib/rudy

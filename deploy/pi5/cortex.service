@@ -11,6 +11,7 @@ Type=notify
 NotifyAccess=main
 User=rudy
 Group=rudy
+SupplementaryGroups=i2c
 
 # Working directory is the Rudy install root. Paths in cortex.toml are
 # resolved relative to it.
@@ -18,8 +19,9 @@ WorkingDirectory=/opt/rudy
 
 # cortex does not need root: the socketcan socket is openable by any process
 # with `setcap cap_net_raw,cap_net_admin=eip` and membership in a group that
-# owns `can0`/`can1`. The `rudy` user is created with those caps by the
-# install script in deploy/pi5/install.sh.
+# owns `can0`/`can1`. The i2c group grants access to /dev/i2c-* for sensors.
+# The `rudy` user is created with those caps by the install script in
+# deploy/pi5/install.sh.
 ExecStart=/opt/rudy/bin/cortex /etc/rudy/cortex.toml
 
 Restart=always

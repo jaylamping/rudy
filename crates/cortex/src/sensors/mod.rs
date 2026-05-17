@@ -61,13 +61,14 @@ fn worker_loop(state: SharedState, cfg: ImuSensorConfig) {
         match run_bno085(&state, &cfg) {
             Ok(()) => return,
             Err(e) => {
+                let message = format!("{e:#}");
                 tracing::warn!(
                     sensor_id = %cfg.id,
                     required = cfg.required,
-                    error = %e,
+                    error = %message,
                     "bno085 sensor worker failed; retrying"
                 );
-                publish(&state, error_sample(&cfg, e.to_string()));
+                publish(&state, error_sample(&cfg, message));
                 std::thread::sleep(retry_delay);
             }
         }

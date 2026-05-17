@@ -49,6 +49,7 @@ if ! id -u rudy >/dev/null 2>&1; then
   sudo useradd --system --home /var/lib/rudy --create-home --shell /usr/sbin/nologin rudy
 fi
 sudo usermod -a -G netdev rudy || true
+sudo usermod -a -G i2c rudy || true
 
 sudo install -d -m 0755 /opt/rudy/bin /opt/rudy/config /etc/rudy /etc/rudy/docs/runbooks
 sudo install -d -o rudy -g rudy -m 0755 /var/lib/rudy
