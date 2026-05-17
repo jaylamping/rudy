@@ -1,0 +1,109 @@
+name: Cursor CI Autofix
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: cursor-ci-autofix-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+
+jobs:
+  launch-agent:
+    name: Launch Cursor agent
+    if: >-
+      ${{
+        github.event.workflow_run.conclusion == 'failure' &&
+        !startsWith(github.event.workflow_run.head_branch, 'cursor/autofix-ci-')
+      }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Check Cursor API key
+        id: cursor-key
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+        run: |
+          if [[ -n "$CURSOR_API_KEY" ]]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::CURSOR_API_KEY secret is not set; skipping Cursor CI autofix."
+          fi
+
+      - name: Build Cursor agent payload
+        if: steps.cursor-key.outputs.available == 'true'
+        env:
+          REPOSITORY: ${{ github.repository }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          EVENT_NAME: ${{ github.event.workflow_run.event }}
+          PR_URL: ${{ github.event.workflow_run.pull_requests[0].html_url }}
+        run: |
+          set -euo pipefail
+
+          prompt=$(cat <<EOF
+          CI failed for ${REPOSITORY}.
+
+          Failed run: ${RUN_URL}
+          Run id: ${RUN_ID}
+          Attempt: ${RUN_ATTEMPT}
+          Event: ${EVENT_NAME}
+          Head branch: ${HEAD_BRANCH}
+          Head SHA: ${HEAD_SHA}
+          Pull request: ${PR_URL:-none}
+
+          Task:
+          - Inspect the failed GitHub Actions run and logs.
+          - Reproduce the failure locally when possible.
+          - Fix simple deterministic issues that fell through local checks.
+          - Run the relevant repo checks from AGENTS.md / CI before finishing.
+          - If tests pass, commit and push the fix and open or update a PR.
+          - Full send only after validation: do not publish changes if checks fail.
+          - If the failure is flaky, unrelated to this branch, caused by missing secrets, or unsafe to fix automatically, stop and report the blocker.
+
+          Guardrails:
+          - Keep edits minimal and scoped to the failing checks.
+          - Do not force-push.
+          - Do not touch secrets.
+          - Avoid infinite loops; if this is already an autofix branch, stop.
+          EOF
+          )
+
+          branch="cursor/autofix-ci-${RUN_ID}"
+
+          jq -n \
+            --arg prompt "$prompt" \
+            --arg repo "https://github.com/${REPOSITORY}" \
+            --arg ref "$HEAD_SHA" \
+            --arg branch "$branch" \
+            '{
+              prompt: { text: $prompt },
+              repos: [{ url: $repo, startingRef: $ref }],
+              branchName: $branch,
+              autoCreatePR: true,
+              skipReviewerRequest: true
+            }' > cursor-agent-payload.json
+
+          jq . cursor-agent-payload.json
+
+      - name: Launch Cursor Cloud Agent
+        if: steps.cursor-key.outputs.available == 'true'
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+        run: |
+          set -euo pipefail
+          curl -fsS \
+            -u "$CURSOR_API_KEY:" \
+            -H "Content-Type: application/json" \
+            --data @cursor-agent-payload.json \
+            https://api.cursor.com/v1/agents
