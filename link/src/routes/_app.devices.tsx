@@ -22,7 +22,7 @@
 
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, RefreshCw } from "lucide-react";
+import { AlertTriangle, Loader2, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { queryKeys, useConfigQuery } from "@/api";
 import { api } from "@/lib/api";
@@ -415,24 +415,6 @@ function TrunkActuatorCard({
   );
 }
 
-function telemetryBadgeVariant(
-  tone: MotorTelemetryTone,
-): "success" | "destructive" | "warning" | "secondary" {
-  switch (tone) {
-    case "ok":
-      return "success";
-    case "crit":
-      return "destructive";
-    case "advisory":
-      return "secondary";
-    case "warn":
-    case "stale":
-      return "warning";
-    case "missing":
-      return "secondary";
-  }
-}
-
 function buildTelemetryHoverText(
   motor: MotorSummary,
   tone: MotorTelemetryTone,
@@ -500,7 +482,6 @@ function ActuatorCardGrid({
         const telemTone: MotorTelemetryTone = motor
           ? motorTelemetryTone(motor)
           : "missing";
-        const telemLabel = motorTelemetryShortLabel(telemTone);
         const telemTip =
           motor == null
             ? "No row in GET /api/motors yet (inventory vs motors list out of sync)."
@@ -514,8 +495,9 @@ function ActuatorCardGrid({
         return (
           <div
             key={a.role}
-            className="group rounded-lg border border-border/80 bg-gradient-to-br from-card via-card to-muted/20 px-3 py-2.5 shadow-sm transition-colors hover:border-primary/40"
+            className="group relative rounded-lg border border-border/80 bg-gradient-to-br from-card via-card to-muted/20 px-3 py-2.5 pr-8 shadow-sm transition-colors hover:border-primary/40"
           >
+            <TelemetryCornerIndicator tone={telemTone} tip={telemTip} />
             <div className="min-w-0 space-y-2">
               <Link
                 to="/actuators/$role"
@@ -534,25 +516,6 @@ function ActuatorCardGrid({
                 <Badge variant="outline" className="font-normal">
                   {boot}
                 </Badge>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span className="inline-flex cursor-help rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                      <Badge
-                        variant={telemetryBadgeVariant(telemTone)}
-                        className="font-normal"
-                      >
-                        {telemLabel}
-                      </Badge>
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent
-                    side="top"
-                    align="start"
-                    className="max-w-sm whitespace-pre-line text-left text-xs"
-                  >
-                    {telemTip}
-                  </TooltipContent>
-                </Tooltip>
                 {showLimb ? (
                   <Badge variant="secondary" className="font-normal">
                     {a.limb ?? "No limb"}
@@ -568,6 +531,47 @@ function ActuatorCardGrid({
         );
       })}
     </div>
+  );
+}
+
+function TelemetryCornerIndicator({
+  tone,
+  tip,
+}: {
+  tone: MotorTelemetryTone;
+  tip: string;
+}) {
+  if (tone !== "crit" && tone !== "warn" && tone !== "advisory") {
+    return null;
+  }
+
+  const label = motorTelemetryShortLabel(tone);
+  const className =
+    tone === "crit"
+      ? "text-destructive"
+      : tone === "warn"
+        ? "text-amber-400"
+        : "text-sky-400";
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          className="absolute right-2 top-2 inline-flex cursor-help rounded-full p-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          tabIndex={0}
+          aria-label={label}
+        >
+          <AlertTriangle className={className} size={14} strokeWidth={2.25} />
+        </span>
+      </TooltipTrigger>
+      <TooltipContent
+        side="top"
+        align="end"
+        className="max-w-sm whitespace-pre-line text-left text-xs"
+      >
+        {tip}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
