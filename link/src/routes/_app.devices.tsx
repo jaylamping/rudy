@@ -56,6 +56,7 @@ import {
 import { useLiveInterval } from "@/lib/hooks/useLiveInterval";
 import type { Device } from "@/lib/types/Device";
 import type { MotorSummary } from "@/lib/types/MotorSummary";
+import type { SensorSample } from "@/lib/types/SensorSample";
 import type { UnassignedDevice } from "@/lib/types/UnassignedDevice";
 
 export const Route = createFileRoute("/_app/devices")({
@@ -96,6 +97,9 @@ type ActuatorDevice = Device & { kind: "actuator" };
 type SensorDevice = Device & { kind: "sensor" };
 type BatteryDevice = Device & { kind: "battery" };
 type PeripheralDevice = Device & { kind: "peripheral" };
+type SensorRow =
+  | { source: "inventory"; sensor: SensorDevice; sample?: SensorSample }
+  | { source: "runtime"; sample: SensorSample };
 
 // Top-level grouping used by the Peripherals section. Each peripheral
 // `family.kind` falls into exactly one of these buckets so the UI can
@@ -152,6 +156,12 @@ function DevicesPage() {
   const motorsQ = useQuery({
     queryKey: queryKeys.motors.all(),
     queryFn: () => api.listMotors(),
+    refetchInterval: poll,
+  });
+
+  const sensorsQ = useQuery({
+    queryKey: queryKeys.sensors.all(),
+    queryFn: () => api.listSensors(),
     refetchInterval: poll,
   });
 
@@ -214,6 +224,13 @@ function DevicesPage() {
     batteries,
     peripheralsByGroup,
   };
+  const liveSensorById = new Map(
+    (sensorsQ.data ?? []).map((sample) => [sample.sensor_id, sample]),
+  );
+  const inventorySensorRoles = new Set(sensors.map((sensor) => sensor.role));
+  const liveOnlySensors = (sensorsQ.data ?? []).filter(
+    (sample) => !inventorySensorRoles.has(sample.sensor_id),
+  );
 
   const unassigned = unassignedQ.data ?? [];
 
@@ -257,7 +274,11 @@ function DevicesPage() {
             other={split.otherActuators}
             motorByRole={motorByRole}
           />
-          <SensorsSection sensors={split.sensors} />
+          <SensorsSection
+            sensors={split.sensors}
+            liveSensorById={liveSensorById}
+            liveOnlySensors={liveOnlySensors}
+          />
           <PeripheralsSection peripheralsByGroup={split.peripheralsByGroup} />
           <PowerSection batteries={split.batteries} />
         </>
@@ -579,17 +600,39 @@ function TelemetryCornerIndicator({
 // Sensors
 // ---------------------------------------------------------------------------
 
-function SensorsSection({ sensors }: { sensors: SensorDevice[] }) {
+function SensorsSection({
+  sensors,
+  liveSensorById,
+  liveOnlySensors,
+}: {
+  sensors: SensorDevice[];
+  liveSensorById: Map<string, SensorSample>;
+  liveOnlySensors: SensorSample[];
+}) {
+  const rows: SensorRow[] = [
+    ...sensors.map((sensor) => ({
+      source: "inventory" as const,
+      sensor,
+      sample: liveSensorById.get(sensor.role),
+    })),
+    ...liveOnlySensors.map((sample) => ({
+      source: "runtime" as const,
+      sample,
+    })),
+  ];
+  const runtimeSuffix =
+    liveOnlySensors.length > 0 ? `, ${liveOnlySensors.length} live/configured` : "";
+
   return (
     <DevicesSection
       title="Sensors"
-      description={`${sensors.length} ${sensors.length === 1 ? "sensor" : "sensors"} in inventory.`}
+      description={`${rows.length} ${rows.length === 1 ? "sensor" : "sensors"} visible (${sensors.length} in inventory${runtimeSuffix}).`}
     >
       <Card>
         <CardContent className="pt-4">
-          {sensors.length === 0 ? (
+          {rows.length === 0 ? (
             <p className="rounded-md border border-dashed border-border bg-muted/20 px-3 py-6 text-center text-sm text-muted-foreground">
-              No sensors in inventory yet.
+              No sensors in inventory or runtime configuration yet.
             </p>
           ) : (
             <div className="overflow-x-auto rounded-md border border-border">
@@ -597,35 +640,36 @@ function SensorsSection({ sensors }: { sensors: SensorDevice[] }) {
                 <thead className="border-b border-border bg-muted/30">
                   <tr>
                     <th className="px-3 py-2 font-medium">Role</th>
-                    <th className="px-3 py-2 font-medium">Limb</th>
+                    <th className="px-3 py-2 font-medium">Mount / frame</th>
                     <th className="px-3 py-2 font-medium">Family</th>
-                    <th className="px-3 py-2 font-medium">Bus</th>
-                    <th className="px-3 py-2 font-medium">ID</th>
-                    <th className="px-3 py-2 font-medium">Note</th>
+                    <th className="px-3 py-2 font-medium">Source</th>
+                    <th className="px-3 py-2 font-medium">Address</th>
+                    <th className="px-3 py-2 font-medium">Status / note</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {sensors.map((s) => (
+                  {rows.map((row) => (
                     <tr
-                      key={`sensor-${s.role}`}
+                      key={sensorRowKey(row)}
                       className="border-b border-border/50 last:border-b-0"
                     >
-                      <td className="px-3 py-2 font-mono text-xs">{s.role}</td>
-                      <td className="px-3 py-2 text-muted-foreground">
-                        {s.limb ?? "—"}
+                      <td className="px-3 py-2 font-mono text-xs">
+                        {sensorRowRole(row)}
                       </td>
                       <td className="px-3 py-2 text-muted-foreground">
-                        {`${s.family.kind} (${s.family.model})`}
+                        {sensorRowMount(row)}
+                      </td>
+                      <td className="px-3 py-2 text-muted-foreground">
+                        {sensorRowFamily(row)}
                       </td>
                       <td className="px-3 py-2 font-mono text-xs">
-                        {s.can_bus}
+                        {sensorRowSource(row)}
                       </td>
                       <td className="px-3 py-2 font-mono text-xs">
-                        0x{s.can_id.toString(16).padStart(2, "0")}
+                        {sensorRowAddress(row)}
                       </td>
                       <td className="px-3 py-2 text-muted-foreground">
-                        Sensor pipeline not wired yet — configuration UI coming
-                        soon.
+                        <SensorRowStatus row={row} />
                       </td>
                     </tr>
                   ))}
@@ -637,6 +681,70 @@ function SensorsSection({ sensors }: { sensors: SensorDevice[] }) {
       </Card>
     </DevicesSection>
   );
+}
+
+function sensorRowKey(row: SensorRow): string {
+  return row.source === "inventory"
+    ? `sensor-${row.sensor.role}`
+    : `runtime-sensor-${row.sample.sensor_id}`;
+}
+
+function sensorRowRole(row: SensorRow): string {
+  return row.source === "inventory" ? row.sensor.role : row.sample.sensor_id;
+}
+
+function sensorRowMount(row: SensorRow): string {
+  if (row.source === "inventory") {
+    return row.sensor.limb ?? "—";
+  }
+  return row.sample.frame_id;
+}
+
+function sensorRowFamily(row: SensorRow): string {
+  if (row.source === "inventory") {
+    return `${row.sensor.family.kind} (${row.sensor.family.model})`;
+  }
+  return row.sample.kind === "imu" ? "motion (bno085)" : row.sample.kind;
+}
+
+function sensorRowSource(row: SensorRow): string {
+  return row.source === "inventory" ? row.sensor.can_bus : "runtime";
+}
+
+function sensorRowAddress(row: SensorRow): string {
+  return row.source === "inventory"
+    ? `0x${row.sensor.can_id.toString(16).padStart(2, "0")}`
+    : "cortex.toml";
+}
+
+function SensorRowStatus({ row }: { row: SensorRow }) {
+  const sample = row.source === "inventory" ? row.sample : row.sample;
+  if (!sample) {
+    return <>Inventory only; no live sample yet.</>;
+  }
+
+  return (
+    <span className="inline-flex flex-wrap items-center gap-2">
+      <SensorHealthBadge sample={sample} />
+      {sample.message ? <span>{sample.message}</span> : null}
+      {row.source === "runtime" ? (
+        <span>Add to inventory.yaml to persist as a device.</span>
+      ) : null}
+    </span>
+  );
+}
+
+function SensorHealthBadge({ sample }: { sample: SensorSample }) {
+  switch (sample.health) {
+    case "ok":
+      return <Badge variant="success">ok</Badge>;
+    case "stale":
+      return <Badge variant="warning">stale</Badge>;
+    case "error":
+      return <Badge variant="destructive">error</Badge>;
+    case "unavailable":
+      return <Badge variant="secondary">unavailable</Badge>;
+  }
 }
 
 // ---------------------------------------------------------------------------
