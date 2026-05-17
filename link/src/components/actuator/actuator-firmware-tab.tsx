@@ -21,6 +21,25 @@ import {
 import { OfflineActionTooltip } from "./offline-action-tooltip";
 import { useDeviceLive, useDeviceOfflineTip } from "@/store";
 
+const FIRMWARE_PARAM_DESCRIPTIONS: Record<string, string> = {
+  add_offset:
+    "Firmware zero offset in radians. Commissioning writes this value to make the current mechanical pose read as the actuator's zero; boot checks compare it with inventory before auto-home.",
+  can_timeout:
+    "CAN command watchdog timeout. Firmware counts are 20,000 per second; 0 disables the watchdog. If no valid command arrives before this expires, firmware stops accepting the stale command stream.",
+  damper:
+    "Unpowered damping mode. 0 keeps damping enabled when motor power is removed (default); 1 disables that passive damping behavior.",
+  limit_cur:
+    "Peak phase-current ceiling enforced inside the actuator firmware. This caps how much current the drive may command regardless of higher-level control requests.",
+  limit_spd:
+    "Firmware speed ceiling. Cortex also clamps jog/home commands against this value; joint travel limits and homing profiles should stay inside this hardware envelope.",
+  limit_torque:
+    "Firmware torque ceiling in newton-meters. Cortex writes the configured safe torque limit at boot for actuators with travel limits, then persists it in inventory as the desired value.",
+  run_mode:
+    "RobStride control mode selector: 0 = MIT operation/spring-damper hold, 1 = profile position, 2 = velocity, 3 = current, 5 = cyclic synchronous position. Changing this affects how subsequent command frames are interpreted.",
+  zero_sta:
+    "Position reporting range selector. 0 reports angles as 0..2π; 1 reports angles as -π..π. Keep this consistent with cortex's expected angle decoding.",
+};
+
 function observableValueCell(p: ParamValue): string {
   const n =
     typeof p.value === "number" && Number.isFinite(p.value) ? p.value : null;
@@ -105,7 +124,12 @@ export function ActuatorFirmwareTab({ role }: { role: string }) {
             </thead>
             <tbody>
               {editable.map((p) => (
-                <ParamRow key={p.name} role={role} param={p} />
+                <ParamRow
+                  key={p.name}
+                  role={role}
+                  param={p}
+                  description={FIRMWARE_PARAM_DESCRIPTIONS[p.name]}
+                />
               ))}
               {editable.length === 0 && (
                 <tr>

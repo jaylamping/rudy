@@ -9,6 +9,11 @@ import { queryKeys } from "@/api";
 import { api, ApiError } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import type { JsonValue } from "@/lib/types/serde_json/JsonValue";
 import type { ParamValue } from "@/lib/types/ParamValue";
 import {
@@ -24,6 +29,7 @@ import { ConfirmDialog } from "./confirm-dialog";
 export interface ParamRowProps {
   role: string;
   param: ParamValue;
+  description?: string;
 }
 
 function paramDisplayMode(param: ParamValue): {
@@ -46,7 +52,7 @@ function wireNumericValue(value: JsonValue): number | null {
   return null;
 }
 
-export function ParamRow({ role, param }: ParamRowProps) {
+export function ParamRow({ role, param, description }: ParamRowProps) {
   const isLive = useDeviceLive(role);
   const offlineTip = useDeviceOfflineTip(role);
   const qc = useQueryClient();
@@ -109,7 +115,22 @@ export function ParamRow({ role, param }: ParamRowProps) {
 
   return (
     <tr className="border-t border-border/60 align-middle">
-      <td className="px-3 py-2 font-mono">{param.name}</td>
+      <td className="px-3 py-2 font-mono">
+        {description ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="cursor-help underline decoration-dotted underline-offset-4">
+                {param.name}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-sm whitespace-normal leading-relaxed">
+              {description}
+            </TooltipContent>
+          </Tooltip>
+        ) : (
+          param.name
+        )}
+      </td>
       <td className="px-3 py-2 font-mono text-muted-foreground">
         0x{param.index.toString(16).toUpperCase().padStart(4, "0")}
       </td>
