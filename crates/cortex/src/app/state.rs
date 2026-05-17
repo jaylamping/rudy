@@ -21,8 +21,8 @@ use crate::reminders::ReminderStore;
 use crate::spec::ActuatorSpec;
 use crate::system::SystemPoller;
 use crate::types::{
-    DeploymentInfo, LogEntry, MotorFeedback, ParamSnapshot, SafetyEvent, SystemSnapshot,
-    TestProgress,
+    DeploymentInfo, LogEntry, MotorFeedback, ParamSnapshot, SafetyEvent, SensorSample,
+    SystemSnapshot, TestProgress,
 };
 
 /// Erased setter for the reload-able `EnvFilter`. Stored in `AppState`
@@ -107,6 +107,9 @@ pub struct AppState {
     /// whenever the telemetry loop decodes a type-17 read or a write succeeds.
     pub params: RwLock<BTreeMap<String, ParamSnapshot>>,
 
+    /// In-memory latest physical sensor samples (sensor_id -> sample).
+    pub latest_sensors: RwLock<BTreeMap<String, SensorSample>>,
+
     /// Per-motor count of drifted writable params (live RAM vs `desired_params`).
     pub drift_counts: RwLock<HashMap<String, u32>>,
 
@@ -119,6 +122,10 @@ pub struct AppState {
     /// producer cadence is ~1-2 s — even a stalled subscriber lagging by a
     /// few seconds is acceptable.
     pub system_tx: broadcast::Sender<SystemSnapshot>,
+
+    /// Physical sensor broadcast (IMU today). Latest-wins datagrams; REST
+    /// `/api/sensors` remains the bootstrap and disconnected fallback.
+    pub sensor_tx: broadcast::Sender<SensorSample>,
 
     /// Per-bench-routine progress. One sender; the WT listener subscribes
     /// per-session and forwards each line as a reliable
@@ -274,6 +281,7 @@ impl AppState {
         };
         let (feedback_tx, _) = broadcast::channel::<MotorFeedback>(512);
         let (system_tx, _) = broadcast::channel::<SystemSnapshot>(8);
+        let (sensor_tx, _) = broadcast::channel::<SensorSample>(64);
         let (test_progress_tx, _) = broadcast::channel::<TestProgress>(256);
         let (safety_event_tx, _) = broadcast::channel::<SafetyEvent>(64);
         let (motion_status_tx, _) = broadcast::channel::<MotionStatus>(256);
@@ -290,9 +298,11 @@ impl AppState {
             latest: RwLock::new(BTreeMap::new()),
             last_type2_at: RwLock::new(HashMap::new()),
             params: RwLock::new(BTreeMap::new()),
+            latest_sensors: RwLock::new(BTreeMap::new()),
             drift_counts: RwLock::new(HashMap::new()),
             feedback_tx,
             system_tx,
+            sensor_tx,
             test_progress_tx,
             safety_event_tx,
             motion_status_tx,

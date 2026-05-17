@@ -26,6 +26,7 @@ fn cfg_with(audit_log: &str, db_path: Option<&str>) -> Config {
         telemetry: TelemetryConfig {
             poll_interval_ms: super::telemetry::default_poll_ms(),
         },
+        sensors: SensorsConfig::default(),
         safety: SafetyConfig {
             require_verified: true,
             boot_max_step_rad: super::safety::default_boot_max_step_rad(),

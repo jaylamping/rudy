@@ -11,6 +11,7 @@ mod logs;
 mod paths;
 mod runtime_db;
 mod safety;
+mod sensors;
 mod telemetry;
 mod webtransport;
 
@@ -20,6 +21,7 @@ pub use logs::LogsConfig;
 pub use paths::PathsConfig;
 pub use runtime_db::RuntimeDbConfig;
 pub use safety::{MotionBackend, SafetyConfig};
+pub use sensors::{ImuSensorConfig, SensorsConfig};
 
 /// Used by `can::home_ramp::dwell_tests` and `position_hold_tests`; keep defaults
 /// single-sourced in `safety.rs`.
@@ -38,6 +40,8 @@ pub struct Config {
     pub paths: PathsConfig,
     pub can: CanConfig,
     pub telemetry: TelemetryConfig,
+    #[serde(default)]
+    pub sensors: SensorsConfig,
     pub safety: SafetyConfig,
     #[serde(default)]
     pub logs: LogsConfig,

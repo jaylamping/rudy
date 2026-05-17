@@ -20,9 +20,9 @@
 //! number, because ts-rs declares it as `bigint`.
 
 use cortex::types::{
-    MotorFeedback, SafetyEvent, SystemSnapshot, SystemTemps, SystemThrottled, TestLevel,
-    TestProgress, WtEnvelope, WtFrame, WtKind, WtPayload, WtSubscribe, WtTransport,
-    WT_PROTOCOL_VERSION, WT_STREAMS,
+    ImuSample, MotorFeedback, SafetyEvent, SensorHealth, SensorSample, SystemSnapshot, SystemTemps,
+    SystemThrottled, TestLevel, TestProgress, WtEnvelope, WtFrame, WtKind, WtPayload, WtSubscribe,
+    WtTransport, WT_PROTOCOL_VERSION, WT_STREAMS,
 };
 
 fn sample_motor() -> MotorFeedback {
@@ -61,6 +61,25 @@ fn sample_system() -> SystemSnapshot {
         hostname: "rudy-pi".into(),
         kernel: "6.6.20-rpi".into(),
         is_mock: false,
+    }
+}
+
+fn sample_sensor() -> SensorSample {
+    SensorSample {
+        t_ms: 1_700_000_123_456,
+        sensor_id: "base_imu".into(),
+        frame_id: "imu_link".into(),
+        kind: "imu".into(),
+        health: SensorHealth::Ok,
+        stale_after_ms: 500,
+        message: None,
+        imu: Some(ImuSample {
+            quaternion_xyzw: [0.0, 0.0, 0.0, 1.0],
+            accel_m_s2: [0.0, 0.0, 9.81],
+            gyro_rad_s: [0.0, 0.0, 0.0],
+            rotation_accuracy: 3,
+            rotation_accuracy_label: "high".into(),
+        }),
     }
 }
 
@@ -106,6 +125,26 @@ fn envelope_roundtrips_system_snapshot() {
 }
 
 #[test]
+fn envelope_roundtrips_sensor_sample() {
+    let payload = sample_sensor();
+    let env = WtEnvelope::new(9, payload.clone());
+    assert_eq!(env.kind, SensorSample::KIND);
+
+    let mut buf = Vec::with_capacity(256);
+    ciborium::into_writer(&env, &mut buf).expect("encode CBOR");
+
+    let frame: WtFrame = ciborium::from_reader(buf.as_slice()).expect("decode CBOR");
+    let WtFrame::SensorSample(decoded) = frame else {
+        panic!("expected SensorSample variant");
+    };
+    assert_eq!(decoded.sensor_id, payload.sensor_id);
+    assert_eq!(
+        decoded.imu.expect("imu").quaternion_xyzw,
+        payload.imu.expect("imu").quaternion_xyzw
+    );
+}
+
+#[test]
 fn envelope_json_shape_is_stable() {
     // The exact field names + nesting are part of the contract. A future
     // refactor that, say, flattens `data` would silently break the SPA
@@ -134,16 +173,19 @@ fn discriminator_strings_match_macro() {
     // `KIND` constants and the `WtKind::as_str()` mapping agree.
     assert_eq!(MotorFeedback::KIND, "motor_feedback");
     assert_eq!(SystemSnapshot::KIND, "system_snapshot");
+    assert_eq!(SensorSample::KIND, "sensor_sample");
     assert_eq!(TestProgress::KIND, "test_progress");
     assert_eq!(SafetyEvent::KIND, "safety_event");
     assert_eq!(WtKind::MotorFeedback.as_str(), "motor_feedback");
     assert_eq!(WtKind::SystemSnapshot.as_str(), "system_snapshot");
+    assert_eq!(WtKind::SensorSample.as_str(), "sensor_sample");
     assert_eq!(WtKind::TestProgress.as_str(), "test_progress");
     assert_eq!(WtKind::SafetyEvent.as_str(), "safety_event");
 
     let kinds: Vec<&str> = WT_STREAMS.iter().map(|s| s.kind).collect();
     assert!(kinds.contains(&"motor_feedback"));
     assert!(kinds.contains(&"system_snapshot"));
+    assert!(kinds.contains(&"sensor_sample"));
     assert!(kinds.contains(&"test_progress"));
     assert!(kinds.contains(&"safety_event"));
 }
@@ -152,9 +194,11 @@ fn discriminator_strings_match_macro() {
 fn transport_assignments_match_macro() {
     assert_eq!(MotorFeedback::TRANSPORT, WtTransport::Datagram);
     assert_eq!(SystemSnapshot::TRANSPORT, WtTransport::Datagram);
+    assert_eq!(SensorSample::TRANSPORT, WtTransport::Datagram);
     assert_eq!(TestProgress::TRANSPORT, WtTransport::Stream);
     assert_eq!(SafetyEvent::TRANSPORT, WtTransport::Stream);
     assert_eq!(WtKind::MotorFeedback.transport(), WtTransport::Datagram);
+    assert_eq!(WtKind::SensorSample.transport(), WtTransport::Datagram);
     assert_eq!(WtKind::TestProgress.transport(), WtTransport::Stream);
 }
 
@@ -232,6 +276,14 @@ fn cbor_payload_size_is_reasonable() {
     assert!(
         buf.len() < 512,
         "SystemSnapshot envelope ballooned to {} bytes",
+        buf.len()
+    );
+
+    let mut buf = Vec::with_capacity(256);
+    ciborium::into_writer(&WtEnvelope::new(0, sample_sensor()), &mut buf).expect("encode CBOR");
+    assert!(
+        buf.len() < 512,
+        "SensorSample envelope ballooned to {} bytes",
         buf.len()
     );
 }

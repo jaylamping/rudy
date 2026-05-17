@@ -3,6 +3,7 @@ import type { LogEntry } from "./LogEntry";
 import type { MotionStatus } from "./MotionStatus";
 import type { MotorFeedback } from "./MotorFeedback";
 import type { SafetyEvent } from "./SafetyEvent";
+import type { SensorSample } from "./SensorSample";
 import type { SystemSnapshot } from "./SystemSnapshot";
 import type { TestProgress } from "./TestProgress";
 
@@ -17,4 +18,4 @@ import type { TestProgress } from "./TestProgress";
  * to generate the discriminated union for `link/src/lib/types/WtFrame.ts`.
  * If we ever have >5 streams we can revisit with a doc-generation step.
  */
-export type WtFrame = { "kind": "motor_feedback", "data": MotorFeedback } | { "kind": "system_snapshot", "data": SystemSnapshot } | { "kind": "test_progress", "data": TestProgress } | { "kind": "safety_event", "data": SafetyEvent } | { "kind": "motion_status", "data": MotionStatus } | { "kind": "log_event", "data": LogEntry };
+export type WtFrame = { "kind": "motor_feedback", "data": MotorFeedback } | { "kind": "system_snapshot", "data": SystemSnapshot } | { "kind": "sensor_sample", "data": SensorSample } | { "kind": "test_progress", "data": TestProgress } | { "kind": "safety_event", "data": SafetyEvent } | { "kind": "motion_status", "data": MotionStatus } | { "kind": "log_event", "data": LogEntry };

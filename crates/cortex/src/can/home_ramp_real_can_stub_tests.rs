@@ -19,7 +19,7 @@ use crate::audit::AuditLog;
 use crate::can;
 use crate::config::{
     CanConfig, Config, HttpConfig, LogsConfig, MotionBackend, PathsConfig, RuntimeDbConfig,
-    SafetyConfig, TelemetryConfig, WebTransportConfig,
+    SafetyConfig, SensorsConfig, TelemetryConfig, WebTransportConfig,
 };
 use crate::inventory::Inventory;
 use crate::reminders::ReminderStore;
@@ -66,6 +66,7 @@ fn state_with_real_can_stub_inner(
         telemetry: TelemetryConfig {
             poll_interval_ms: 10,
         },
+        sensors: SensorsConfig::default(),
         safety: SafetyConfig {
             require_verified: false,
             boot_max_step_rad: 0.087,
@@ -166,6 +167,7 @@ fn state_with_velocity_gate(
         telemetry: TelemetryConfig {
             poll_interval_ms: 10,
         },
+        sensors: SensorsConfig::default(),
         safety: SafetyConfig {
             require_verified: false,
             boot_max_step_rad: 0.087,

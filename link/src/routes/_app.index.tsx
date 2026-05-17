@@ -11,6 +11,7 @@ import {
   CacheStatusCard,
   ConnectionCard,
   DashboardGrid,
+  ImuSensorCard,
   RemindersCard,
   RobotPreviewCard,
   SystemHealthCard,
@@ -33,6 +34,7 @@ function OverviewPage() {
       <DashboardGrid>
         <SystemHealthCard className="lg:col-span-7" />
         <ConnectionCard className="lg:col-span-5" />
+        <ImuSensorCard className="lg:col-span-5" />
         <ActuatorStatusCard className="lg:col-span-7" />
         <RemindersCard className="lg:col-span-5" />
         <RobotPreviewCard className="lg:col-span-8" />

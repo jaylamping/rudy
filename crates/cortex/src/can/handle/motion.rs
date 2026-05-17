@@ -297,7 +297,7 @@ mod tests {
     use crate::audit::AuditLog;
     use crate::config::{
         CanConfig, Config, HttpConfig, LogsConfig, MotionBackend, PathsConfig, SafetyConfig,
-        TelemetryConfig, WebTransportConfig,
+        SensorsConfig, TelemetryConfig, WebTransportConfig,
     };
     use crate::inventory::Inventory;
     use crate::reminders::ReminderStore;
@@ -353,6 +353,7 @@ mod tests {
             telemetry: TelemetryConfig {
                 poll_interval_ms: 10,
             },
+            sensors: SensorsConfig::default(),
             safety: SafetyConfig {
                 require_verified: false,
                 boot_max_step_rad: 0.087,

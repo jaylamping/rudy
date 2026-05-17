@@ -11,6 +11,7 @@ mod meta;
 mod motor;
 mod reminders;
 mod safety;
+mod sensor;
 mod settings;
 mod system;
 mod tests;
@@ -27,6 +28,7 @@ pub use motor::{
 };
 pub use reminders::{Reminder, ReminderInput};
 pub use safety::SafetyEvent;
+pub use sensor::{ImuSample, SensorHealth, SensorSample};
 pub use settings::{
     PutSettingRequest, PutSettingResponse, SettingEntry, SettingsApplyMode, SettingsGetResponse,
     SettingsProfileApplyResponse, SettingsProfileCreateRequest, SettingsProfileCreateResponse,

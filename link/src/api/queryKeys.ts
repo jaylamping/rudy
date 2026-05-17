@@ -24,6 +24,11 @@ export const queryKeys = {
   config: () => ["config"] as const,
   system: () => ["system"] as const,
 
+  sensors: {
+    all: () => ["sensors"] as const,
+    byId: (sensorId: string) => ["sensors", sensorId] as const,
+  },
+
   motors: {
     all: () => ["motors"] as const,
   },

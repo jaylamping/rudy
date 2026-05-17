@@ -13,7 +13,7 @@ use super::finish_home_success;
 use crate::audit::AuditLog;
 use crate::config::{
     CanConfig, Config, HttpConfig, LogsConfig, MotionBackend, PathsConfig, RuntimeDbConfig,
-    SafetyConfig, TelemetryConfig, WebTransportConfig,
+    SafetyConfig, SensorsConfig, TelemetryConfig, WebTransportConfig,
 };
 use crate::inventory::Inventory;
 use crate::reminders::ReminderStore;
@@ -63,6 +63,7 @@ fn fixture_state() -> (
         telemetry: TelemetryConfig {
             poll_interval_ms: 10,
         },
+        sensors: SensorsConfig::default(),
         safety: SafetyConfig {
             require_verified: false,
             boot_max_step_rad: 0.087,

@@ -9,7 +9,7 @@ use crate::can;
 use crate::can::angle::UnwrappedAngle;
 use crate::config::{
     CanConfig, Config, HttpConfig, LogsConfig, MotionBackend, PathsConfig, RuntimeDbConfig,
-    SafetyConfig, TelemetryConfig, WebTransportConfig,
+    SafetyConfig, SensorsConfig, TelemetryConfig, WebTransportConfig,
 };
 use crate::inventory::Inventory;
 use crate::reminders::ReminderStore;
@@ -56,6 +56,7 @@ fn state_with_band(min: f32, max: f32) -> (crate::state::SharedState, tempfile::
         telemetry: TelemetryConfig {
             poll_interval_ms: 10,
         },
+        sensors: SensorsConfig::default(),
         safety: SafetyConfig {
             require_verified: false,
             boot_max_step_rad: 0.087,
@@ -200,6 +201,7 @@ fn path_check_no_band_returns_nolimit() {
         telemetry: TelemetryConfig {
             poll_interval_ms: 10,
         },
+        sensors: SensorsConfig::default(),
         safety: SafetyConfig {
             require_verified: false,
             boot_max_step_rad: 0.087,

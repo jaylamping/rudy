@@ -6,6 +6,7 @@ use ts_rs::TS;
 use super::logs::LogEntry;
 use super::motor::MotorFeedback;
 use super::safety::SafetyEvent;
+use super::sensor::SensorSample;
 use super::system::SystemSnapshot;
 use super::tests::TestProgress;
 
@@ -177,6 +178,12 @@ declare_wt_streams! {
         transport: Datagram,
         /// Host-system metrics (CPU / mem / temps / throttle) at 0.5 Hz.
     },
+    SensorSample => SensorSample {
+        kind: "sensor_sample",
+        transport: Datagram,
+        /// Latest physical sensor sample (IMU today). Datagram tier because
+        /// samples refresh continuously and one missed packet is harmless.
+    },
     TestProgress => TestProgress {
         kind: "test_progress",
         transport: Stream,
@@ -283,6 +290,7 @@ impl<T: WtPayload> WtEnvelope<T> {
 pub enum WtFrame {
     MotorFeedback(MotorFeedback),
     SystemSnapshot(SystemSnapshot),
+    SensorSample(SensorSample),
     TestProgress(TestProgress),
     SafetyEvent(SafetyEvent),
     MotionStatus(crate::motion::MotionStatus),

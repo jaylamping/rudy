@@ -41,8 +41,8 @@ use super::client_frames::ClientFrame;
 use crate::motion::{MotionIntent, MotionStatus};
 use crate::state::SharedState;
 use crate::types::{
-    LogEntry, MotorFeedback, SafetyEvent, SystemSnapshot, TestProgress, WtEnvelope, WtKind,
-    WtPayload, WtSubscribe, WtSubscribeFilters, WtTransport,
+    LogEntry, MotorFeedback, SafetyEvent, SensorSample, SystemSnapshot, TestProgress, WtEnvelope,
+    WtKind, WtPayload, WtSubscribe, WtSubscribeFilters, WtTransport,
 };
 
 /// Match REST `/api/motors/:role/motion/jog`: unbounded jog has no automatic
@@ -185,6 +185,11 @@ impl SessionRouter {
         f.allows_kind(WtKind::SystemSnapshot)
     }
 
+    pub fn allows_sensor_sample(&self) -> bool {
+        let f = self.filter.read().expect("filter poisoned");
+        f.allows_kind(WtKind::SensorSample)
+    }
+
     pub fn allows_test_progress(&self, p: &TestProgress) -> bool {
         let f = self.filter.read().expect("filter poisoned");
         f.allows_kind(WtKind::TestProgress) && f.allows_motor(&p.role) && f.allows_run(&p.run_id)
@@ -312,6 +317,7 @@ pub async fn run_session(connection: Connection, state: SharedState) -> Result<(
     let filter_handle = router.filter_handle();
     let mut feedback_rx = state.feedback_tx.subscribe();
     let mut system_rx = state.system_tx.subscribe();
+    let mut sensor_rx = state.sensor_tx.subscribe();
     let mut tests_rx = state.test_progress_tx.subscribe();
     let mut safety_rx = state.safety_event_tx.subscribe();
     let mut motion_rx = state.motion_status_tx.subscribe();
@@ -385,7 +391,23 @@ pub async fn run_session(connection: Connection, state: SharedState) -> Result<(
                 Err(RecvError::Closed) => break Ok(()),
             },
 
-            // (b3) Bench-test progress fan-out (reliable).
+            // (b3) Physical sensor fan-out.
+            res = sensor_rx.recv() => match res {
+                Ok(sample) => {
+                    if router.allows_sensor_sample() {
+                        if let Err(e) = router.send::<SensorSample>(conn_ref, WtKind::SensorSample, sample).await {
+                            debug!("wt: sensor_sample send failed; closing session: {e:#}");
+                            break Ok(());
+                        }
+                    }
+                }
+                Err(RecvError::Lagged(n)) => {
+                    debug!("wt: sensor receiver lagged {n}");
+                }
+                Err(RecvError::Closed) => break Ok(()),
+            },
+
+            // (b4) Bench-test progress fan-out (reliable).
             res = tests_rx.recv() => match res {
                 Ok(p) => {
                     if router.allows_test_progress(&p) {
@@ -401,7 +423,7 @@ pub async fn run_session(connection: Connection, state: SharedState) -> Result<(
                 Err(RecvError::Closed) => break Ok(()),
             },
 
-            // (b4) Safety-event fan-out (reliable).
+            // (b5) Safety-event fan-out (reliable).
             res = safety_rx.recv() => match res {
                 Ok(ev) => {
                     if router.allows_safety_event() {
@@ -417,7 +439,7 @@ pub async fn run_session(connection: Connection, state: SharedState) -> Result<(
                 Err(RecvError::Closed) => break Ok(()),
             },
 
-            // (b5) Live motion-status fan-out (datagram). Filtered by
+            // (b6) Live motion-status fan-out (datagram). Filtered by
             // motor role via the existing `motor_roles` sub-filter so a
             // detail page can narrow to one motor without a new filter
             // dimension.
@@ -436,7 +458,7 @@ pub async fn run_session(connection: Connection, state: SharedState) -> Result<(
                 Err(RecvError::Closed) => break Ok(()),
             },
 
-            // (b6) Live log fan-out (reliable). Captures both the
+            // (b7) Live log fan-out (reliable). Captures both the
             // tracing-layer events and the audit-log fanout — see
             // `log_layer` and `audit::AuditLog::write`.
             res = log_rx.recv() => match res {

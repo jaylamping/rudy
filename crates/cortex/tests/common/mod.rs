@@ -29,7 +29,7 @@ use cortex::audit::AuditLog;
 use cortex::can;
 use cortex::config::{
     CanConfig, Config, HttpConfig, LogsConfig, MotionBackend, PathsConfig, RuntimeDbConfig,
-    SafetyConfig, TelemetryConfig, WebTransportConfig,
+    SafetyConfig, SensorsConfig, TelemetryConfig, WebTransportConfig,
 };
 use cortex::inventory::{Actuator, Device, Inventory};
 use cortex::reminders::ReminderStore;
@@ -73,6 +73,7 @@ pub fn make_state() -> (SharedState, tempfile::TempDir) {
         telemetry: TelemetryConfig {
             poll_interval_ms: 10,
         },
+        sensors: SensorsConfig::default(),
         safety: SafetyConfig {
             require_verified: true,
             boot_max_step_rad: 0.087,
@@ -217,6 +218,7 @@ pub fn make_state_commission_can_path_fails() -> (SharedState, tempfile::TempDir
         telemetry: TelemetryConfig {
             poll_interval_ms: 10,
         },
+        sensors: SensorsConfig::default(),
         safety: SafetyConfig {
             require_verified: true,
             boot_max_step_rad: 0.087,

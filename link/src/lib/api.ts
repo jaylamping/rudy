@@ -74,6 +74,12 @@ export const api = {
   config: () => apiFetch<import("@/lib/types/ServerConfig").ServerConfig>("/api/config"),
   system: () =>
     apiFetch<import("@/lib/types/SystemSnapshot").SystemSnapshot>("/api/system"),
+  listSensors: () =>
+    apiFetch<import("@/lib/types/SensorSample").SensorSample[]>("/api/sensors"),
+  getSensor: (sensorId: string) =>
+    apiFetch<import("@/lib/types/SensorSample").SensorSample>(
+      `/api/sensors/${encodeURIComponent(sensorId)}`,
+    ),
   /** Full polymorphic inventory (`devices:` from `inventory.yaml`). */
   listDevices: () =>
     apiFetch<import("@/lib/types/Device").Device[]>("/api/devices"),

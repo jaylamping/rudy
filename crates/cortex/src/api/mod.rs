@@ -20,6 +20,7 @@ pub mod meta;
 pub mod motion;
 pub mod motors;
 pub mod ops;
+pub mod sensors;
 
 pub fn router(state: SharedState) -> Router<SharedState> {
     Router::new()
@@ -28,6 +29,7 @@ pub fn router(state: SharedState) -> Router<SharedState> {
         .merge(motors::router())
         .merge(motion::router())
         .merge(ops::router())
+        .merge(sensors::router())
         .layer(middleware::from_fn(no_store))
         .with_state(state)
 }

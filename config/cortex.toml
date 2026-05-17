@@ -64,6 +64,18 @@ mock = true
 # backoff all align at 100 Hz.
 poll_interval_ms = 10
 
+[sensors.imu]
+# BNO085 on the Pi header I2C bus. Dev default stays disabled so cortex can
+# run on machines without /dev/i2c-1; the Pi renderer enables this block.
+enabled = false
+required = false
+id = "base_imu"
+frame_id = "imu_link"
+bus = 1
+address = 0x4b
+poll_interval_ms = 20
+stale_after_ms = 500
+
 [safety]
 # `cortex` refuses to enable a motor whose inventory entry lacks
 # `verified: true`. The Rust driver enforces the same gate; this is belt +

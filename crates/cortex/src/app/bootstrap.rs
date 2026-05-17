@@ -12,8 +12,8 @@ use tracing_subscriber::{fmt, reload, EnvFilter, Registry};
 
 use crate::settings::data;
 use crate::{
-    audit, can, config, deployment, http, inventory, log_layer, log_store, reminders, settings,
-    spec, state, system, telemetry, types::LogEntry, wt,
+    audit, can, config, deployment, http, inventory, log_layer, log_store, reminders, sensors,
+    settings, spec, state, system, telemetry, types::LogEntry, wt,
 };
 
 /// Run the cortex daemon: same behavior as the binary `main`, but callable with
@@ -223,6 +223,7 @@ pub async fn run(args: Vec<String>) -> Result<()> {
     }
 
     telemetry::spawn(app_state.clone());
+    sensors::spawn(app_state.clone());
     system::spawn(app_state.clone());
     deployment::spawn(app_state.clone());
 

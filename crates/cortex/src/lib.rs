@@ -18,6 +18,7 @@ pub mod http;
 pub mod motion;
 pub mod observability;
 pub mod param_sync;
+pub mod sensors;
 pub mod settings;
 pub mod types;
 pub mod util;

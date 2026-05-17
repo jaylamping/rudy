@@ -17,6 +17,7 @@ import type { WtEnvelope } from "@/lib/hooks/useWebTransport";
 import type { LogEntry } from "@/lib/types/LogEntry";
 import type { MotorFeedback } from "@/lib/types/MotorFeedback";
 import type { MotorSummary } from "@/lib/types/MotorSummary";
+import type { SensorSample } from "@/lib/types/SensorSample";
 import type { SystemSnapshot } from "@/lib/types/SystemSnapshot";
 
 /** Cap on the in-memory live tail. Older entries fall off the front; the
@@ -105,6 +106,36 @@ const systemSnapshotReducer: WtReducer<
 };
 
 /**
+ * Latest-wins-per-sensor merge for physical sensors. REST `/api/sensors`
+ * seeds the array; WT patches in the newest sample per sensor id.
+ */
+const sensorSampleReducer: WtReducer<
+  SensorSample,
+  Map<string, SensorSample>
+> = {
+  kind: "sensor_sample",
+  initBucket: () => new Map(),
+  merge(bucket, env) {
+    bucket.set(env.data.sensor_id, env.data);
+    return true;
+  },
+  flush(bucket, queryClient) {
+    if (bucket.size === 0) return;
+    queryClient.setQueryData<SensorSample[]>(queryKeys.sensors.all(), (prev) => {
+      const byId = new Map((prev ?? []).map((s) => [s.sensor_id, s]));
+      let changed = false;
+      for (const [id, sample] of bucket) {
+        const existing = byId.get(id);
+        if (existing && Number(existing.t_ms) >= Number(sample.t_ms)) continue;
+        byId.set(id, sample);
+        changed = true;
+      }
+      return changed ? Array.from(byId.values()) : prev;
+    });
+  },
+};
+
+/**
  * Append-and-cap merge for `log_event`. Bucket holds the live tail so
  * the Logs page can render new entries without re-fetching `/api/logs`
  * after every event. We coalesce per-rAF (the rest of the registry's
@@ -142,5 +173,6 @@ const logEventReducer: WtReducer<LogEntry, { incoming: LogEntry[] }> = {
 export const DEFAULT_REDUCERS: WtReducer[] = [
   motorFeedbackReducer as unknown as WtReducer,
   systemSnapshotReducer as unknown as WtReducer,
+  sensorSampleReducer as unknown as WtReducer,
   logEventReducer as unknown as WtReducer,
 ];

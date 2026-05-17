@@ -102,6 +102,18 @@ fi
   echo "[telemetry]"
   echo "poll_interval_ms = 100"
   echo
+  echo "[sensors.imu]"
+  echo "# BNO085 on Pi header I2C (/dev/i2c-1). Missing sensors are"
+  echo "# surfaced as unavailable/stale telemetry; they do not block cortex boot."
+  echo "enabled = true"
+  echo "required = false"
+  echo "id = \"base_imu\""
+  echo "frame_id = \"imu_link\""
+  echo "bus = 1"
+  echo "address = 0x4b"
+  echo "poll_interval_ms = 20"
+  echo "stale_after_ms = 500"
+  echo
   echo "[safety]"
   echo "# Benchtop bring-up stays open until the actuator is fully commissioned."
   echo "# Flip to true after the shoulder passes the verification checklist."
