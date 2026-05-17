@@ -204,6 +204,7 @@ pub async fn onboard_robstride(
                     notes_yaml: None,
                     desired_params: std::collections::BTreeMap::new(),
                     current_safety: None,
+                    dynamics: None,
                 },
                 family: ActuatorFamily::Robstride {
                     model: body_clone.model,

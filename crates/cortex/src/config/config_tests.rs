@@ -67,6 +67,9 @@ fn cfg_with(audit_log: &str, db_path: Option<&str>) -> Config {
             mit_max_angle_step_rad: super::safety::default_boot_max_step_rad(),
             mit_lpf_cutoff_hz: 6.0,
             mit_min_jerk_blend_ms: 0.0,
+            bench_mode: false,
+            max_motion_velocity_rad_s: 2.0,
+            max_motion_acceleration_rad_s2: 8.0,
         },
         logs: LogsConfig {
             db_path: db_path
@@ -130,6 +133,7 @@ fn actuator_common_roundtrip_preserves_active_report_persisted_flag() {
         notes_yaml: None,
         desired_params: std::collections::BTreeMap::new(),
         current_safety: None,
+        dynamics: None,
     };
     let json = serde_json::to_string(&common).expect("serialize actuator common");
     let back: crate::inventory::ActuatorCommon =

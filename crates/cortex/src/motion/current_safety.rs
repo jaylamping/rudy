@@ -251,7 +251,7 @@ pub fn evaluate_active_path(input: WatchdogInput<'_>) -> Option<CurrentTrip> {
     } else {
         thresholds.severe
     };
-    let behavior = if safety.current_trip_observe_only {
+    let behavior = if safety.effective_observe_only(input.motor.common.dynamics.as_ref()) {
         CurrentBehavior::Warn
     } else {
         CurrentBehavior::LimbStopQuarantine
@@ -324,7 +324,7 @@ pub fn evaluate_active_path(input: WatchdogInput<'_>) -> Option<CurrentTrip> {
         duration_ms: incident.duration_ms,
         i2t_value: incident.i2t_value,
         motion_kind: incident.motion_kind.clone(),
-        observe_only: safety.current_trip_observe_only,
+        observe_only: safety.effective_observe_only(input.motor.common.dynamics.as_ref()),
     });
 
     Some(CurrentTrip { incident, behavior })
@@ -361,7 +361,7 @@ pub fn evaluate_idle_sample(
         return None;
     }
 
-    let behavior = if safety.current_trip_observe_only {
+    let behavior = if safety.effective_observe_only(motor.common.dynamics.as_ref()) {
         CurrentBehavior::Warn
     } else {
         CurrentBehavior::LimbStopQuarantine
@@ -437,7 +437,7 @@ pub fn evaluate_idle_sample(
         duration_ms: incident.duration_ms,
         i2t_value: incident.i2t_value,
         motion_kind: incident.motion_kind.clone(),
-        observe_only: safety.current_trip_observe_only,
+        observe_only: safety.effective_observe_only(motor.common.dynamics.as_ref()),
     });
     Some(CurrentTrip { incident, behavior })
 }

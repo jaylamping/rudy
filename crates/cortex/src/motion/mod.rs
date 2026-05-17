@@ -31,6 +31,7 @@
 
 pub mod controller;
 pub mod current_safety;
+pub mod dynamics;
 pub mod intent;
 pub mod mit;
 pub mod patterns;
