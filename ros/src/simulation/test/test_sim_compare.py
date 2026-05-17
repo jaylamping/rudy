@@ -28,8 +28,14 @@ def _state(time_s: float, position_rad: float, velocity_rad_s: float) -> dict:
 def test_build_report_passes_for_matching_joint_trace():
     root = Path(__file__).resolve().parents[1]
     scenario = load_scenario(root / "configs" / "scenarios" / "joint_space_smoke.yaml")
-    reference = tuple(SimState.from_mapping(state) for state in [_state(0.0, 0.0, 0.0), _state(1.0, 0.4, 0.4)])
-    candidate = tuple(SimState.from_mapping(state) for state in [_state(0.0, 0.0, 0.0), _state(1.0, 0.41, 0.4)])
+    reference = tuple(
+        SimState.from_mapping(state)
+        for state in [_state(0.0, 0.0, 0.0), _state(1.0, 0.4, 0.4)]
+    )
+    candidate = tuple(
+        SimState.from_mapping(state)
+        for state in [_state(0.0, 0.0, 0.0), _state(1.0, 0.41, 0.4)]
+    )
 
     report = build_report(
         scenario=scenario,

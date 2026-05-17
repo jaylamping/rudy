@@ -46,7 +46,9 @@ class JointCommandTarget:
         effort = data.get("effort_nm")
         return cls(
             position_rad=position_rad,
-            velocity_rad_s=None if velocity is None else _require_number(velocity, "velocity_rad_s"),
+            velocity_rad_s=None
+            if velocity is None
+            else _require_number(velocity, "velocity_rad_s"),
             effort_nm=None if effort is None else _require_number(effort, "effort_nm"),
         )
 
@@ -78,7 +80,9 @@ class SimCommand:
             at_s=_require_number(data.get("at_s"), "at_s"),
             duration_s=_require_number(data.get("duration_s"), "duration_s"),
             joint_targets={
-                str(joint): JointCommandTarget.from_mapping(_require_mapping(target, f"{joint} target"))
+                str(joint): JointCommandTarget.from_mapping(
+                    _require_mapping(target, f"{joint} target")
+                )
                 for joint, target in targets.items()
             },
         )
@@ -121,9 +125,13 @@ class SimScenario:
             dt_s=_require_number(data.get("dt_s"), "dt_s"),
             duration_s=_require_number(data.get("duration_s"), "duration_s"),
             model=dict(_require_mapping(data.get("model", {}), "model")),
-            thresholds={str(key): _require_number(value, f"thresholds.{key}") for key, value in thresholds.items()},
+            thresholds={
+                str(key): _require_number(value, f"thresholds.{key}")
+                for key, value in thresholds.items()
+            },
             commands=tuple(
-                SimCommand.from_mapping(_require_mapping(command, "command")) for command in commands
+                SimCommand.from_mapping(_require_mapping(command, "command"))
+                for command in commands
             ),
         )
 

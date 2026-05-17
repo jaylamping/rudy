@@ -178,7 +178,10 @@ def main(argv: list[str] | None = None) -> None:
     )
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps(report.to_mapping(), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    out_path.write_text(
+        json.dumps(report.to_mapping(), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
     print(f"wrote {out_path}: passed={report.passed}")
 
 
