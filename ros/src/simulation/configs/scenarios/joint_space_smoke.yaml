@@ -1,0 +1,60 @@
+# Tiny ADR-0009 sim-to-sim scenario catalog entry.
+schema_version: 1
+name: joint_space_smoke
+seed: 9
+dt_s: 0.02
+duration_s: 3.0
+
+model:
+  urdf: ros/src/description/urdf/robot.urdf.xacro
+  actuator_model: ros/src/simulation/configs/actuator_model.yaml
+
+thresholds:
+  joint_position_rms_rad: 0.02
+  joint_position_max_abs_rad: 0.05
+  max_velocity_rad_s: 1.0
+  max_acceleration_rad_s2: 4.0
+  torque_abs_max_nm: 10.0
+  min_soft_limit_margin_rad: 0.2
+  contact_event_count: 0
+  runtime_stop_count: 0
+  validation_failure_count: 0
+
+commands:
+  - name: home
+    primitive: home
+    at_s: 0.0
+    duration_s: 1.0
+    joint_targets:
+      waist_rotation_joint: {position_rad: 0.0, velocity_rad_s: 0.0}
+      l_shoulder_pitch_joint: {position_rad: 0.0, velocity_rad_s: 0.0}
+      l_shoulder_roll_joint: {position_rad: 0.2, velocity_rad_s: 0.0}
+      l_upper_arm_yaw_joint: {position_rad: 0.0, velocity_rad_s: 0.0}
+      l_elbow_pitch_joint: {position_rad: 0.2, velocity_rad_s: 0.0}
+      l_lower_arm_yaw_joint: {position_rad: 0.0, velocity_rad_s: 0.0}
+      r_shoulder_pitch_joint: {position_rad: 0.0, velocity_rad_s: 0.0}
+      r_shoulder_roll_joint: {position_rad: -0.2, velocity_rad_s: 0.0}
+      r_upper_arm_yaw_joint: {position_rad: 0.0, velocity_rad_s: 0.0}
+      r_elbow_pitch_joint: {position_rad: -0.2, velocity_rad_s: 0.0}
+      r_lower_arm_yaw_joint: {position_rad: 0.0, velocity_rad_s: 0.0}
+
+  - name: move_left_elbow
+    primitive: move_joint
+    at_s: 1.0
+    duration_s: 1.0
+    joint_targets:
+      l_elbow_pitch_joint: {position_rad: 0.6, velocity_rad_s: 0.4}
+
+  - name: hold
+    primitive: hold
+    at_s: 2.0
+    duration_s: 0.5
+    joint_targets:
+      l_elbow_pitch_joint: {position_rad: 0.6, velocity_rad_s: 0.0}
+
+  - name: oscillate_left_elbow
+    primitive: oscillate
+    at_s: 2.5
+    duration_s: 0.5
+    joint_targets:
+      l_elbow_pitch_joint: {position_rad: 0.4, velocity_rad_s: -0.4}
