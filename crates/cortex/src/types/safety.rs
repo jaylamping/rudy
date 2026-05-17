@@ -23,6 +23,15 @@ pub enum SafetyEvent {
         min_rad: f32,
         max_rad: f32,
     },
+    /// Boot-state classifier changed a motor's per-power-cycle gate state
+    /// without an already-specific event variant. Subscribers should refresh
+    /// actuator summaries so badges leave stale states immediately.
+    BootStateChanged {
+        t_ms: i64,
+        role: String,
+        from: String,
+        to: String,
+    },
     CurrentThresholdCrossed {
         t_ms: i64,
         role: String,

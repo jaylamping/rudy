@@ -91,6 +91,19 @@ impl BootState {
     pub fn permits_enable(&self) -> bool {
         matches!(self, BootState::Homed)
     }
+
+    /// Stable snake_case tag used in audit and wire events.
+    pub fn kind_snake(&self) -> &'static str {
+        match self {
+            BootState::Unknown => "unknown",
+            BootState::OutOfBand { .. } => "out_of_band",
+            BootState::InBand => "in_band",
+            BootState::Homed => "homed",
+            BootState::OffsetChanged { .. } => "offset_changed",
+            BootState::AutoHoming { .. } => "auto_homing",
+            BootState::HomeFailed { .. } => "home_failed",
+        }
+    }
 }
 
 /// Outcome of running [`classify`] once. Returned to callers so the
@@ -315,6 +328,8 @@ fn transition(state: &SharedState, role: &str, new: BootState) -> ClassifyOutcom
         return ClassifyOutcome::Unchanged;
     }
 
+    let prev_kind = prev.kind_snake();
+    let new_kind = new.kind_snake();
     map.insert(role.to_string(), new.clone());
     drop(map);
 
@@ -345,6 +360,12 @@ fn transition(state: &SharedState, role: &str, new: BootState) -> ClassifyOutcom
             prev,
         }
     } else {
+        let _ = state.safety_event_tx.send(SafetyEvent::BootStateChanged {
+            t_ms: chrono::Utc::now().timestamp_millis(),
+            role: role.to_string(),
+            from: prev_kind.to_string(),
+            to: new_kind.to_string(),
+        });
         ClassifyOutcome::Changed { new, prev }
     }
 }

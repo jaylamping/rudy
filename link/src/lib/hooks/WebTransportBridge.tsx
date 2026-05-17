@@ -193,9 +193,11 @@ export function WebTransportBridge({
     // `MotorSummary.boot_state` (and inventory fields) come from the REST
     // bootstrap; `motor_feedback` WT merges only patch `latest`. Without a
     // refetch, badges like "needs verify & home" stay stale after the daemon
-    // transitions to `Homed` on `auto_homed` / `homed` / `home_failed`, etc.
+    // transitions to `Homed` / `InBand` on `auto_homed` / `homed` /
+    // `boot_state_changed` / `home_failed`, etc.
     const MOTORS_INVALIDATING_SAFETY_EVENTS = new Set([
       "auto_homed",
+      "boot_state_changed",
       "commissioned",
       "current_stop_escalated",
       "current_threshold_crossed",

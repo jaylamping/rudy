@@ -45,15 +45,7 @@ fn quarantining_boot_state(bs: &BootState) -> bool {
 }
 
 pub fn boot_state_kind_snake(bs: &BootState) -> &'static str {
-    match bs {
-        BootState::Unknown => "unknown",
-        BootState::OutOfBand { .. } => "out_of_band",
-        BootState::InBand => "in_band",
-        BootState::Homed => "homed",
-        BootState::OffsetChanged { .. } => "offset_changed",
-        BootState::AutoHoming { .. } => "auto_homing",
-        BootState::HomeFailed { .. } => "home_failed",
-    }
+    bs.kind_snake()
 }
 
 /// Every **present** inventoried motor whose [`effective_limb_id`] matches
