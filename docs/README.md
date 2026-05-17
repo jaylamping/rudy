@@ -7,6 +7,8 @@
 | [runbooks/pi5.md](runbooks/pi5.md) | Raspberry Pi 5 onboard bring-up (CAN HAT, ROS 2 Jazzy, deploy). |
 | [runbooks/isaac_lab.md](runbooks/isaac_lab.md) | Isaac Lab / Isaac Sim workflow notes (desktop GPU). |
 | [decisions/](decisions/) | Architecture decision records (ADR). |
+| [decisions/0008-control-plane-and-runtime-fsm.md](decisions/0008-control-plane-and-runtime-fsm.md) | `cortex` as runtime authority; LLM emits Rudy primitives; ROS / MoveIt stays geometry and integration tooling. |
+| [decisions/0009-simulation-ladder-and-sim-to-sim.md](decisions/0009-simulation-ladder-and-sim-to-sim.md) | Simulation ladder from unit tests through sim-to-sim, shadow mode, and hardware. |
 | [robotics-best-practices-reference.md](robotics-best-practices-reference.md) | **Canonical** robotics reference: kinematics & WBC (2024–2026), joint limits & `ros2_control`, power & BMS, data backbone (CAN / EtherCAT / TSN), ROS 2 design patterns, simulation, CI, safety, plus Rudy alignment. **Start here** for conceptual work. |
 | [mcp-research-stack.md](mcp-research-stack.md) | Recommended **Cursor MCP** setup for low-friction research: Tavily (web) + Semantic Scholar (papers). |
 | [research/README.md](research/README.md) | Manifest of raw Firecrawl exports (offline snapshots of key pages and search results). |

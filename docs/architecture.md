@@ -79,13 +79,21 @@ consumer of the same `cortex` CAN handle — not a competitor. This is why
 
 ## Data flow (target)
 
+Control authority stays in `cortex`: LLM / operator / ROS clients submit Rudy
+primitive invocations or candidate trajectories; `cortex` validates runtime
+state, safety limits, locks, and audit before any CAN command leaves the Pi. ROS
+2 / MoveIt are kinematics, collision, visualization, and integration tooling,
+not competing hardware owners. See
+[ADR-0008](decisions/0008-control-plane-and-runtime-fsm.md).
+
 ```mermaid
 graph TD
-  CM[controller_manager] --> HWI[control_plugin]
-  HWI -->|ROS_topics| RustNode[driver_node]
-  RustNode --> CAN[can0_can1]
-  RustNode --> Diag[/diagnostics]
-  RustNode --> JS[/joint_states]
+  Intent[operator_voice_llm_scripts] --> Prim[Rudy_primitives]
+  Prim --> Cortex[cortex_runtime_FSM]
+  ROS[MoveIt_ROS_oracle] -->|IK_collision_candidate_trajectory| Cortex
+  Cortex --> CAN[SocketCAN_can0_can1]
+  Cortex --> Diag[/diagnostics_status]
+  Cortex --> JS[/joint_states]
 ```
 
 
@@ -99,6 +107,14 @@ Today: `control` ships a **loopback** `SystemInterface` for CI/bring-up. The top
 - **Sim randomization**: `ros/src/simulation/configs/*.yaml`
 - **ROS parameters**: per-package `config/` + `bringup`
 - **Operator console live state**: `cortex` uses SQLite (see [ADR-0007](decisions/0007-runtime-config-sqlite.md)) for runtime safety/telemetry (and, when enabled, full inventory) after the first import; checked-in TOML/YAML remain **seed** defaults, not the live source of truth on the Pi after that import.
+
+## Simulation ladder
+
+Rudy validates risky motion in stages: unit / parity tests, single-engine
+simulation, sim-to-sim replay, `cortex` shadow mode, low-speed hardware, then
+the full hardware envelope. Isaac Lab remains the first-class task/training
+environment; MuJoCo is the first sim-to-sim cross-check target. See
+[ADR-0009](decisions/0009-simulation-ladder-and-sim-to-sim.md).
 
 ## See also
 
