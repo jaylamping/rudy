@@ -31,6 +31,10 @@ pub fn router() -> Router<SharedState> {
         .route("/motors/:role/stop", post(control::stop))
         .route("/motors/:role/clear_fault", post(control::clear_fault))
         .route(
+            "/motors/:role/current_trip/clear",
+            post(control::clear_current_trip),
+        )
+        .route(
             "/motors/:role/calibrate_encoder",
             post(control::calibrate_encoder),
         )

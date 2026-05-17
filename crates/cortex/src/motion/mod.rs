@@ -30,6 +30,7 @@
 //!    through a few ticks against a synthetic feedback row.
 
 pub mod controller;
+pub mod current_safety;
 pub mod intent;
 pub mod mit;
 pub mod patterns;
@@ -39,6 +40,11 @@ pub mod smoothing;
 pub mod status;
 pub mod tick;
 
+pub use current_safety::{
+    clear_limb_latch, confirm_post_stop, effective_limb_id as current_limb_id,
+    evaluate_active_path, evaluate_idle_sample, latch_for_role, CurrentBehavior, CurrentIncident,
+    CurrentLatch, CurrentSafetyRuntime, CurrentTrip, WatchdogInput,
+};
 pub use intent::{
     default_turnaround_rad, MotionIntent, OVERSHOOT_S, SWEEP_BASE_INSET_RAD, WAVE_BASE_INSET_RAD,
 };

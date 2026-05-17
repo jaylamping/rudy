@@ -16,7 +16,7 @@ use crate::can::RealCanHandle;
 use crate::config::{Config, SafetyConfig, TelemetryConfig};
 use crate::inventory::{Inventory, RobstrideModel};
 use crate::log_store::LogStore;
-use crate::motion::{MotionRegistry, MotionStatus};
+use crate::motion::{CurrentSafetyRuntime, MotionRegistry, MotionStatus};
 use crate::reminders::ReminderStore;
 use crate::spec::ActuatorSpec;
 use crate::system::SystemPoller;
@@ -88,6 +88,10 @@ pub struct AppState {
 
     /// In-memory per-motor latest feedback (role -> feedback).
     pub latest: RwLock<BTreeMap<String, MotorFeedback>>,
+
+    /// Runtime current watchdog state: per-role accumulators, limb latches,
+    /// and a bounded recent incident ring for postmortem review.
+    pub current_safety: RwLock<CurrentSafetyRuntime>,
 
     /// Per-role timestamp (ms since unix epoch) of the most recent
     /// type-2 (`MotorFeedback`) frame we received from the bus. Distinct
@@ -296,6 +300,7 @@ impl AppState {
             audit,
             real_can,
             latest: RwLock::new(BTreeMap::new()),
+            current_safety: RwLock::new(CurrentSafetyRuntime::default()),
             last_type2_at: RwLock::new(HashMap::new()),
             params: RwLock::new(BTreeMap::new()),
             latest_sensors: RwLock::new(BTreeMap::new()),

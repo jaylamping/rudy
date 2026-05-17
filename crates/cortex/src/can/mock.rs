@@ -43,6 +43,7 @@ pub fn spawn(state: SharedState) -> Result<()> {
                     mech_pos_rad: (t * 0.7 + phase).sin() * 0.8,
                     mech_vel_rad_s: (t * 0.7 + phase).cos() * 0.7 * 0.8,
                     torque_nm: (t * 1.3 + phase).sin() * 0.15,
+                    q_current_arms: Some((t * 1.3 + phase).sin() * 0.06),
                     vbus_v: 48.0 + (t * 0.05).sin() * 0.3,
                     temp_c: 35.0 + (t * 0.02).sin() * 1.5 + i as f32 * 2.0,
                     fault_sta: 0,

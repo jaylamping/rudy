@@ -384,6 +384,7 @@ mod tests {
                 mit_max_angle_step_rad: 0.087,
                 mit_lpf_cutoff_hz: 6.0,
                 mit_min_jerk_blend_ms: 0.0,
+                ..SafetyConfig::default()
             },
             logs: LogsConfig {
                 db_path: dir.path().join("logs.db"),

@@ -105,6 +105,46 @@ pub fn file_defaults_to_kv(cfg: &Config) -> Vec<(String, Json)> {
             json!(s.mit_min_jerk_blend_ms),
         ),
         (
+            "safety.current_watchdog_enabled".into(),
+            json!(s.current_watchdog_enabled),
+        ),
+        (
+            "safety.current_trip_observe_only".into(),
+            json!(s.current_trip_observe_only),
+        ),
+        (
+            "safety.current_trip_sustain_ms".into(),
+            json!(s.current_trip_sustain_ms),
+        ),
+        (
+            "safety.current_trip_min_motion_ms".into(),
+            json!(s.current_trip_min_motion_ms),
+        ),
+        (
+            "safety.current_post_stop_safe_ratio".into(),
+            json!(s.current_post_stop_safe_ratio),
+        ),
+        (
+            "safety.current_post_stop_confirm_ms".into(),
+            json!(s.current_post_stop_confirm_ms),
+        ),
+        (
+            "safety.current_i2t_warn_budget".into(),
+            json!(s.current_i2t_warn_budget),
+        ),
+        (
+            "safety.current_i2t_trip_budget".into(),
+            json!(s.current_i2t_trip_budget),
+        ),
+        (
+            "safety.current_i2t_decay_per_s".into(),
+            json!(s.current_i2t_decay_per_s),
+        ),
+        (
+            "safety.current_event_retention".into(),
+            json!(s.current_event_retention),
+        ),
+        (
             "telemetry.poll_interval_ms".into(),
             json!(t.poll_interval_ms),
         ),
@@ -220,6 +260,36 @@ fn apply_key(
         }
         "safety.mit_min_jerk_blend_ms" => {
             s.mit_min_jerk_blend_ms = f32v(&v).ok_or("expected f32")?;
+        }
+        "safety.current_watchdog_enabled" => {
+            s.current_watchdog_enabled = v.as_bool().ok_or("expected bool")?
+        }
+        "safety.current_trip_observe_only" => {
+            s.current_trip_observe_only = v.as_bool().ok_or("expected bool")?
+        }
+        "safety.current_trip_sustain_ms" => {
+            s.current_trip_sustain_ms = v.as_u64().ok_or("expected u64")?
+        }
+        "safety.current_trip_min_motion_ms" => {
+            s.current_trip_min_motion_ms = v.as_u64().ok_or("expected u64")?
+        }
+        "safety.current_post_stop_safe_ratio" => {
+            s.current_post_stop_safe_ratio = f32v(&v).ok_or("expected f32")?
+        }
+        "safety.current_post_stop_confirm_ms" => {
+            s.current_post_stop_confirm_ms = v.as_u64().ok_or("expected u64")?
+        }
+        "safety.current_i2t_warn_budget" => {
+            s.current_i2t_warn_budget = f32v(&v).ok_or("expected f32")?
+        }
+        "safety.current_i2t_trip_budget" => {
+            s.current_i2t_trip_budget = f32v(&v).ok_or("expected f32")?
+        }
+        "safety.current_i2t_decay_per_s" => {
+            s.current_i2t_decay_per_s = f32v(&v).ok_or("expected f32")?
+        }
+        "safety.current_event_retention" => {
+            s.current_event_retention = v.as_u64().ok_or("expected u32")? as u32
         }
         "telemetry.poll_interval_ms" => t.poll_interval_ms = v.as_u64().ok_or("expected u64")?,
 

@@ -3,4 +3,4 @@
 /**
  * Bench-routine name accepted by `POST /api/motors/:role/tests/:name`.
  */
-export type TestName = "read" | "set_zero" | "smoke" | "jog" | "jog_overlimit";
+export type TestName = "read" | "set_zero" | "smoke" | "jog" | "jog_overlimit" | "current_safety";

@@ -136,11 +136,18 @@ fn apply_position_feedback(
 
     let now_ms = Utc::now().timestamp_millis();
 
-    let (prev_t_ms, prev_vbus, prev_torque, prev_fault, prev_warn) = {
+    let (prev_t_ms, prev_vbus, prev_torque, prev_current, prev_fault, prev_warn) = {
         let guard = state.latest.read().expect("latest poisoned");
         match guard.get(&role) {
-            Some(f) => (Some(f.t_ms), f.vbus_v, f.torque_nm, f.fault_sta, f.warn_sta),
-            None => (None, 0.0, 0.0, 0, 0),
+            Some(f) => (
+                Some(f.t_ms),
+                f.vbus_v,
+                f.torque_nm,
+                f.q_current_arms,
+                f.fault_sta,
+                f.warn_sta,
+            ),
+            None => (None, 0.0, 0.0, None, 0, 0),
         }
     };
 
@@ -161,6 +168,7 @@ fn apply_position_feedback(
         } else {
             prev_torque
         },
+        q_current_arms: prev_current,
         vbus_v: prev_vbus,
         temp_c: fb.temp_c,
         fault_sta,
@@ -234,6 +242,7 @@ fn apply_fault_feedback(
             mech_pos_rad: 0.0,
             mech_vel_rad_s: 0.0,
             torque_nm: 0.0,
+            q_current_arms: None,
             vbus_v: 0.0,
             temp_c: 0.0,
             fault_sta: 0,

@@ -198,6 +198,7 @@ async fn enable_homed_but_drifted_outside_band_is_forbidden() {
                 mech_pos_rad: 1.5,
                 mech_vel_rad_s: 0.0,
                 torque_nm: 0.0,
+                q_current_arms: None,
                 vbus_v: 48.0,
                 temp_c: 30.0,
                 fault_sta: 0,

@@ -13,6 +13,22 @@ fn default_true() -> bool {
     true
 }
 
+fn default_current_mild_ratio() -> f32 {
+    0.60
+}
+
+fn default_current_moderate_ratio() -> f32 {
+    0.80
+}
+
+fn default_current_severe_ratio() -> f32 {
+    0.95
+}
+
+fn default_current_i2t_ratio() -> f32 {
+    0.75
+}
+
 // --- Polymorphic device ------------------------------------------------------
 
 /// Inventory row: actuator, sensor, battery, or peripheral. JSON/YAML uses `kind` as the tag.
@@ -109,6 +125,30 @@ pub struct ActuatorCommon {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[ts(type = "Record<string, unknown>")]
     pub desired_params: BTreeMap<String, serde_json::Value>,
+    /// Optional per-actuator current watchdog tuning. Thresholds are ratios of
+    /// the effective firmware/operator `limit_cur` unless an absolute clamp is set.
+    #[serde(default)]
+    pub current_safety: Option<CurrentSafetyTiers>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "./")]
+pub struct CurrentSafetyTiers {
+    #[serde(default = "default_current_mild_ratio")]
+    pub mild_ratio: f32,
+    #[serde(default = "default_current_moderate_ratio")]
+    pub moderate_ratio: f32,
+    #[serde(default = "default_current_severe_ratio")]
+    pub severe_ratio: f32,
+    /// Severe threshold while idle/backdriven. `None` means idle never trips.
+    #[serde(default)]
+    pub severe_idle_ratio: Option<f32>,
+    #[serde(default = "default_current_i2t_ratio")]
+    pub i2t_ratio: f32,
+    /// Optional absolute severe clamp in RMS amps. The lower of ratio-derived
+    /// and absolute clamp wins.
+    #[serde(default)]
+    pub severe_abs_arms: Option<f32>,
 }
 
 /// Protocol family inside actuators. Extensible (new vendor → new variant).

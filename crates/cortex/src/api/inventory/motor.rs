@@ -61,6 +61,7 @@ fn summary_for(
         .expect("last_type2_at poisoned")
         .get(&m.common.role)
         .map(|t| now_ms.saturating_sub(*t));
+    let current_latch = crate::motion::latch_for_role(state, &m.common.role);
     MotorSummary {
         role: m.common.role.clone(),
         can_bus: m.common.can_bus.clone(),
@@ -79,6 +80,8 @@ fn summary_for(
         boot_state: boot_state::current(state, &m.common.role),
         limb: m.common.limb.clone(),
         joint_kind: m.common.joint_kind,
+        current_trip_latched: current_latch.is_some(),
+        current_trip_reason: current_latch.map(|l| l.reason),
         drifted_param_count: state
             .drift_counts
             .read()

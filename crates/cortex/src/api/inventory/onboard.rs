@@ -203,6 +203,7 @@ pub async fn onboard_robstride(
                     joint_kind: Some(body_clone.joint_kind),
                     notes_yaml: None,
                     desired_params: std::collections::BTreeMap::new(),
+                    current_safety: None,
                 },
                 family: ActuatorFamily::Robstride {
                     model: body_clone.model,

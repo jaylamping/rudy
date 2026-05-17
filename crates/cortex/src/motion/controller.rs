@@ -46,6 +46,7 @@ use crate::motion::status::{
 use crate::motion::sweep::{self, SweepState};
 use crate::motion::tick::motion_tick_interval_ms;
 use crate::motion::wave::{self, WaveState};
+use crate::motion::{evaluate_active_path, CurrentBehavior, CurrentTrip, WatchdogInput};
 use crate::state::SharedState;
 
 /// Heartbeat window for [`MotionIntent::Jog`]. If the operator's
@@ -86,6 +87,8 @@ pub async fn run(mut task: ControllerTask) {
     let mut sweep_state: Option<SweepState> = None;
     let mut wave_state: Option<WaveState> = None;
     let mut mit_smooth = MitTargetSmoothing::default();
+    let motion_started_ms = Utc::now().timestamp_millis();
+    let mut current_trip: Option<CurrentTrip> = None;
 
     // Heartbeat deadline for jog motions. Refreshed by
     // `MotionRegistry::heartbeat_jog`.
@@ -244,6 +247,28 @@ pub async fn run(mut task: ControllerTask) {
                     mit_min_jerk_blend_ms,
                 );
                 let mit_target = mit::clamp_mit_step(pf.feedback.mech_pos_rad, sm_in, step_cap);
+                if let Some(trip) = evaluate_active_path(WatchdogInput {
+                    state: &task.state,
+                    motor: &task.motor,
+                    feedback: &pf.feedback,
+                    motion_kind: intent.kind_str(),
+                    target_position_rad: Some(mit_target),
+                    desired_vel_rad_s: desired_vel,
+                    motion_elapsed_ms: Utc::now()
+                        .timestamp_millis()
+                        .saturating_sub(motion_started_ms)
+                        .max(0) as u64,
+                    tick_ms: tick_interval_ms,
+                }) {
+                    let reason = MotionStopReason::CurrentTrip {
+                        tier: trip.incident.tier.clone(),
+                        current_arms: trip.incident.abs_current_arms,
+                        threshold_arms: trip.incident.threshold_arms,
+                        duration_ms: trip.incident.duration_ms,
+                    };
+                    current_trip = Some(trip);
+                    break reason;
+                }
                 let projected_check = PreflightChecks {
                     state: &task.state,
                     role: &role,
@@ -270,6 +295,28 @@ pub async fn run(mut task: ControllerTask) {
                 broadcast_running(&task, pf.feedback.mech_pos_rad, intent, eff_vel);
             }
             MotionBackend::Velocity => {
+                if let Some(trip) = evaluate_active_path(WatchdogInput {
+                    state: &task.state,
+                    motor: &task.motor,
+                    feedback: &pf.feedback,
+                    motion_kind: intent.kind_str(),
+                    target_position_rad: None,
+                    desired_vel_rad_s: desired_vel,
+                    motion_elapsed_ms: Utc::now()
+                        .timestamp_millis()
+                        .saturating_sub(motion_started_ms)
+                        .max(0) as u64,
+                    tick_ms: tick_interval_ms,
+                }) {
+                    let reason = MotionStopReason::CurrentTrip {
+                        tier: trip.incident.tier.clone(),
+                        current_arms: trip.incident.abs_current_arms,
+                        threshold_arms: trip.incident.threshold_arms,
+                        duration_ms: trip.incident.duration_ms,
+                    };
+                    current_trip = Some(trip);
+                    break reason;
+                }
                 let projected_check = PreflightChecks {
                     state: &task.state,
                     role: &role,
@@ -295,6 +342,19 @@ pub async fn run(mut task: ControllerTask) {
     // discipline in api::home::run_homer.
     let _ = drive_stop(&task.state, &task.motor).await;
     task.state.mark_stopped(&role);
+
+    if let Some(trip) = current_trip.as_ref() {
+        if matches!(trip.behavior, CurrentBehavior::LimbStopQuarantine) {
+            stop_limb_except(&task.state, &trip.incident.limb, &role).await;
+            let wait_ms = task
+                .state
+                .read_effective()
+                .safety
+                .current_post_stop_confirm_ms;
+            tokio::time::sleep(Duration::from_millis(wait_ms)).await;
+            crate::motion::confirm_post_stop(&task.state, &trip.incident);
+        }
+    }
 
     let final_pos = task
         .state
@@ -329,6 +389,7 @@ fn stop_reason_from_preflight(e: &PreflightFailure) -> MotionStopReason {
         PreflightFailure::LimbQuarantined { .. } | PreflightFailure::SettingsRecovery => {
             MotionStopReason::BootStateLost
         }
+        PreflightFailure::CurrentTripLatched { .. } => MotionStopReason::BootStateLost,
         PreflightFailure::ActiveFault {
             fault_sta,
             warn_sta,
@@ -337,6 +398,27 @@ fn stop_reason_from_preflight(e: &PreflightFailure) -> MotionStopReason {
             warn_sta: *warn_sta,
         },
         PreflightFailure::Internal(s) => MotionStopReason::Bus(classify_motion_bus_string(s)),
+    }
+}
+
+async fn stop_limb_except(state: &SharedState, limb: &str, except_role: &str) {
+    let motors: Vec<Actuator> = state
+        .inventory
+        .read()
+        .expect("inventory poisoned")
+        .actuators()
+        .filter(|m| {
+            m.common.present
+                && m.common.role != except_role
+                && crate::motion::current_limb_id(m) == limb
+        })
+        .cloned()
+        .collect();
+
+    for motor in motors {
+        let _ = state.motion.stop(&motor.common.role).await;
+        let _ = drive_stop(state, &motor).await;
+        state.mark_stopped(&motor.common.role);
     }
 }
 

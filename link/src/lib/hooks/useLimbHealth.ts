@@ -66,12 +66,21 @@ export function useLimbHealth(role: string): LimbHealthForMotion {
   for (const m of motors) {
     if (!m.present || m.role === role) continue;
     if (effectiveLimbId(m) !== limbId) continue;
-    if (bootStateQuarantinesLimb(m.boot_state)) {
+    if (bootStateQuarantinesLimb(m.boot_state) || m.current_trip_latched) {
       quarantinedBy.push({
         role: m.role,
-        stateKind: summarizeBootState(m.boot_state),
+        stateKind: m.current_trip_latched
+          ? "current trip"
+          : summarizeBootState(m.boot_state),
       });
     }
+  }
+
+  if (self.current_trip_latched) {
+    quarantinedBy.push({
+      role: self.role,
+      stateKind: self.current_trip_reason ?? "current trip",
+    });
   }
 
   const healthy = quarantinedBy.length === 0;

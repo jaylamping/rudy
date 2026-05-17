@@ -127,6 +127,8 @@ function motorSummaryFixture(
     boot_state: { kind: "unknown" },
     limb: null,
     joint_kind: null,
+    current_trip_latched: false,
+    current_trip_reason: undefined,
     drifted_param_count: 0,
     ...patch,
   };

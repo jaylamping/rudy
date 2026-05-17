@@ -27,6 +27,15 @@ pub fn validate_snapshot(s: &SafetyConfig, t: &TelemetryConfig) -> Result<(), St
     } else if s.target_dwell_max_vel_rad_s < 0.0 {
         return Err("safety.target_dwell_max_vel_rad_s must be non-negative or +inf".to_string());
     }
+    if s.current_trip_sustain_ms < 1 {
+        return Err("safety.current_trip_sustain_ms must be >= 1".to_string());
+    }
+    if !(0.0..=1.0).contains(&s.current_post_stop_safe_ratio) {
+        return Err("safety.current_post_stop_safe_ratio must be between 0 and 1".to_string());
+    }
+    if s.current_i2t_trip_budget < s.current_i2t_warn_budget {
+        return Err("safety.current_i2t_trip_budget must be >= warn budget".to_string());
+    }
     Ok(())
 }
 

@@ -121,6 +121,13 @@ pub enum MotionStopReason {
     Bus(MotionBusError),
     /// Motor reported non-zero fault / warning registers (type-2 / type-0x15).
     MotorFault { fault_sta: u32, warn_sta: u32 },
+    /// Current watchdog detected sustained over-current on an active path.
+    CurrentTrip {
+        tier: String,
+        current_arms: f32,
+        threshold_arms: f32,
+        duration_ms: u64,
+    },
     /// Daemon shutdown.
     Shutdown,
 }
@@ -137,6 +144,7 @@ impl MotionStopReason {
             MotionStopReason::Superseded => "superseded",
             MotionStopReason::Bus(_) => "bus_error",
             MotionStopReason::MotorFault { .. } => "motor_fault",
+            MotionStopReason::CurrentTrip { .. } => "current_trip",
             MotionStopReason::Shutdown => "shutdown",
         }
     }
@@ -151,6 +159,14 @@ impl MotionStopReason {
                 fault_sta,
                 warn_sta,
             } => format!("fault_sta=0x{fault_sta:08x} warn_sta=0x{warn_sta:08x}"),
+            MotionStopReason::CurrentTrip {
+                tier,
+                current_arms,
+                threshold_arms,
+                duration_ms,
+            } => format!(
+                "{tier} current {current_arms:.2} Arms >= {threshold_arms:.2} Arms for {duration_ms} ms"
+            ),
             other => other.label().into(),
         }
     }

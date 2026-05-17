@@ -99,6 +99,7 @@ fn fixture_state() -> (
             mit_max_angle_step_rad: 0.087,
             mit_lpf_cutoff_hz: 6.0,
             mit_min_jerk_blend_ms: 0.0,
+            ..SafetyConfig::default()
         },
         logs: LogsConfig {
             db_path: dir.path().join("logs.db"),
@@ -127,6 +128,7 @@ fn seed_latest(state: &crate::state::SharedState, role: &str, mech_pos_rad: f32,
             mech_pos_rad,
             mech_vel_rad_s: 0.0,
             torque_nm: 0.0,
+            q_current_arms: None,
             vbus_v: 48.0,
             temp_c: 30.0,
             fault_sta: 0,

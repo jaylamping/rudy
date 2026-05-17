@@ -46,6 +46,16 @@ fn cfg_with(audit_log: &str, db_path: Option<&str>) -> Config {
             target_dwell_max_vel_rad_s: super::safety::default_target_dwell_max_vel_rad_s(),
             homer_timeout_ms: super::safety::default_homer_timeout_ms(),
             max_feedback_age_ms: super::safety::default_max_feedback_age_ms(),
+            current_watchdog_enabled: true,
+            current_trip_observe_only: true,
+            current_trip_sustain_ms: super::safety::default_current_trip_sustain_ms(),
+            current_trip_min_motion_ms: super::safety::default_current_trip_min_motion_ms(),
+            current_post_stop_safe_ratio: super::safety::default_current_post_stop_safe_ratio(),
+            current_post_stop_confirm_ms: super::safety::default_current_post_stop_confirm_ms(),
+            current_i2t_warn_budget: super::safety::default_current_i2t_warn_budget(),
+            current_i2t_trip_budget: super::safety::default_current_i2t_trip_budget(),
+            current_i2t_decay_per_s: super::safety::default_current_i2t_decay_per_s(),
+            current_event_retention: super::safety::default_current_event_retention(),
             commission_readback_tolerance_rad:
                 super::safety::default_commission_readback_tolerance_rad(),
             auto_home_on_boot: true,
@@ -119,6 +129,7 @@ fn actuator_common_roundtrip_preserves_active_report_persisted_flag() {
         joint_kind: None,
         notes_yaml: None,
         desired_params: std::collections::BTreeMap::new(),
+        current_safety: None,
     };
     let json = serde_json::to_string(&common).expect("serialize actuator common");
     let back: crate::inventory::ActuatorCommon =

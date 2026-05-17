@@ -13,6 +13,7 @@ pub enum TestName {
     Smoke,
     Jog,
     JogOverlimit,
+    CurrentSafety,
 }
 
 impl TestName {
@@ -23,6 +24,7 @@ impl TestName {
             TestName::Smoke => "smoke",
             TestName::Jog => "jog",
             TestName::JogOverlimit => "jog_overlimit",
+            TestName::CurrentSafety => "current_safety",
         }
     }
 }

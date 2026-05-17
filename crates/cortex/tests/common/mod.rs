@@ -114,6 +114,7 @@ pub fn make_state() -> (SharedState, tempfile::TempDir) {
             mit_max_angle_step_rad: 0.087,
             mit_lpf_cutoff_hz: 6.0,
             mit_min_jerk_blend_ms: 0.0,
+            ..SafetyConfig::default()
         },
         logs: LogsConfig {
             db_path: dir.path().join("logs.db"),
@@ -252,6 +253,7 @@ pub fn make_state_commission_can_path_fails() -> (SharedState, tempfile::TempDir
             mit_max_angle_step_rad: 0.087,
             mit_lpf_cutoff_hz: 6.0,
             mit_min_jerk_blend_ms: 0.0,
+            ..SafetyConfig::default()
         },
         logs: LogsConfig {
             db_path: dir.path().join("logs.db"),
@@ -425,6 +427,7 @@ pub fn seed_feedback(state: &SharedState) {
                 mech_pos_rad: 0.1,
                 mech_vel_rad_s: 0.0,
                 torque_nm: 0.0,
+                q_current_arms: None,
                 vbus_v: 48.0,
                 temp_c: 30.0,
                 fault_sta: 0,

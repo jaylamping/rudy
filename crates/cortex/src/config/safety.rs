@@ -239,6 +239,34 @@ pub struct SafetyConfig {
     #[serde(default = "default_max_feedback_age_ms")]
     pub max_feedback_age_ms: u64,
 
+    /// Host-side current watchdog. Defaults to observe-only so first deployment
+    /// records thresholds without stopping hardware until bench calibration.
+    #[serde(default = "default_true")]
+    pub current_watchdog_enabled: bool,
+    #[serde(default = "default_true")]
+    pub current_trip_observe_only: bool,
+    /// Sustained over-current duration required before stop/quarantine behavior.
+    #[serde(default = "default_current_trip_sustain_ms")]
+    pub current_trip_sustain_ms: u64,
+    /// Ignore trips until a planned path has been active this long.
+    #[serde(default = "default_current_trip_min_motion_ms")]
+    pub current_trip_min_motion_ms: u64,
+    /// Current must fall under this ratio of effective `limit_cur` after stop.
+    #[serde(default = "default_current_post_stop_safe_ratio")]
+    pub current_post_stop_safe_ratio: f32,
+    #[serde(default = "default_current_post_stop_confirm_ms")]
+    pub current_post_stop_confirm_ms: u64,
+    /// Dimensionless I2t-style warning/trip budgets accumulated from
+    /// `(abs(iqf) / effective_limit_cur)^2 * dt_s`.
+    #[serde(default = "default_current_i2t_warn_budget")]
+    pub current_i2t_warn_budget: f32,
+    #[serde(default = "default_current_i2t_trip_budget")]
+    pub current_i2t_trip_budget: f32,
+    #[serde(default = "default_current_i2t_decay_per_s")]
+    pub current_i2t_decay_per_s: f32,
+    #[serde(default = "default_current_event_retention")]
+    pub current_event_retention: u32,
+
     /// Tolerance for the boot orchestrator's add_offset readback check.
     /// On every boot the orchestrator reads `add_offset` (0x702B) over
     /// CAN and compares it against the `commissioned_zero_offset`
@@ -347,6 +375,51 @@ impl SafetyConfig {
     }
 }
 
+impl Default for SafetyConfig {
+    fn default() -> Self {
+        Self {
+            require_verified: true,
+            boot_max_step_rad: default_boot_max_step_rad(),
+            step_size_rad: default_step_size_rad(),
+            tick_interval_ms: default_tick_interval_ms(),
+            homing_speed_rad_s: None,
+            tracking_error_max_rad: default_tracking_error_max_rad(),
+            tracking_error_grace_ticks: default_tracking_error_grace_ticks(),
+            tracking_freshness_max_age_ms: default_tracking_freshness_max_age_ms(),
+            tracking_error_debounce_ticks: default_tracking_error_debounce_ticks(),
+            fatal_warn_mask: default_fatal_warn_mask(),
+            fatal_fault_mask: default_fatal_fault_mask(),
+            band_violation_debounce_ticks: default_band_violation_debounce_ticks(),
+            boot_tracking_error_max_rad: default_boot_tracking_error_max_rad(),
+            target_tolerance_rad: default_target_tolerance_rad(),
+            target_dwell_ticks: default_target_dwell_ticks(),
+            target_dwell_max_vel_rad_s: default_target_dwell_max_vel_rad_s(),
+            homer_timeout_ms: default_homer_timeout_ms(),
+            max_feedback_age_ms: default_max_feedback_age_ms(),
+            current_watchdog_enabled: true,
+            current_trip_observe_only: true,
+            current_trip_sustain_ms: default_current_trip_sustain_ms(),
+            current_trip_min_motion_ms: default_current_trip_min_motion_ms(),
+            current_post_stop_safe_ratio: default_current_post_stop_safe_ratio(),
+            current_post_stop_confirm_ms: default_current_post_stop_confirm_ms(),
+            current_i2t_warn_budget: default_current_i2t_warn_budget(),
+            current_i2t_trip_budget: default_current_i2t_trip_budget(),
+            current_i2t_decay_per_s: default_current_i2t_decay_per_s(),
+            current_event_retention: default_current_event_retention(),
+            commission_readback_tolerance_rad: default_commission_readback_tolerance_rad(),
+            auto_home_on_boot: true,
+            scan_on_boot: true,
+            hold_kp_nm_per_rad: default_hold_kp_nm_per_rad(),
+            hold_kd_nm_s_per_rad: default_hold_kd_nm_s_per_rad(),
+            motion_backend: MotionBackend::default(),
+            mit_command_rate_hz: default_mit_command_rate_hz(),
+            mit_max_angle_step_rad: default_mit_max_angle_step_rad(),
+            mit_lpf_cutoff_hz: default_mit_lpf_cutoff_hz(),
+            mit_min_jerk_blend_ms: 0.0,
+        }
+    }
+}
+
 fn default_true() -> bool {
     true
 }
@@ -420,6 +493,38 @@ pub(crate) fn default_homer_timeout_ms() -> u32 {
 
 pub(crate) fn default_max_feedback_age_ms() -> u64 {
     250
+}
+
+pub(crate) fn default_current_trip_sustain_ms() -> u64 {
+    1_000
+}
+
+pub(crate) fn default_current_trip_min_motion_ms() -> u64 {
+    250
+}
+
+pub(crate) fn default_current_post_stop_confirm_ms() -> u64 {
+    500
+}
+
+pub(crate) fn default_current_post_stop_safe_ratio() -> f32 {
+    0.20
+}
+
+pub(crate) fn default_current_i2t_warn_budget() -> f32 {
+    10.0
+}
+
+pub(crate) fn default_current_i2t_trip_budget() -> f32 {
+    20.0
+}
+
+pub(crate) fn default_current_i2t_decay_per_s() -> f32 {
+    0.25
+}
+
+pub(crate) fn default_current_event_retention() -> u32 {
+    128
 }
 
 pub(crate) fn default_hold_kp_nm_per_rad() -> f32 {

@@ -48,6 +48,11 @@ pub struct MotorSummary {
     pub limb: Option<String>,
     /// Canonical position in the kinematic chain. None for ungrouped motors.
     pub joint_kind: Option<crate::limb::JointKind>,
+    #[serde(default)]
+    pub current_trip_latched: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub current_trip_reason: Option<String>,
     /// Writable params where live RAM differs from `inventory.desired_params`.
     #[serde(default)]
     pub drifted_param_count: u32,
@@ -66,6 +71,11 @@ pub struct MotorFeedback {
     pub mech_pos_rad: f32,
     pub mech_vel_rad_s: f32,
     pub torque_nm: f32,
+    /// Filtered q-axis current from RobStride `iqf`, in RMS amps. `None`
+    /// until the type-17 auxiliary poll has read it at least once.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub q_current_arms: Option<f32>,
     pub vbus_v: f32,
     pub temp_c: f32,
     pub fault_sta: u32,

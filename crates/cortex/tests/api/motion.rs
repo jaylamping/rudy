@@ -236,6 +236,7 @@ async fn jog_refuses_on_stale_feedback() {
                 mech_pos_rad: 0.0,
                 mech_vel_rad_s: 0.0,
                 torque_nm: 0.0,
+                q_current_arms: None,
                 vbus_v: 48.0,
                 temp_c: 30.0,
                 fault_sta: 0,

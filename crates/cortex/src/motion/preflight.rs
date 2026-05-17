@@ -88,6 +88,12 @@ pub enum PreflightFailure {
         limb: String,
         failed_motors: Vec<LimbQuarantineMotor>,
     },
+    /// A current watchdog trip latched this limb until operator clears it.
+    CurrentTripLatched {
+        limb: String,
+        role: String,
+        reason: String,
+    },
     /// Runtime DB re-seeded from seed files; operator must `POST /api/settings/recovery/ack`.
     SettingsRecovery,
     /// Decoded `fault_sta` / `warn_sta` from latest telemetry (type-2 + type-0x15).
@@ -114,6 +120,7 @@ impl PreflightFailure {
             PreflightFailure::PathViolation { .. } => "path_violation",
             PreflightFailure::StepTooLarge { .. } => "step_too_large",
             PreflightFailure::LimbQuarantined { .. } => "limb_quarantined",
+            PreflightFailure::CurrentTripLatched { .. } => "current_trip_latched",
             PreflightFailure::SettingsRecovery => "settings_recovery",
             PreflightFailure::ActiveFault { .. } => "motor_fault",
             PreflightFailure::Internal(_) => "internal",
@@ -176,6 +183,9 @@ impl PreflightFailure {
                     .collect::<Vec<_>>()
                     .join(", ");
                 format!("limb {limb} quarantined ({names})")
+            }
+            PreflightFailure::CurrentTripLatched { limb, role, reason } => {
+                format!("limb {limb} blocked by current trip on {role}: {reason}")
             }
             PreflightFailure::SettingsRecovery => {
                 "settings DB recovered from seed — acknowledge in Settings before motion".to_string()
@@ -257,6 +267,13 @@ impl PreflightChecks<'_> {
                         state_kind: crate::limb_health::boot_state_kind_snake(bs).to_string(),
                     })
                     .collect(),
+            });
+        }
+        if let Some(latch) = crate::motion::latch_for_role(self.state, self.role) {
+            return Err(PreflightFailure::CurrentTripLatched {
+                limb: latch.limb,
+                role: latch.role,
+                reason: latch.reason,
             });
         }
 

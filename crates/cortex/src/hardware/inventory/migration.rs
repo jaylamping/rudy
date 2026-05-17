@@ -85,6 +85,7 @@ pub fn migrate_v1_yaml_to_v2_inventory(yaml: &str) -> Result<Inventory> {
             joint_kind: m.joint_kind,
             notes_yaml,
             desired_params: BTreeMap::new(),
+            current_safety: None,
         };
         devices.push(Device::Actuator(Actuator {
             common,

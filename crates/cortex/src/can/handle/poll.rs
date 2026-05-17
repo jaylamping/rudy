@@ -189,6 +189,9 @@ impl LinuxCanCore {
                     if let Some(v) = torque_nm {
                         row.torque_nm = v;
                     }
+                    if let Some(v) = aux.iqf {
+                        row.q_current_arms = Some(v);
+                    }
                     if let Some(f) = aux.fault_sta {
                         row.fault_sta = f;
                     }
@@ -214,6 +217,7 @@ impl LinuxCanCore {
                         mech_pos_rad: aux.mech_pos.unwrap_or_default(),
                         mech_vel_rad_s: aux.mech_vel.unwrap_or_default(),
                         torque_nm: torque_nm.unwrap_or_default(),
+                        q_current_arms: aux.iqf,
                         vbus_v: aux.vbus.unwrap_or_default(),
                         temp_c: aux.motor_temp.unwrap_or_default(),
                         fault_sta: aux.fault_sta.unwrap_or_default(),
@@ -272,6 +276,27 @@ impl LinuxCanCore {
             classify_outcome,
             aux_seeded_first_row,
         );
+
+        if let Some(trip) = crate::motion::evaluate_idle_sample(state, motor, &merged) {
+            if matches!(
+                trip.behavior,
+                crate::motion::CurrentBehavior::LimbStopQuarantine
+            ) {
+                let limb = trip.incident.limb.clone();
+                let motors: Vec<Actuator> = state
+                    .inventory
+                    .read()
+                    .expect("inventory poisoned")
+                    .actuators()
+                    .filter(|m| m.common.present && crate::motion::current_limb_id(m) == limb)
+                    .cloned()
+                    .collect();
+                for m in motors {
+                    let _ = self.stop(&m);
+                    state.mark_stopped(&m.common.role);
+                }
+            }
+        }
 
         let _ = state.feedback_tx.send(merged);
     }

@@ -9,4 +9,9 @@ export type MotorFeedback = {
 /**
  * Milliseconds since unix epoch, for trivial client-side ordering.
  */
-t_ms: bigint, role: string, can_id: number, mech_pos_rad: number, mech_vel_rad_s: number, torque_nm: number, vbus_v: number, temp_c: number, fault_sta: number, warn_sta: number, };
+t_ms: bigint, role: string, can_id: number, mech_pos_rad: number, mech_vel_rad_s: number, torque_nm: number, 
+/**
+ * Filtered q-axis current from RobStride `iqf`, in RMS amps. `None`
+ * until the type-17 auxiliary poll has read it at least once.
+ */
+q_current_arms?: number, vbus_v: number, temp_c: number, fault_sta: number, warn_sta: number, };

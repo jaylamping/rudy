@@ -88,6 +88,7 @@ fn state_with_band(min: f32, max: f32) -> (crate::state::SharedState, tempfile::
             mit_max_angle_step_rad: 0.087,
             mit_lpf_cutoff_hz: 6.0,
             mit_min_jerk_blend_ms: 0.0,
+            ..SafetyConfig::default()
         },
         logs: LogsConfig {
             db_path: dir.path().join("logs.db"),
@@ -233,6 +234,7 @@ fn path_check_no_band_returns_nolimit() {
             mit_max_angle_step_rad: 0.087,
             mit_lpf_cutoff_hz: 6.0,
             mit_min_jerk_blend_ms: 0.0,
+            ..SafetyConfig::default()
         },
         logs: LogsConfig {
             db_path: dir.path().join("logs.db"),

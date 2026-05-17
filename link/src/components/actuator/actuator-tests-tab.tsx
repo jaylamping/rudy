@@ -79,6 +79,14 @@ const TESTS: TestDef[] = [
       "Commands spd_ref=20 rad/s; expects firmware limit_spd to clamp the response into [2.5, 3.2] rad/s.",
     destructive: true,
   },
+  {
+    name: "current_safety",
+    label: "Guided current safety trip",
+    description:
+      "Bench validation for current watchdog thresholds. The routine prompts you to restrain/backdrive this actuator and records whether current stayed above the temporary threshold long enough.",
+    destructive: true,
+    hasParams: true,
+  },
 ];
 
 interface RunState {
@@ -97,10 +105,14 @@ export function ActuatorTestsTab({ motor }: { motor: MotorSummary }) {
     save: boolean;
     target_vel: number;
     duration: number;
+    current_threshold_arms: number;
+    sustain_ms: number;
   }>({
     save: false,
     target_vel: 0.2,
     duration: 2.0,
+    current_threshold_arms: 2.0,
+    sustain_ms: 1000,
   });
   const [available, setAvailable] = useState(true);
   const lines = useTestProgress(run?.runId ?? null);
@@ -112,6 +124,10 @@ export function ActuatorTestsTab({ motor }: { motor: MotorSummary }) {
       if (test === "jog") {
         body.target_vel = params.target_vel;
         body.duration = params.duration;
+      }
+      if (test === "current_safety") {
+        body.current_threshold_arms = params.current_threshold_arms;
+        body.sustain_ms = params.sustain_ms;
       }
       return api.runTest(motor.role, test, body);
     },
@@ -303,6 +319,47 @@ export function ActuatorTestsTab({ motor }: { motor: MotorSummary }) {
                       }
                     />
                   </Label>
+                </div>
+              )}
+              {confirm.name === "current_safety" && (
+                <div className="space-y-3 text-sm">
+                  <p className="rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-200">
+                    Keep the limb clear. This guided routine records current
+                    evidence while you deliberately restrain/backdrive the
+                    actuator for validation.
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Label className="space-y-1">
+                      <span>Threshold (Arms)</span>
+                      <Input
+                        type="number"
+                        step={0.1}
+                        min={0.05}
+                        value={params.current_threshold_arms}
+                        onChange={(e) =>
+                          setParams((p) => ({
+                            ...p,
+                            current_threshold_arms: Number(e.target.value),
+                          }))
+                        }
+                      />
+                    </Label>
+                    <Label className="space-y-1">
+                      <span>Sustain (ms)</span>
+                      <Input
+                        type="number"
+                        step={100}
+                        min={100}
+                        value={params.sustain_ms}
+                        onChange={(e) =>
+                          setParams((p) => ({
+                            ...p,
+                            sustain_ms: Number(e.target.value),
+                          }))
+                        }
+                      />
+                    </Label>
+                  </div>
                 </div>
               )}
             </div>

@@ -321,6 +321,45 @@ pub async fn clear_fault(
     })))
 }
 
+pub async fn clear_current_trip(
+    State(state): State<SharedState>,
+    Path(role): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ApiError>)> {
+    let motor = require_present(&state, "clear_current_trip", &role)?;
+    let limb = crate::motion::current_limb_id(&motor);
+    let cleared = crate::motion::clear_limb_latch(&state, &limb);
+    if let Some(ref latch) = cleared {
+        state.audit.write(AuditEntry {
+            timestamp: Utc::now(),
+            session_id: None,
+            remote: None,
+            action: "current_safety_clear".into(),
+            target: Some(role.clone()),
+            details: serde_json::json!({
+                "limb": limb,
+                "latched_role": latch.role,
+                "latched_at_ms": latch.t_ms,
+                "reason": latch.reason,
+            }),
+            result: AuditResult::Ok,
+        });
+        let _ = state
+            .safety_event_tx
+            .send(crate::types::SafetyEvent::CurrentTripCleared {
+                t_ms: Utc::now().timestamp_millis(),
+                role: role.clone(),
+                limb: limb.clone(),
+            });
+    }
+
+    Ok(Json(serde_json::json!({
+        "ok": true,
+        "role": role,
+        "limb": limb,
+        "cleared": cleared.is_some(),
+    })))
+}
+
 /// Trigger the RS03 high-speed magnetic encoder calibration mode.
 ///
 /// This mirrors Motor Studio V13's "Encoder Calibation" button. Static

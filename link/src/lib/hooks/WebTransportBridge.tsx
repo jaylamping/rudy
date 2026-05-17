@@ -197,6 +197,10 @@ export function WebTransportBridge({
     const MOTORS_INVALIDATING_SAFETY_EVENTS = new Set([
       "auto_homed",
       "commissioned",
+      "current_stop_escalated",
+      "current_threshold_crossed",
+      "current_trip",
+      "current_trip_cleared",
       "home_failed",
       "homed",
       "motor_removed",

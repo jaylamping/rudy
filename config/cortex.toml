@@ -95,6 +95,20 @@ require_verified = true
 # reads the same value; bump both together if you change this.
 max_feedback_age_ms = 250
 
+# Host-side current watchdog from RobStride `iqf` telemetry. Observe-only by
+# default: the daemon logs threshold crossings and incident evidence, but does
+# not stop/quarantine limbs until calibration data supports enabling trips.
+current_watchdog_enabled = true
+current_trip_observe_only = true
+current_trip_sustain_ms = 1000
+current_trip_min_motion_ms = 250
+current_post_stop_safe_ratio = 0.20
+current_post_stop_confirm_ms = 500
+current_i2t_warn_budget = 10.0
+current_i2t_trip_budget = 20.0
+current_i2t_decay_per_s = 0.25
+current_event_retention = 128
+
 # Slow-ramp homer tick and per-tick setpoint increment. At 10 ms +
 # 0.004 rad, nominal homing speed stays ~0.4 rad/s (~23 deg/s), matching
 # previous behavior but with 5x finer control updates.

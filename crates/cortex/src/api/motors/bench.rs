@@ -35,6 +35,12 @@ pub struct TestsBody {
     /// `jog`: duration (s).
     #[serde(default)]
     pub duration: Option<f32>,
+    /// `current_safety`: manual threshold in RMS amps for guided bench validation.
+    #[serde(default)]
+    pub current_threshold_arms: Option<f32>,
+    /// `current_safety`: sustained duration above threshold required for pass.
+    #[serde(default)]
+    pub sustain_ms: Option<u64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -103,6 +109,8 @@ pub async fn run_test(
             "save": body.save,
             "target_vel": body.target_vel,
             "duration": body.duration,
+            "current_threshold_arms": body.current_threshold_arms,
+            "sustain_ms": body.sustain_ms,
         }),
         result: AuditResult::Ok,
     });
@@ -119,6 +127,7 @@ fn parse_name(s: &str) -> Option<TestName> {
         "smoke" => Some(TestName::Smoke),
         "jog" => Some(TestName::Jog),
         "jog_overlimit" => Some(TestName::JogOverlimit),
+        "current_safety" => Some(TestName::CurrentSafety),
         _ => None,
     }
 }
@@ -151,6 +160,12 @@ fn spawn_runner(
             "spawn",
             &format!("starting {} on {} (run_id={run_id})", test.as_str(), role),
         );
+
+        if matches!(test, TestName::CurrentSafety) {
+            run_current_safety_guided(state.clone(), role.clone(), body, &run_id, seq.clone())
+                .await;
+            return;
+        }
 
         if state.real_can.is_none() {
             // Mock mode: synthesize a quick pass so the SPA wiring is
@@ -286,6 +301,7 @@ async fn run_real(
                     &mut reporter,
                 )
             }),
+            TestName::CurrentSafety => unreachable!("handled on async path before run_real"),
         }
     })
     .await
@@ -321,6 +337,114 @@ async fn run_real(
             });
         }
         Ok(RoutineOutcome::Pass) => {}
+    }
+}
+
+async fn run_current_safety_guided(
+    state: SharedState,
+    role: String,
+    body: TestsBody,
+    run_id: &str,
+    seq: std::sync::Arc<AtomicU64>,
+) {
+    let emit = |level: TestLevel, step: &str, message: &str| {
+        let p = TestProgress {
+            run_id: run_id.to_string(),
+            role: role.clone(),
+            seq: seq.fetch_add(1, Ordering::SeqCst),
+            t_ms: Utc::now().timestamp_millis(),
+            step: step.to_string(),
+            level,
+            message: message.to_string(),
+        };
+        let _ = state.test_progress_tx.send(p);
+    };
+
+    let threshold = body.current_threshold_arms.unwrap_or(2.0).max(0.05);
+    let sustain_ms = body.sustain_ms.unwrap_or(1_000).max(100);
+    emit(
+        TestLevel::Warn,
+        "operator",
+        "Confirm the limb is clear and you are ready to manually restrain/backdrive this actuator.",
+    );
+    emit(
+        TestLevel::Info,
+        "arm",
+        &format!(
+            "Watching q_current_arms; pass requires |iqf| >= {threshold:.2} Arms for {sustain_ms} ms"
+        ),
+    );
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    let mut over_since: Option<std::time::Instant> = None;
+    let mut peak = 0.0_f32;
+    loop {
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        let current = state
+            .latest
+            .read()
+            .expect("latest poisoned")
+            .get(&role)
+            .and_then(|fb| fb.q_current_arms)
+            .map(f32::abs);
+        let Some(current) = current else {
+            emit(
+                TestLevel::Warn,
+                "sample",
+                "No q_current_arms sample yet; waiting...",
+            );
+            if std::time::Instant::now() >= deadline {
+                emit(
+                    TestLevel::Fail,
+                    "done",
+                    "Timed out waiting for current telemetry.",
+                );
+                return;
+            }
+            continue;
+        };
+        peak = peak.max(current);
+        if current >= threshold {
+            let start = over_since.get_or_insert_with(std::time::Instant::now);
+            let elapsed = start.elapsed().as_millis() as u64;
+            emit(
+                TestLevel::Info,
+                "sample",
+                &format!("current {current:.2} Arms above threshold for {elapsed} ms"),
+            );
+            if elapsed >= sustain_ms {
+                state.audit.write(AuditEntry {
+                    timestamp: Utc::now(),
+                    session_id: None,
+                    remote: None,
+                    action: "test_current_safety_pass".into(),
+                    target: Some(role.clone()),
+                    details: serde_json::json!({
+                        "run_id": run_id,
+                        "threshold_arms": threshold,
+                        "sustain_ms": sustain_ms,
+                        "peak_arms": peak,
+                    }),
+                    result: AuditResult::Ok,
+                });
+                emit(
+                    TestLevel::Pass,
+                    "done",
+                    &format!("Current safety bench threshold met; peak {peak:.2} Arms."),
+                );
+                return;
+            }
+        } else {
+            over_since = None;
+        }
+        if std::time::Instant::now() >= deadline {
+            emit(
+                TestLevel::Fail,
+                "done",
+                &format!("Timed out; peak {peak:.2} Arms never sustained threshold."),
+            );
+            return;
+        }
     }
 }
 

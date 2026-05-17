@@ -18,8 +18,8 @@ import "uplot/dist/uPlot.min.css";
 import type { MotorSummary } from "@/lib/types/MotorSummary";
 import { radToDeg } from "@/lib/units";
 
-/** One of the four metrics we routinely chart per motor. */
-export type MotorMetric = "pos" | "vel" | "torque" | "temp";
+/** One of the metrics we routinely chart per motor. */
+export type MotorMetric = "pos" | "vel" | "torque" | "current" | "temp";
 
 const WINDOW_SEC = 60;
 
@@ -35,6 +35,7 @@ const META: Record<
   pos: { label: "pos (°)", unit: "°", stroke: "#60a5fa" },
   vel: { label: "vel (°/s)", unit: "°/s", stroke: "#f59e0b" },
   torque: { label: "torque (Nm)", unit: "Nm", stroke: "#a78bfa" },
+  current: { label: "current (Arms)", unit: "Arms", stroke: "#22c55e" },
   temp: { label: "temp (degC)", unit: "degC", stroke: "#f43f5e" },
 };
 
@@ -48,6 +49,8 @@ function pluck(motor: MotorSummary | null | undefined, metric: MotorMetric): num
       return radToDeg(fb.mech_vel_rad_s);
     case "torque":
       return fb.torque_nm;
+    case "current":
+      return fb.q_current_arms ?? null;
     case "temp":
       return fb.temp_c;
   }

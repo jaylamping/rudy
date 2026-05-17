@@ -386,11 +386,22 @@ export const api = {
   runTest: (
     role: string,
     name: import("@/lib/types/TestName").TestName,
-    body: { save?: boolean; target_vel?: number; duration?: number },
+    body: {
+      save?: boolean;
+      target_vel?: number;
+      duration?: number;
+      current_threshold_arms?: number;
+      sustain_ms?: number;
+    },
   ) =>
     apiFetch<{ run_id: string }>(
       `/api/motors/${encodeURIComponent(role)}/tests/${encodeURIComponent(name)}`,
       { method: "POST", body: JSON.stringify(body) },
+    ),
+  clearCurrentTrip: (role: string) =>
+    apiFetch<{ ok: boolean; role: string; limb: string; cleared: boolean }>(
+      `/api/motors/${encodeURIComponent(role)}/current_trip/clear`,
+      { method: "POST" },
     ),
   // Inventory passthrough (raw `extra` map plus typed scalars).
   getInventory: (role: string) =>

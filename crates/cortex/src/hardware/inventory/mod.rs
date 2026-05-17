@@ -26,9 +26,9 @@ mod travel_limits;
 
 pub use devices::{
     Actuator, ActuatorCommon, ActuatorFamily, Battery, BatteryCommon, BatteryFamily, CameraModel,
-    Device, DisplayModel, FanModel, ForceSensorModel, GyroSensorModel, LedModel, LidarModel,
-    MicrophoneModel, MotionSensorModel, Peripheral, PeripheralCommon, PeripheralFamily,
-    RobstrideModel, Sensor, SensorCommon, SensorFamily, SpeakerModel,
+    CurrentSafetyTiers, Device, DisplayModel, FanModel, ForceSensorModel, GyroSensorModel,
+    LedModel, LidarModel, MicrophoneModel, MotionSensorModel, Peripheral, PeripheralCommon,
+    PeripheralFamily, RobstrideModel, Sensor, SensorCommon, SensorFamily, SpeakerModel,
 };
 pub use error::InventoryError;
 pub use migration::migrate_v1_yaml_to_v2_inventory;

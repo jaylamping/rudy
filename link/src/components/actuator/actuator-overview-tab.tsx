@@ -32,6 +32,7 @@ const METRICS: { key: MotorMetric; title: string }[] = [
   { key: "pos", title: "Position" },
   { key: "vel", title: "Velocity" },
   { key: "torque", title: "Torque" },
+  { key: "current", title: "Current" },
   { key: "temp", title: "Temperature" },
 ];
 
@@ -45,6 +46,7 @@ export function ActuatorOverviewTab({ motor }: { motor: MotorSummary }) {
 
   return (
     <div className="space-y-4">
+      <CurrentTripBar motor={motor} />
       <GoHomeBar motor={motor} />
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="grid gap-4 sm:grid-cols-2 lg:col-span-2">
@@ -83,6 +85,35 @@ export function ActuatorOverviewTab({ motor }: { motor: MotorSummary }) {
         </Card>
       </div>
     </div>
+  );
+}
+
+function CurrentTripBar({ motor }: { motor: MotorSummary }) {
+  const qc = useQueryClient();
+  const clear = useMutation({
+    mutationFn: () => api.clearCurrentTrip(motor.role),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.motors.all() }),
+  });
+  if (!motor.current_trip_latched) return null;
+  return (
+    <Card className="border-destructive/50 bg-destructive/10">
+      <CardContent className="flex flex-wrap items-center justify-between gap-3 py-3">
+        <div className="text-sm">
+          <div className="font-medium text-destructive">Current trip latched</div>
+          <div className="text-xs text-muted-foreground">
+            {motor.current_trip_reason ?? "Inspect the limb before clearing."}
+          </div>
+        </div>
+        <Button
+          variant="destructive"
+          size="sm"
+          disabled={clear.isPending}
+          onClick={() => clear.mutate()}
+        >
+          {clear.isPending ? "Clearing..." : "Clear current latch"}
+        </Button>
+      </CardContent>
+    </Card>
   );
 }
 

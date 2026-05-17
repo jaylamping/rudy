@@ -33,6 +33,7 @@ fn sample_motor() -> MotorFeedback {
         mech_pos_rad: 0.5,
         mech_vel_rad_s: -0.25,
         torque_nm: 1.5,
+        q_current_arms: Some(0.64),
         vbus_v: 48.1,
         temp_c: 32.0,
         fault_sta: 0,
