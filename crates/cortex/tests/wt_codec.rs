@@ -20,9 +20,9 @@
 //! number, because ts-rs declares it as `bigint`.
 
 use cortex::types::{
-    ImuSample, MotorFeedback, SafetyEvent, SensorHealth, SensorSample, SystemSnapshot, SystemTemps,
-    SystemThrottled, TestLevel, TestProgress, WtEnvelope, WtFrame, WtKind, WtPayload, WtSubscribe,
-    WtTransport, WT_PROTOCOL_VERSION, WT_STREAMS,
+    ImuSample, MotorFeedback, RuntimeState, RuntimeStatus, SafetyEvent, SensorHealth, SensorSample,
+    SystemSnapshot, SystemTemps, SystemThrottled, TestLevel, TestProgress, WtEnvelope, WtFrame,
+    WtKind, WtPayload, WtSubscribe, WtTransport, WT_PROTOCOL_VERSION, WT_STREAMS,
 };
 
 fn sample_motor() -> MotorFeedback {
@@ -81,6 +81,21 @@ fn sample_sensor() -> SensorSample {
             rotation_accuracy: 3,
             rotation_accuracy_label: "high".into(),
         }),
+    }
+}
+
+fn sample_runtime_status() -> RuntimeStatus {
+    RuntimeStatus {
+        t_ms: 1_700_000_123_456,
+        state: RuntimeState::Ready,
+        reason: "idle_ready".into(),
+        can_mock: true,
+        can_ready: true,
+        can_accept_motion: true,
+        active_motions: vec![],
+        enabled_roles: vec![],
+        position_hold_roles: vec![],
+        blockers: vec![],
     }
 }
 
@@ -146,6 +161,23 @@ fn envelope_roundtrips_sensor_sample() {
 }
 
 #[test]
+fn envelope_roundtrips_runtime_status() {
+    let payload = sample_runtime_status();
+    let env = WtEnvelope::new(10, payload.clone());
+    assert_eq!(env.kind, RuntimeStatus::KIND);
+
+    let mut buf = Vec::with_capacity(256);
+    ciborium::into_writer(&env, &mut buf).expect("encode CBOR");
+
+    let frame: WtFrame = ciborium::from_reader(buf.as_slice()).expect("decode CBOR");
+    let WtFrame::RuntimeStatus(decoded) = frame else {
+        panic!("expected RuntimeStatus variant");
+    };
+    assert_eq!(decoded.state, payload.state);
+    assert_eq!(decoded.reason, payload.reason);
+}
+
+#[test]
 fn envelope_json_shape_is_stable() {
     // The exact field names + nesting are part of the contract. A future
     // refactor that, say, flattens `data` would silently break the SPA
@@ -177,11 +209,13 @@ fn discriminator_strings_match_macro() {
     assert_eq!(SensorSample::KIND, "sensor_sample");
     assert_eq!(TestProgress::KIND, "test_progress");
     assert_eq!(SafetyEvent::KIND, "safety_event");
+    assert_eq!(RuntimeStatus::KIND, "runtime_status");
     assert_eq!(WtKind::MotorFeedback.as_str(), "motor_feedback");
     assert_eq!(WtKind::SystemSnapshot.as_str(), "system_snapshot");
     assert_eq!(WtKind::SensorSample.as_str(), "sensor_sample");
     assert_eq!(WtKind::TestProgress.as_str(), "test_progress");
     assert_eq!(WtKind::SafetyEvent.as_str(), "safety_event");
+    assert_eq!(WtKind::RuntimeStatus.as_str(), "runtime_status");
 
     let kinds: Vec<&str> = WT_STREAMS.iter().map(|s| s.kind).collect();
     assert!(kinds.contains(&"motor_feedback"));
@@ -189,6 +223,7 @@ fn discriminator_strings_match_macro() {
     assert!(kinds.contains(&"sensor_sample"));
     assert!(kinds.contains(&"test_progress"));
     assert!(kinds.contains(&"safety_event"));
+    assert!(kinds.contains(&"runtime_status"));
 }
 
 #[test]
@@ -198,9 +233,11 @@ fn transport_assignments_match_macro() {
     assert_eq!(SensorSample::TRANSPORT, WtTransport::Datagram);
     assert_eq!(TestProgress::TRANSPORT, WtTransport::Stream);
     assert_eq!(SafetyEvent::TRANSPORT, WtTransport::Stream);
+    assert_eq!(RuntimeStatus::TRANSPORT, WtTransport::Datagram);
     assert_eq!(WtKind::MotorFeedback.transport(), WtTransport::Datagram);
     assert_eq!(WtKind::SensorSample.transport(), WtTransport::Datagram);
     assert_eq!(WtKind::TestProgress.transport(), WtTransport::Stream);
+    assert_eq!(WtKind::RuntimeStatus.transport(), WtTransport::Datagram);
 }
 
 #[test]
@@ -285,6 +322,15 @@ fn cbor_payload_size_is_reasonable() {
     assert!(
         buf.len() < 512,
         "SensorSample envelope ballooned to {} bytes",
+        buf.len()
+    );
+
+    let mut buf = Vec::with_capacity(256);
+    ciborium::into_writer(&WtEnvelope::new(0, sample_runtime_status()), &mut buf)
+        .expect("encode CBOR");
+    assert!(
+        buf.len() < 512,
+        "RuntimeStatus envelope ballooned to {} bytes",
         buf.len()
     );
 }

@@ -199,17 +199,17 @@ pub fn evaluate_active_path(input: WatchdogInput<'_>) -> Option<CurrentTrip> {
     };
 
     if abs_current >= thresholds.mild {
-        let incident = incident(
-            &input,
-            "mild",
-            "log",
+        let incident = incident(IncidentInput {
+            watchdog: &input,
+            tier: "mild",
+            behavior: "log",
             signed_current,
-            thresholds.mild,
-            0,
+            threshold: thresholds.mild,
+            duration_ms: 0,
             i2t_value,
-            &limits,
-            motion_error,
-        );
+            limits: &limits,
+            motion_error_rad: motion_error,
+        });
         push_incident(
             &mut runtime,
             incident.clone(),
@@ -261,17 +261,17 @@ pub fn evaluate_active_path(input: WatchdogInput<'_>) -> Option<CurrentTrip> {
         CurrentBehavior::Warn => "warn",
         CurrentBehavior::LimbStopQuarantine => "limb_stop_quarantine",
     };
-    let incident = incident(
-        &input,
+    let incident = incident(IncidentInput {
+        watchdog: &input,
         tier,
-        behavior_label,
+        behavior: behavior_label,
         signed_current,
         threshold,
-        severe_duration,
+        duration_ms: severe_duration,
         i2t_value,
-        &limits,
-        motion_error,
-    );
+        limits: &limits,
+        motion_error_rad: motion_error,
+    });
     push_incident(
         &mut runtime,
         incident.clone(),
@@ -489,34 +489,36 @@ fn push_incident(runtime: &mut CurrentSafetyRuntime, incident: CurrentIncident, 
     }
 }
 
-fn incident(
-    input: &WatchdogInput<'_>,
-    tier: &str,
-    behavior: &str,
+struct IncidentInput<'a> {
+    watchdog: &'a WatchdogInput<'a>,
+    tier: &'a str,
+    behavior: &'a str,
     signed_current: f32,
     threshold: f32,
     duration_ms: u64,
     i2t_value: f32,
-    limits: &EffectiveLimits,
+    limits: &'a EffectiveLimits,
     motion_error_rad: f32,
-) -> CurrentIncident {
+}
+
+fn incident(input: IncidentInput<'_>) -> CurrentIncident {
     CurrentIncident {
         t_ms: Utc::now().timestamp_millis(),
-        role: input.motor.common.role.clone(),
-        limb: effective_limb_id(input.motor),
-        tier: tier.to_string(),
-        behavior: behavior.to_string(),
-        signed_current_arms: signed_current,
-        abs_current_arms: signed_current.abs(),
-        threshold_arms: threshold,
-        duration_ms,
-        i2t_value,
-        limit_cur_arms: limits.limit_cur_arms,
-        limit_torque_nm: limits.limit_torque_nm,
-        limit_source: limits.source.to_string(),
-        motion_kind: input.motion_kind.to_string(),
-        motion_error_rad,
-        velocity_rad_s: input.feedback.mech_vel_rad_s,
+        role: input.watchdog.motor.common.role.clone(),
+        limb: effective_limb_id(input.watchdog.motor),
+        tier: input.tier.to_string(),
+        behavior: input.behavior.to_string(),
+        signed_current_arms: input.signed_current,
+        abs_current_arms: input.signed_current.abs(),
+        threshold_arms: input.threshold,
+        duration_ms: input.duration_ms,
+        i2t_value: input.i2t_value,
+        limit_cur_arms: input.limits.limit_cur_arms,
+        limit_torque_nm: input.limits.limit_torque_nm,
+        limit_source: input.limits.source.to_string(),
+        motion_kind: input.watchdog.motion_kind.to_string(),
+        motion_error_rad: input.motion_error_rad,
+        velocity_rad_s: input.watchdog.feedback.mech_vel_rad_s,
     }
 }
 

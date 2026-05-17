@@ -7,6 +7,7 @@ use crate::state::SharedState;
 mod config;
 mod health;
 mod logs;
+mod runtime;
 mod settings;
 mod system;
 
@@ -14,6 +15,7 @@ pub fn router() -> Router<SharedState> {
     Router::new()
         .route("/config", get(config::get_config))
         .route("/health", get(health::get_health))
+        .route("/runtime", get(runtime::get_runtime))
         .route("/system", get(system::get_system))
         .route("/logs", get(logs::list).delete(logs::clear))
         .route("/logs/level", get(logs::get_level).put(logs::put_level))

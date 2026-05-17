@@ -71,6 +71,17 @@ pub fn spawn(state: SharedState) {
         }
     }
 
+    let runtime_state = state.clone();
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(std::time::Duration::from_secs(1));
+        loop {
+            tick.tick().await;
+            let _ = runtime_state
+                .runtime_status_tx
+                .send(runtime_state.runtime_status());
+        }
+    });
+
     // Mock CAN drives its own feedback + parameter shadow; only the real
     // Linux CAN core needs the periodic type-17 poller.
     //

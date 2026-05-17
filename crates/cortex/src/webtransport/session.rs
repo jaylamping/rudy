@@ -41,8 +41,8 @@ use super::client_frames::ClientFrame;
 use crate::motion::{MotionIntent, MotionStatus};
 use crate::state::SharedState;
 use crate::types::{
-    LogEntry, MotorFeedback, SafetyEvent, SensorSample, SystemSnapshot, TestProgress, WtEnvelope,
-    WtKind, WtPayload, WtSubscribe, WtSubscribeFilters, WtTransport,
+    LogEntry, MotorFeedback, RuntimeStatus, SafetyEvent, SensorSample, SystemSnapshot,
+    TestProgress, WtEnvelope, WtKind, WtPayload, WtSubscribe, WtSubscribeFilters, WtTransport,
 };
 
 /// Match REST `/api/motors/:role/motion/jog`: unbounded jog has no automatic
@@ -200,6 +200,11 @@ impl SessionRouter {
         f.allows_kind(WtKind::SafetyEvent)
     }
 
+    pub fn allows_runtime_status(&self) -> bool {
+        let f = self.filter.read().expect("filter poisoned");
+        f.allows_kind(WtKind::RuntimeStatus)
+    }
+
     /// `motion_status` reuses the `motor_roles` filter so a per-detail-page
     /// subscriber can narrow to one role without inventing a new filter
     /// dimension. Empty roles ≡ all roles.
@@ -320,6 +325,7 @@ pub async fn run_session(connection: Connection, state: SharedState) -> Result<(
     let mut sensor_rx = state.sensor_tx.subscribe();
     let mut tests_rx = state.test_progress_tx.subscribe();
     let mut safety_rx = state.safety_event_tx.subscribe();
+    let mut runtime_rx = state.runtime_status_tx.subscribe();
     let mut motion_rx = state.motion_status_tx.subscribe();
     let mut log_rx = state.log_event_tx.subscribe();
 
@@ -439,7 +445,23 @@ pub async fn run_session(connection: Connection, state: SharedState) -> Result<(
                 Err(RecvError::Closed) => break Ok(()),
             },
 
-            // (b6) Live motion-status fan-out (datagram). Filtered by
+            // (b6) Runtime FSM status fan-out (datagram).
+            res = runtime_rx.recv() => match res {
+                Ok(status) => {
+                    if router.allows_runtime_status() {
+                        if let Err(e) = router.send::<RuntimeStatus>(conn_ref, WtKind::RuntimeStatus, status).await {
+                            debug!("wt: runtime_status send failed; closing session: {e:#}");
+                            break Ok(());
+                        }
+                    }
+                }
+                Err(RecvError::Lagged(n)) => {
+                    debug!("wt: runtime receiver lagged {n}");
+                }
+                Err(RecvError::Closed) => break Ok(()),
+            },
+
+            // (b7) Live motion-status fan-out (datagram). Filtered by
             // motor role via the existing `motor_roles` sub-filter so a
             // detail page can narrow to one motor without a new filter
             // dimension.
@@ -458,7 +480,7 @@ pub async fn run_session(connection: Connection, state: SharedState) -> Result<(
                 Err(RecvError::Closed) => break Ok(()),
             },
 
-            // (b7) Live log fan-out (reliable). Captures both the
+            // (b8) Live log fan-out (reliable). Captures both the
             // tracing-layer events and the audit-log fanout — see
             // `log_layer` and `audit::AuditLog::write`.
             res = log_rx.recv() => match res {

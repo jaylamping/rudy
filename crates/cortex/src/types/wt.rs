@@ -5,6 +5,7 @@ use ts_rs::TS;
 
 use super::logs::LogEntry;
 use super::motor::MotorFeedback;
+use super::runtime::RuntimeStatus;
 use super::safety::SafetyEvent;
 use super::sensor::SensorSample;
 use super::system::SystemSnapshot;
@@ -195,6 +196,11 @@ declare_wt_streams! {
         transport: Stream,
         /// E-stop / control-lock / travel-band events. Reliable.
     },
+    RuntimeStatus => RuntimeStatus {
+        kind: "runtime_status",
+        transport: Datagram,
+        /// ADR-0008 runtime FSM status. Periodic, latest-wins snapshot.
+    },
     MotionStatus => crate::motion::MotionStatus {
         kind: "motion_status",
         transport: Datagram,
@@ -283,7 +289,7 @@ impl<T: WtPayload> WtEnvelope<T> {
 /// The variants are kept in lockstep with `declare_wt_streams!` by hand for
 /// now — small enough to be a non-issue, and ts-rs needs the explicit listing
 /// to generate the discriminated union for `link/src/lib/types/WtFrame.ts`.
-/// If we ever have >5 streams we can revisit with a doc-generation step.
+/// If this list keeps growing, revisit with a doc-generation step.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "./")]
 #[serde(tag = "kind", content = "data", rename_all = "snake_case")]
@@ -293,6 +299,7 @@ pub enum WtFrame {
     SensorSample(SensorSample),
     TestProgress(TestProgress),
     SafetyEvent(SafetyEvent),
+    RuntimeStatus(RuntimeStatus),
     MotionStatus(crate::motion::MotionStatus),
     LogEvent(LogEntry),
 }

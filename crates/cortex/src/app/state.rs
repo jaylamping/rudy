@@ -24,6 +24,7 @@ use crate::types::{
     DeploymentInfo, LogEntry, MotorFeedback, ParamSnapshot, SafetyEvent, SensorSample,
     SystemSnapshot, TestProgress,
 };
+use crate::types::{RuntimeBlocker, RuntimeMotion, RuntimeState, RuntimeStatus};
 
 /// Erased setter for the reload-able `EnvFilter`. Stored in `AppState`
 /// instead of the concrete `tracing_subscriber::reload::Handle` so the
@@ -139,6 +140,11 @@ pub struct AppState {
     /// Safety-event broadcast (e-stop, lock changes, travel-band rejections).
     /// Reliable WT stream so the dashboard never misses an e-stop pulse.
     pub safety_event_tx: broadcast::Sender<SafetyEvent>,
+
+    /// High-level runtime FSM snapshot from ADR-0008. Produced periodically
+    /// from existing state in this first pass; later gate PRs will send on
+    /// explicit transitions.
+    pub runtime_status_tx: broadcast::Sender<RuntimeStatus>,
 
     /// Live snapshots from server-side motion controllers (sweep / wave /
     /// jog). One sender; the WT listener subscribes per-session and
@@ -288,6 +294,7 @@ impl AppState {
         let (sensor_tx, _) = broadcast::channel::<SensorSample>(64);
         let (test_progress_tx, _) = broadcast::channel::<TestProgress>(256);
         let (safety_event_tx, _) = broadcast::channel::<SafetyEvent>(64);
+        let (runtime_status_tx, _) = broadcast::channel::<RuntimeStatus>(32);
         let (motion_status_tx, _) = broadcast::channel::<MotionStatus>(256);
         Self {
             cfg,
@@ -310,6 +317,7 @@ impl AppState {
             sensor_tx,
             test_progress_tx,
             safety_event_tx,
+            runtime_status_tx,
             motion_status_tx,
             motion: MotionRegistry::new(),
             control_lock: RwLock::new(None),
@@ -342,6 +350,115 @@ impl AppState {
     /// and drop the lock quickly.
     pub fn read_effective(&self) -> std::sync::RwLockReadGuard<'_, EffectiveRuntime> {
         self.effective.read().expect("effective poisoned")
+    }
+
+    /// Derive the ADR-0008 runtime FSM snapshot from existing read-only state.
+    ///
+    /// This is intentionally observational in the first implementation: no
+    /// endpoint gates use this yet, so adding the status surface cannot change
+    /// hardware behavior.
+    pub fn runtime_status(&self) -> RuntimeStatus {
+        let t_ms = chrono::Utc::now().timestamp_millis();
+        let can_mock = self.cfg.can.mock;
+        let can_ready = can_mock || self.real_can.is_some();
+        let active_motions: Vec<RuntimeMotion> = self
+            .motion
+            .snapshot_all()
+            .into_iter()
+            .map(|m| RuntimeMotion {
+                run_id: m.run_id,
+                role: m.role,
+                kind: m.kind,
+                started_at_ms: m.started_at_ms,
+            })
+            .collect();
+        let enabled_roles: Vec<String> = self
+            .enabled
+            .read()
+            .expect("enabled poisoned")
+            .iter()
+            .cloned()
+            .collect();
+        let position_hold_roles: Vec<String> = self
+            .position_hold
+            .read()
+            .expect("position_hold poisoned")
+            .iter()
+            .cloned()
+            .collect();
+
+        let mut blockers = Vec::new();
+        if !can_ready {
+            blockers.push(RuntimeBlocker {
+                kind: "can_unavailable".into(),
+                role: None,
+                message: "CAN is not ready for this build/configuration".into(),
+            });
+        }
+        if self
+            .settings_recovery_pending
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
+            blockers.push(RuntimeBlocker {
+                kind: "settings_recovery_pending".into(),
+                role: None,
+                message: "runtime settings recovery requires operator acknowledgement".into(),
+            });
+        }
+
+        let mut auto_homing = false;
+        for (role, boot) in self.boot_state.read().expect("boot_state poisoned").iter() {
+            match boot {
+                BootState::AutoHoming { .. } => {
+                    auto_homing = true;
+                }
+                BootState::OffsetChanged { .. } => blockers.push(RuntimeBlocker {
+                    kind: "offset_changed".into(),
+                    role: Some(role.clone()),
+                    message: "commissioned zero offset disagrees with firmware readback".into(),
+                }),
+                BootState::HomeFailed { reason, .. } => blockers.push(RuntimeBlocker {
+                    kind: "home_failed".into(),
+                    role: Some(role.clone()),
+                    message: reason.clone(),
+                }),
+                BootState::OutOfBand { .. } => blockers.push(RuntimeBlocker {
+                    kind: "out_of_band".into(),
+                    role: Some(role.clone()),
+                    message: "motor position is outside configured travel limits".into(),
+                }),
+                BootState::Unknown | BootState::InBand | BootState::Homed => {}
+            }
+        }
+
+        let (state, reason) = if !can_ready {
+            (RuntimeState::Passive, "can_unavailable")
+        } else if auto_homing {
+            (RuntimeState::Homing, "auto_home_in_progress")
+        } else if active_motions.iter().any(|m| m.kind == "jog") {
+            (RuntimeState::ManualJog, "active_jog")
+        } else if !active_motions.is_empty() {
+            (RuntimeState::PrimitiveRunning, "active_primitive")
+        } else if !position_hold_roles.is_empty() {
+            (RuntimeState::Holding, "position_hold")
+        } else if !blockers.is_empty() {
+            (RuntimeState::Faulted, "blocked")
+        } else {
+            (RuntimeState::Ready, "idle_ready")
+        };
+
+        RuntimeStatus {
+            t_ms,
+            state,
+            reason: reason.into(),
+            can_mock,
+            can_ready,
+            can_accept_motion: matches!(state, RuntimeState::Ready | RuntimeState::Holding),
+            active_motions,
+            enabled_roles,
+            position_hold_roles,
+            blockers,
+        }
     }
 
     /// When `[runtime] enabled` — pass into [`inventory::write_atomic`].

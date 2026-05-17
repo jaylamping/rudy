@@ -10,6 +10,7 @@ mod logs;
 mod meta;
 mod motor;
 mod reminders;
+mod runtime;
 mod safety;
 mod sensor;
 mod settings;
@@ -27,6 +28,7 @@ pub use motor::{
     ParamSyncRequest, ParamValue, ParamWrite,
 };
 pub use reminders::{Reminder, ReminderInput};
+pub use runtime::{RuntimeBlocker, RuntimeMotion, RuntimeState, RuntimeStatus};
 pub use safety::SafetyEvent;
 pub use sensor::{ImuSample, SensorHealth, SensorSample};
 pub use settings::{
