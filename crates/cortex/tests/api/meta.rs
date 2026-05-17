@@ -11,8 +11,8 @@ use tower::ServiceExt;
 use cortex::inventory::{Device, Inventory, TravelLimits};
 use cortex::types::{
     ApiError, MotorFeedback, MotorSummary, ParamSnapshot, PutSettingResponse, Reminder,
-    SafetyEvent, ServerConfig, ServerFeatures, SettingsGetResponse, SystemSnapshot,
-    WebTransportAdvert,
+    RuntimeState, RuntimeStatus, SafetyEvent, ServerConfig, ServerFeatures, SettingsGetResponse,
+    SystemSnapshot, WebTransportAdvert,
 };
 
 #[path = "../common/mod.rs"]
@@ -176,6 +176,32 @@ async fn get_system_returns_system_snapshot_shape() {
     assert!(snap.mem_total_mb > 0);
     assert!(snap.t_ms > 0);
     assert_eq!(snap.load.len(), 3);
+}
+
+/// `GET /api/runtime` exposes the ADR-0008 read-only runtime FSM snapshot.
+#[tokio::test]
+async fn get_runtime_returns_runtime_status_shape() {
+    let (state, _dir) = common::make_state();
+    let app = cortex::build_app(state);
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/runtime")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let snap: RuntimeStatus = body_json(resp).await;
+    assert_eq!(snap.state, RuntimeState::Ready);
+    assert_eq!(snap.reason, "idle_ready");
+    assert!(snap.can_mock);
+    assert!(snap.can_ready);
+    assert!(snap.can_accept_motion);
+    assert!(snap.active_motions.is_empty());
 }
 
 /// Runtime settings list (read-only when `[runtime] enabled` is false in fixture).
