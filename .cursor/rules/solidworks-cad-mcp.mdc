@@ -1,0 +1,16 @@
+---
+description: Use the standalone SolidWorks MCP and robot CAD vault for mechanical design context
+alwaysApply: true
+---
+
+# SolidWorks CAD Workflow
+
+When the user talks about SolidWorks, CAD, brackets, arms, actuators, URDF geometry, screenshots, or mechanical design for Rudy:
+
+- Use the `solidworks` MCP server when available. It points to `C:/code/solidworks-mcp/dist/index.js`.
+- Treat `C:/code/solidworks-mcp` as the standalone MCP/tooling repo.
+- Treat `C:/code/robot-cad` as the CAD vault repo. Rudy source should consume exports/manifests, not own source CAD.
+- Old source files may still exist under `C:/Users/joeyl/OneDrive/Desktop/robot`; migrate/copy into `robot-cad` before making durable changes.
+- Prefer real vendor CAD first: RobStride actuators, McMaster hardware, sensors, Raspberry Pi boards, bearings, inserts, connectors, and extrusions.
+- For review screenshots: hide reference geometry/sketches, clear selection, set isometric view, zoom-to-fit, then export PNG.
+- Preserve SolidWorks source filenames until using a reference-safe rename/Pack-and-Go workflow.

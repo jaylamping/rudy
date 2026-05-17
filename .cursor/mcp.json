@@ -7,6 +7,13 @@
     "pi-cortex": {
       "command": "node",
       "args": ["C:/code/rudy/tools/mcp/pi-cortex/dist/index.js"]
+    },
+    "solidworks": {
+      "command": "node",
+      "args": ["C:/code/solidworks-mcp/dist/index.js"],
+      "env": {
+        "SOLIDWORKS_MCP_ALLOWED_ROOTS": "C:/code/robot-cad;C:/Users/joeyl/OneDrive/Desktop/robot"
+      }
     }
   }
 }
