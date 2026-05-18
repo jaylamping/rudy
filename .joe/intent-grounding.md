@@ -82,9 +82,11 @@ Example decomposition:
 
 The model can propose this decomposition. The grounding layer clamps or rejects values against allowed action schemas. `cortex` still performs runtime validation before motion.
 
-## Capability-aware substitution
+## Capability planner as core functionality
 
-Natural language often contains both a **goal** and a **preference**.
+This should not be modeled as "fallback." The planner is the functionality.
+
+Natural language provides a **goal**, plus constraints, preferences, and context. The planner searches for a feasible, safe action sequence using current robot capabilities.
 
 Example:
 
@@ -97,18 +99,25 @@ Possible parse:
 ```json
 {
   "goal": "perform_greeting_gesture",
-  "preferred_limb": "right_arm",
-  "acceptable_substitutions": ["left_arm"],
-  "must_use_requested_limb": false
+  "constraints": {
+    "requested_limb": "right_arm"
+  },
+  "preferences": {
+    "style": "slow",
+    "use_requested_limb_if_feasible": true
+  },
+  "allowed_equivalences": {
+    "right_arm": ["left_arm"]
+  }
 }
 ```
 
-If the right arm is unavailable but the left arm can satisfy the social goal, Rudy should prefer a safe left-arm decomposition over total failure.
+If the right arm is unavailable but the left arm can satisfy the social goal, the planner should produce a left-arm plan because that is the best feasible plan under the goal and constraints.
 
-Decision shape:
+Planning shape:
 
 ```text
-1. Decompose phrase into goal + constraints.
+1. Parse phrase into goal + constraints + preferences.
 2. Query capability state:
    - installed limbs and joints,
    - verified motors,
@@ -116,10 +125,16 @@ Decision shape:
    - travel limits,
    - boot state / limb quarantine,
    - faults, current trips, temperature.
-3. Try requested limb.
-4. If requested limb fails and substitution is allowed, try equivalent limb.
-5. Tell operator what changed.
-6. Execute only after approval / policy permits.
+3. Generate candidate plans over available effectors.
+4. Score candidates:
+   - satisfies goal,
+   - respects hard constraints,
+   - uses requested limb if feasible,
+   - minimizes risk / motion / current / collision,
+   - uses healthiest hardware.
+5. Select best feasible plan or refuse with reason.
+6. Tell operator when plan differs from literal wording.
+7. Execute only after approval / policy permits.
 ```
 
 Example output:
@@ -129,8 +144,9 @@ Example output:
   "input_text": "wave your right hand",
   "goal": "perform_greeting_gesture",
   "requested_limb": "right_arm",
+  "hard_constraints": [],
   "selected_limb": "left_arm",
-  "substitution_reason": "right_arm unavailable: limb_quarantined",
+  "selection_reason": "right_arm infeasible: limb_quarantined; left_arm satisfies greeting goal",
   "requires_operator_notice": true,
   "constituent_actions": [
     { "action": "home_joint", "role": "left_arm.wrist_yaw", "target_rad": 0.0 },
@@ -147,21 +163,25 @@ Example output:
 }
 ```
 
-Some requests should **not** substitute:
+Some requests make the requested limb a hard constraint:
 
 - "pick up the cup with your right hand" when the right hand is specified for task geometry,
 - "show me your broken right arm" where the target is diagnostic,
 - "move only the right arm" where the side is an explicit constraint,
 - any action where the alternate limb would collide, overreach, or violate limits.
 
-So substitution needs a policy field:
+So the planner needs equivalence and constraint policy:
 
 ```yaml
-substitution_policy:
-  social_gesture: allowed_with_notice
-  diagnostic_motion: forbidden
-  object_manipulation: requires_replan_and_confirmation
-  safety_recovery: forbidden
+planning_policy:
+  social_gesture:
+    limb_equivalence: allowed_with_notice
+  diagnostic_motion:
+    limb_equivalence: forbidden
+  object_manipulation:
+    limb_equivalence: requires_replan_and_confirmation
+  safety_recovery:
+    limb_equivalence: forbidden
 ```
 
 ## VLA layer vs grounding layer
@@ -287,8 +307,8 @@ decompositions:
       - say hi
     goal: perform_greeting_gesture
     requested_limb: right_arm
-    substitution_policy: social_gesture
-    fallback_limb_order: [right_arm, left_arm]
+    planning_policy: social_gesture
+    candidate_limb_order: [right_arm, left_arm]
     requires:
       joints:
         any_of:

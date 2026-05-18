@@ -65,7 +65,7 @@ Stop if any of these happen:
 ## Safe decomposition policy
 
 The model never chooses raw joint values for hardware.
-The grounding layer may substitute an equivalent limb only when the goal allows it and it records the substitution reason.
+The planner chooses the best feasible action sequence from goal, constraints, preferences, and current robot capabilities.
 
 Allowed:
 
@@ -97,16 +97,17 @@ Not allowed:
 }
 ```
 
-Action schemas and decomposition policies live in code/config, have limits, and can be reviewed.
+Action schemas and planning policies live in code/config, have limits, and can be reviewed.
 
-Allowed substitution example:
+Capability planner example:
 
 ```json
 {
   "input_text": "wave your right hand",
+  "goal": "perform_greeting_gesture",
   "requested_limb": "right_arm",
   "selected_limb": "left_arm",
-  "substitution_reason": "right_arm unavailable: motor_fault",
+  "selection_reason": "right_arm infeasible: motor_fault; left_arm satisfies greeting goal",
   "actions": [
     { "action": "home_joint", "role": "left_arm.wrist_yaw", "target_rad": 0.0 },
     {
