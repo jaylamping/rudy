@@ -1,4 +1,4 @@
-# First wave day checklist
+# First gesture day checklist
 
 Use this at the bench. Check boxes in order. If any item is uncertain, stop and fix that item.
 
@@ -56,7 +56,7 @@ Only use this if the physical neutral pose and hard stops make it safe.
 - [ ] Open actuator page.
 - [ ] Confirm latest position is inside travel band.
 - [ ] Run home to `0.0` or the chosen safe center.
-- [ ] Run wave with amplitude <= `0.08 rad`.
+- [ ] Run tiny joint oscillation with amplitude <= `0.08 rad`.
 - [ ] Run speed <= `0.05 rad/s`.
 - [ ] Stop after 5-10 seconds.
 - [ ] Confirm final status says stopped.
@@ -66,10 +66,10 @@ Only use this if the physical neutral pose and hard stops make it safe.
 ## 5. Jetson replay
 
 - [ ] Jetson can `curl https://rudy-pi/api/config`.
-- [ ] Jetson sends only the known wave preset.
+- [ ] Jetson sends only allowed low-level actions.
 - [ ] Jetson uses `X-Rudy-Session`.
 - [ ] Same tiny amplitude and speed as console test.
-- [ ] Stop command issued even if the wave looked fine.
+- [ ] Stop command issued even if motion looked fine.
 
 ## 6. Pass/fail log
 

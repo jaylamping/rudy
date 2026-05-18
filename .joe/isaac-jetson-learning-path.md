@@ -44,7 +44,7 @@ Hands-on tasks:
 4. Confirm `curl https://rudy-pi/api/config`.
 5. Run `tegrastats` while idle and under a small workload.
 6. Run one tiny local model or sample container.
-7. Write a Python script that maps `"wave right arm slowly"` to the fixed preset name only.
+7. Write a Python script that decomposes `"wave right arm slowly"` into allowed low-level actions only.
 
 Important tools:
 
@@ -113,7 +113,7 @@ Learn these before trusting sim:
 5. Sim-to-sim before risky learned or Cartesian behavior.
 6. Hardware shadow mode before real execution for risky motion classes.
 
-For first slow wave:
+For first slow arm gesture:
 
 - Full RL is unnecessary.
 - Single-joint replay is enough to validate names, signs, limits, and logging.
@@ -121,7 +121,7 @@ For first slow wave:
 
 ## Track E: What not to study yet
 
-Skip until after first wave:
+Skip until after first gesture:
 
 - Whole-body control papers.
 - Humanoid locomotion RL.
@@ -131,7 +131,7 @@ Skip until after first wave:
 - Cartesian reaching.
 - Isaac Replicator datasets.
 
-Those matter later, but they distract from the first proof: one safe joint wave.
+Those matter later, but they distract from the first proof: one safe joint oscillation.
 
 ## First resource queue
 

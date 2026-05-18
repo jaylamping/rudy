@@ -1,6 +1,8 @@
-# Box-to-wave roadmap
+# Box-to-first-gesture roadmap
 
-Goal: get from opening the Jetson Orin Nano box to a slow, boring, repeatable right-arm wave without weakening Rudy's safety model.
+Goal: get from opening the Jetson Orin Nano box to a slow, boring, repeatable right-arm gesture without weakening Rudy's safety model.
+
+Important distinction: the robot should not contain an executable behavior named after the user phrase. A phrase like "wave" is natural language input. The system should decompose it into lower-level actions such as position arm, hold, oscillate a wrist/forearm joint, return, and stop.
 
 ## Phase 0: Pick the first physical motion
 
@@ -40,11 +42,11 @@ Pi 5: cortex, SocketCAN, operator console, audit log, motor authority
 
 The Jetson should only call approved HTTPS/WebTransport surfaces exposed by `cortex`.
 
-For the first wave, the Jetson does not need ROS, MoveIt, or a model. A plain `curl` command is enough.
+For the first gesture, the Jetson does not need ROS, MoveIt, or a model. A plain `curl` command is enough.
 
 ## Phase 3: Commission each actuator
 
-For every motor involved in the wave:
+For every motor involved:
 
 1. Confirm firmware version.
 2. Confirm CAN ID and bus.
@@ -57,7 +59,7 @@ For every motor involved in the wave:
 9. Set `limb: right_arm` and correct `joint_kind`.
 10. Set narrow `travel_limits`.
 
-Do not wave with `travel_limits: null` or `verified: false`.
+Do not move with `travel_limits: null` or `verified: false`.
 
 ## Phase 4: Register right-arm roles cleanly
 
@@ -89,7 +91,7 @@ Use the operator console first:
 2. Confirm live telemetry: position, velocity, bus voltage, temperature, fault status.
 3. Confirm travel band.
 4. Home the joint.
-5. Start a wave pattern at tiny amplitude.
+5. Start a tiny joint oscillation.
 6. Stop.
 
 Expected failures are useful:
@@ -100,7 +102,7 @@ Expected failures are useful:
 - `limb_quarantined`: fix sibling joint before moving this one.
 - `motor_fault`: clear or investigate drive fault before moving.
 
-## Phase 6: First hardware wave
+## Phase 6: First hardware gesture
 
 Physical setup:
 
@@ -113,10 +115,10 @@ Physical setup:
 
 Start with the operator console. Only after that works, repeat from Jetson using HTTPS.
 
-Example command shape:
+Example command shape for the first constituent action, a tiny joint oscillation:
 
 ```bash
-SESSION="joe-wave-$(date +%s)"
+SESSION="joe-gesture-$(date +%s)"
 ROLE="right_arm.wrist_yaw"
 
 curl -sS -X POST "https://rudy-pi/api/motors/${ROLE}/home" \
@@ -135,29 +137,45 @@ curl -sS -X POST "https://rudy-pi/api/motors/${ROLE}/motion/stop" \
   -H "X-Rudy-Session: ${SESSION}"
 ```
 
+Current endpoint name is `/motion/wave` because the existing API predates this naming decision. Treat it as an implementation detail for "bounded joint oscillation." Longer term, replace it with a neutral primitive name such as `oscillate_joint`.
+
 Adjust `ROLE`, center, and band to the real installed joint.
 
-## Phase 7: Add the model only after motion is boring
+## Phase 7: Add model language only after motion is boring
 
-After manual and scripted wave both work:
+After manual and scripted motion both work:
 
 1. Jetson runs model.
-2. Model output becomes a text intent: "wave right arm slowly".
-3. A deterministic adapter maps that text to a known preset.
+2. Model output becomes structured decomposition, not a named behavior.
+3. Grounding layer maps parts to lower-level primitives.
 4. Human approves.
 5. Adapter calls `cortex`.
 
-First preset:
+Example decomposition:
 
 ```json
 {
-  "name": "wave_right_arm_slow",
-  "role": "right_arm.wrist_yaw",
-  "center_rad": 0.0,
-  "amplitude_rad": 0.08,
-  "speed_rad_s": 0.05,
-  "max_duration_s": 8
+  "request": "wave right arm slowly",
+  "decomposition": [
+    {
+      "action": "home_joint",
+      "role": "right_arm.wrist_yaw",
+      "target_rad": 0.0
+    },
+    {
+      "action": "oscillate_joint",
+      "role": "right_arm.wrist_yaw",
+      "center_rad": 0.0,
+      "amplitude_rad": 0.08,
+      "speed_rad_s": 0.05,
+      "duration_s": 8.0
+    },
+    {
+      "action": "stop_joint",
+      "role": "right_arm.wrist_yaw"
+    }
+  ]
 }
 ```
 
-If the model cannot map to a known preset, it does nothing.
+If the phrase cannot be decomposed into allowed low-level actions, Rudy asks for clarification or refuses.

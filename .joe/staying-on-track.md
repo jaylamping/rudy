@@ -6,7 +6,7 @@ Use this when the project starts to sprawl.
 
 First useful milestone:
 
-> Jetson hears or receives "wave right arm slowly", maps it to a known safe preset, asks `cortex` to run it, and one right-arm joint waves slowly under full `cortex` safety checks.
+> Jetson hears or receives "wave right arm slowly", decomposes it into allowed low-level actions, asks `cortex` to run those actions, and one right-arm joint oscillates slowly under full `cortex` safety checks.
 
 Not part of the first milestone:
 
@@ -45,9 +45,9 @@ Arm hardware
 3. Commissioning.
 4. Travel limits.
 5. Home.
-6. Tiny wave from UI.
-7. Tiny wave from Jetson script.
-8. Tiny wave from approved intent preset.
+6. Tiny joint oscillation from UI.
+7. Tiny joint oscillation from Jetson script.
+8. Tiny language-to-actions decomposition with approval.
 9. Larger motion only after repeated clean logs.
 
 ## Red flags
@@ -62,14 +62,28 @@ Stop if any of these happen:
 - "The model can choose the numbers."
 - "We can skip audit because it is just a test."
 
-## Safe preset policy
+## Safe decomposition policy
 
 The model never chooses raw joint values for hardware.
 
 Allowed:
 
 ```json
-{ "intent": "wave_right_arm_slow" }
+{
+  "input_text": "wave right arm slowly",
+  "actions": [
+    { "action": "home_joint", "role": "right_arm.wrist_yaw", "target_rad": 0.0 },
+    {
+      "action": "oscillate_joint",
+      "role": "right_arm.wrist_yaw",
+      "center_rad": 0.0,
+      "amplitude_rad": 0.08,
+      "speed_rad_s": 0.05,
+      "duration_s": 8.0
+    },
+    { "action": "stop_joint", "role": "right_arm.wrist_yaw" }
+  ]
+}
 ```
 
 Not allowed:
