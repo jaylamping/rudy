@@ -24,7 +24,8 @@ Language / VLA layer
 
 Intent decomposition / grounding layer
   infer constituent actions
-  bind arguments: side=right, style=slow, audience/front frame
+  bind arguments: requested_side=right, style=slow, audience/front frame
+  check capabilities and allowed substitutions
   reject unknown or unsafe requests
 
 Primitive / action library
@@ -80,6 +81,88 @@ Example decomposition:
 ```
 
 The model can propose this decomposition. The grounding layer clamps or rejects values against allowed action schemas. `cortex` still performs runtime validation before motion.
+
+## Capability-aware substitution
+
+Natural language often contains both a **goal** and a **preference**.
+
+Example:
+
+```text
+"wave your right hand"
+```
+
+Possible parse:
+
+```json
+{
+  "goal": "perform_greeting_gesture",
+  "preferred_limb": "right_arm",
+  "acceptable_substitutions": ["left_arm"],
+  "must_use_requested_limb": false
+}
+```
+
+If the right arm is unavailable but the left arm can satisfy the social goal, Rudy should prefer a safe left-arm decomposition over total failure.
+
+Decision shape:
+
+```text
+1. Decompose phrase into goal + constraints.
+2. Query capability state:
+   - installed limbs and joints,
+   - verified motors,
+   - fresh telemetry,
+   - travel limits,
+   - boot state / limb quarantine,
+   - faults, current trips, temperature.
+3. Try requested limb.
+4. If requested limb fails and substitution is allowed, try equivalent limb.
+5. Tell operator what changed.
+6. Execute only after approval / policy permits.
+```
+
+Example output:
+
+```json
+{
+  "input_text": "wave your right hand",
+  "goal": "perform_greeting_gesture",
+  "requested_limb": "right_arm",
+  "selected_limb": "left_arm",
+  "substitution_reason": "right_arm unavailable: limb_quarantined",
+  "requires_operator_notice": true,
+  "constituent_actions": [
+    { "action": "home_joint", "role": "left_arm.wrist_yaw", "target_rad": 0.0 },
+    {
+      "action": "oscillate_joint",
+      "role": "left_arm.wrist_yaw",
+      "center_rad": 0.0,
+      "amplitude_rad": 0.08,
+      "speed_rad_s": 0.05,
+      "duration_s": 8.0
+    },
+    { "action": "stop_joint", "role": "left_arm.wrist_yaw" }
+  ]
+}
+```
+
+Some requests should **not** substitute:
+
+- "pick up the cup with your right hand" when the right hand is specified for task geometry,
+- "show me your broken right arm" where the target is diagnostic,
+- "move only the right arm" where the side is an explicit constraint,
+- any action where the alternate limb would collide, overreach, or violate limits.
+
+So substitution needs a policy field:
+
+```yaml
+substitution_policy:
+  social_gesture: allowed_with_notice
+  diagnostic_motion: forbidden
+  object_manipulation: requires_replan_and_confirmation
+  safety_recovery: forbidden
+```
 
 ## VLA layer vs grounding layer
 
@@ -196,15 +279,21 @@ Build an **intent decomposition registry** separate from the model:
 
 ```yaml
 decompositions:
-  right_arm_slow_oscillation_template:
+  social_arm_slow_oscillation_template:
     matches:
       - wave
       - wave right arm
       - wave slowly
       - say hi
+    goal: perform_greeting_gesture
+    requested_limb: right_arm
+    substitution_policy: social_gesture
+    fallback_limb_order: [right_arm, left_arm]
     requires:
       joints:
-        - right_arm.wrist_yaw
+        any_of:
+          - right_arm.wrist_yaw
+          - left_arm.wrist_yaw
       approval: true
     limits:
       max_amplitude_rad: 0.10
@@ -212,16 +301,16 @@ decompositions:
       max_duration_s: 10
     actions:
       - action: home_joint
-        role: right_arm.wrist_yaw
+        role: "${selected_limb}.wrist_yaw"
         target_rad: 0.0
       - action: oscillate_joint
-        role: right_arm.wrist_yaw
+        role: "${selected_limb}.wrist_yaw"
         center_rad: 0.0
         amplitude_rad: 0.08
         speed_rad_s: 0.05
         duration_s: 8.0
       - action: stop_joint
-        role: right_arm.wrist_yaw
+        role: "${selected_limb}.wrist_yaw"
 ```
 
 Then the model's job is small:

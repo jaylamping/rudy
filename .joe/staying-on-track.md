@@ -65,6 +65,7 @@ Stop if any of these happen:
 ## Safe decomposition policy
 
 The model never chooses raw joint values for hardware.
+The grounding layer may substitute an equivalent limb only when the goal allows it and it records the substitution reason.
 
 Allowed:
 
@@ -96,7 +97,30 @@ Not allowed:
 }
 ```
 
-Preset values live in code/config, have names, have limits, and can be reviewed.
+Action schemas and decomposition policies live in code/config, have limits, and can be reviewed.
+
+Allowed substitution example:
+
+```json
+{
+  "input_text": "wave your right hand",
+  "requested_limb": "right_arm",
+  "selected_limb": "left_arm",
+  "substitution_reason": "right_arm unavailable: motor_fault",
+  "actions": [
+    { "action": "home_joint", "role": "left_arm.wrist_yaw", "target_rad": 0.0 },
+    {
+      "action": "oscillate_joint",
+      "role": "left_arm.wrist_yaw",
+      "center_rad": 0.0,
+      "amplitude_rad": 0.08,
+      "speed_rad_s": 0.05,
+      "duration_s": 8.0
+    },
+    { "action": "stop_joint", "role": "left_arm.wrist_yaw" }
+  ]
+}
+```
 
 ## Done means evidence
 
