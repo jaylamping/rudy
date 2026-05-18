@@ -88,6 +88,8 @@ This should not be modeled as "fallback." The planner is the functionality.
 
 Natural language provides a **goal**, plus constraints, preferences, and context. The planner searches for a feasible, safe action sequence using current robot capabilities.
 
+See `planning-under-uncertainty.md` for the general version of this loop across language, faults, and unscripted events.
+
 Example:
 
 ```text

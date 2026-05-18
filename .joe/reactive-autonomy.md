@@ -13,6 +13,8 @@ Rudy executes the safest feasible reaction.
 
 This is not language planning. It is a real-time reaction stack.
 
+See `planning-under-uncertainty.md` for the shared planner loop that also handles ambiguous human instructions.
+
 ## Core idea
 
 The planner is not only for user commands. It should also handle **events**.

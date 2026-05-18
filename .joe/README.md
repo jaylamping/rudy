@@ -7,9 +7,10 @@ Personal Rudy bring-up folder: practical steps, safety reminders, and learning l
 1. Read `box-to-first-gesture-roadmap.md`.
 2. Keep `first-gesture-checklist.md` open during hardware testing.
 3. Read `intent-grounding.md` for how a phrase becomes constituent actions.
-4. Use `isaac-jetson-learning-path.md` for simulation, Jetson, and model-runtime study.
-5. Read `reactive-autonomy.md` for long-range event-driven goals like catching/blocking a thrown ball.
-6. Use `resource-links.md` when you need setup docs or videos.
+4. Read `planning-under-uncertainty.md` for ambiguous requests and unscripted events.
+5. Use `isaac-jetson-learning-path.md` for simulation, Jetson, and model-runtime study.
+6. Read `reactive-autonomy.md` for long-range event-driven goals like catching/blocking a thrown ball.
+7. Use `resource-links.md` when you need setup docs or videos.
 
 ## Non-negotiable boundary
 
