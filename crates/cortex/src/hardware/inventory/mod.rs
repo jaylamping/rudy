@@ -147,7 +147,7 @@ impl Inventory {
     /// First actuator with this role, if the entry is an actuator.
     pub fn actuator_by_role(&self, role: &str) -> Option<&Actuator> {
         self.by_role(role).and_then(|d| match d {
-            Device::Actuator(a) => Some(a),
+            Device::Actuator(a) => Some(a.as_ref()),
             _ => None,
         })
     }
@@ -160,7 +160,7 @@ impl Inventory {
 
     pub fn actuators(&self) -> impl Iterator<Item = &Actuator> {
         self.devices.iter().filter_map(|d| match d {
-            Device::Actuator(a) => Some(a),
+            Device::Actuator(a) => Some(a.as_ref()),
             _ => None,
         })
     }

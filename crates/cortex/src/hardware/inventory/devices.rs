@@ -36,7 +36,7 @@ fn default_current_i2t_ratio() -> f32 {
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[ts(export, export_to = "./")]
 pub enum Device {
-    Actuator(Actuator),
+    Actuator(Box<Actuator>),
     Sensor(Sensor),
     Battery(Battery),
     Peripheral(Peripheral),

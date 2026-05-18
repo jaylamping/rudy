@@ -364,9 +364,11 @@ mod dynamics_tests {
     #[test]
     fn bench_mode_forces_observe_only() {
         use crate::config::SafetyConfig;
-        let mut safety = SafetyConfig::default();
-        safety.bench_mode = true;
-        safety.current_trip_observe_only = false;
+        let safety = SafetyConfig {
+            bench_mode: true,
+            current_trip_observe_only: false,
+            ..Default::default()
+        };
 
         let loaded = JointDynamics {
             loaded: true,
@@ -379,9 +381,11 @@ mod dynamics_tests {
     #[test]
     fn loaded_joint_enforces_outside_bench_mode() {
         use crate::config::SafetyConfig;
-        let mut safety = SafetyConfig::default();
-        safety.bench_mode = false;
-        safety.current_trip_observe_only = true;
+        let safety = SafetyConfig {
+            bench_mode: false,
+            current_trip_observe_only: true,
+            ..Default::default()
+        };
 
         let loaded = JointDynamics {
             loaded: true,
@@ -394,9 +398,11 @@ mod dynamics_tests {
     #[test]
     fn unloaded_joint_respects_global_observe_only() {
         use crate::config::SafetyConfig;
-        let mut safety = SafetyConfig::default();
-        safety.bench_mode = false;
-        safety.current_trip_observe_only = true;
+        let mut safety = SafetyConfig {
+            bench_mode: false,
+            current_trip_observe_only: true,
+            ..Default::default()
+        };
 
         let unloaded = JointDynamics {
             loaded: false,
@@ -411,9 +417,11 @@ mod dynamics_tests {
     #[test]
     fn no_dynamics_uses_global_observe_only() {
         use crate::config::SafetyConfig;
-        let mut safety = SafetyConfig::default();
-        safety.bench_mode = false;
-        safety.current_trip_observe_only = true;
+        let mut safety = SafetyConfig {
+            bench_mode: false,
+            current_trip_observe_only: true,
+            ..Default::default()
+        };
         assert!(safety.effective_observe_only(None));
 
         safety.current_trip_observe_only = false;
