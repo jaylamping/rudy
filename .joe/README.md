@@ -6,7 +6,8 @@ Personal Rudy bring-up folder: practical steps, safety reminders, and learning l
 
 1. Read `box-to-wave-roadmap.md`.
 2. Keep `wave-day-checklist.md` open during hardware testing.
-3. Use `resource-links.md` when you need setup docs or videos.
+3. Use `isaac-jetson-learning-path.md` for simulation, Jetson, and model-runtime study.
+4. Use `resource-links.md` when you need setup docs or videos.
 
 ## Non-negotiable boundary
 
@@ -34,6 +35,7 @@ No LLM process opens CAN, publishes raw joint commands, streams trajectories, or
 - RS03 hardware spec: `config/actuators/robstride_rs03.yaml`
 - Motion API: `crates/cortex/src/api/motion/run.rs`
 - Motion controller: `crates/cortex/src/motion/controller.rs`
+- Isaac / sim runbook: `docs/runbooks/isaac_lab.md`
 
 ## First wave success definition
 
