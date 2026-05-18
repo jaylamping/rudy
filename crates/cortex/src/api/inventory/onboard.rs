@@ -210,7 +210,7 @@ pub async fn onboard_robstride(
                     model: body_clone.model,
                 },
             };
-            inv.devices.push(Device::Actuator(actuator));
+            inv.devices.push(Device::Actuator(Box::new(actuator)));
             Ok(())
         })
     })

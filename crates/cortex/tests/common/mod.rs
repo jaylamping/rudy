@@ -173,7 +173,7 @@ pub fn actuator_mut<'a>(inv: &'a mut Inventory, role: &str) -> Option<&'a mut Ac
     inv.devices.iter_mut().find_map(|d| {
         if let Device::Actuator(a) = d {
             if a.common.role == role {
-                return Some(a);
+                return Some(a.as_mut());
             }
         }
         None

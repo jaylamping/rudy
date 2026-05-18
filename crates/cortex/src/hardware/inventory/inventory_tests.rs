@@ -9,7 +9,7 @@ fn minimal_actuator(
     limb: Option<&str>,
     joint: Option<JointKind>,
 ) -> Device {
-    Device::Actuator(Actuator {
+    Device::Actuator(Box::new(Actuator {
         common: ActuatorCommon {
             role: role.into(),
             can_bus: can_bus.into(),
@@ -38,7 +38,7 @@ fn minimal_actuator(
         family: ActuatorFamily::Robstride {
             model: RobstrideModel::Rs03,
         },
-    })
+    }))
 }
 
 #[test]
@@ -102,7 +102,7 @@ fn validate_rejects_duplicate_can_id_same_bus() {
     let inv = Inventory {
         schema_version: Some(2),
         devices: vec![
-            Device::Actuator(Actuator {
+            Device::Actuator(Box::new(Actuator {
                 common: ActuatorCommon {
                     role: "a.m1".into(),
                     can_bus: "can0".into(),
@@ -131,8 +131,8 @@ fn validate_rejects_duplicate_can_id_same_bus() {
                 family: ActuatorFamily::Robstride {
                     model: RobstrideModel::Rs03,
                 },
-            }),
-            Device::Actuator(Actuator {
+            })),
+            Device::Actuator(Box::new(Actuator {
                 common: ActuatorCommon {
                     role: "a.m2".into(),
                     can_bus: "can0".into(),
@@ -161,7 +161,7 @@ fn validate_rejects_duplicate_can_id_same_bus() {
                 family: ActuatorFamily::Robstride {
                     model: RobstrideModel::Rs03,
                 },
-            }),
+            })),
         ],
     };
     assert!(inv.validate().is_err());
@@ -221,7 +221,7 @@ fn desired_params_roundtrips_in_yaml() {
     desired.insert("limit_torque".into(), json!(10.0));
     let inv = Inventory {
         schema_version: Some(2),
-        devices: vec![Device::Actuator(Actuator {
+        devices: vec![Device::Actuator(Box::new(Actuator {
             common: ActuatorCommon {
                 role: "bench.m1".into(),
                 can_bus: "can0".into(),
@@ -250,7 +250,7 @@ fn desired_params_roundtrips_in_yaml() {
             family: ActuatorFamily::Robstride {
                 model: RobstrideModel::Rs03,
             },
-        })],
+        }))],
     };
     inv.validate().expect("validate");
     let yaml = serde_yaml::to_string(&inv).expect("serialize");

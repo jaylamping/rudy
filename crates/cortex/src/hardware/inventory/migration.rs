@@ -88,12 +88,12 @@ pub fn migrate_v1_yaml_to_v2_inventory(yaml: &str) -> Result<Inventory> {
             current_safety: None,
             dynamics: None,
         };
-        devices.push(Device::Actuator(Actuator {
+        devices.push(Device::Actuator(Box::new(Actuator {
             common,
             family: ActuatorFamily::Robstride {
                 model: RobstrideModel::Rs03,
             },
-        }));
+        })));
     }
     let inv = Inventory {
         schema_version: Some(INVENTORY_SCHEMA_V2),

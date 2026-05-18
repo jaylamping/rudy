@@ -34,7 +34,8 @@ jobs:
             echo "available=true" >> "$GITHUB_OUTPUT"
           else
             echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::CURSOR_API_KEY secret is not set; skipping Cursor CI autofix."
+            echo "::error::CURSOR_API_KEY secret is not set; Cursor CI autofix cannot launch."
+            exit 1
           fi
 
       - name: Build Cursor agent payload
