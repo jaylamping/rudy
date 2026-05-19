@@ -15,6 +15,10 @@ use http_body_util::BodyExt;
 
 pub use fixtures::{INVENTORY_YAML, SPEC_YAML};
 
+/// Planner-facing roles matching live runtime inventory and URDF joint names.
+pub const RIGHT_ARM_SHOULDER_ROLL: &str = "right_arm.shoulder_roll";
+pub const RIGHT_ARM_SHOULDER_PITCH: &str = "right_arm.shoulder_pitch";
+
 /// Deserialize axum integration-test responses (shared by `tests/api/*.rs`).
 pub async fn body_json<T: serde::de::DeserializeOwned>(resp: Response) -> T {
     let bytes = resp.into_body().collect().await.unwrap().to_bytes();

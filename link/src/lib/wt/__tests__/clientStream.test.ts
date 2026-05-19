@@ -64,7 +64,7 @@ describe("openClientStream", () => {
     const handle = await openClientStream(transport);
     await handle.send({
       kind: "motion_jog",
-      role: "shoulder_actuator_a",
+      role: "right_arm.shoulder_roll",
       vel_rad_s: 0.25,
       session_id: null,
     });
@@ -74,7 +74,7 @@ describe("openClientStream", () => {
     const decoded = decodeFrame(writes[0].bytes);
     expect(decoded).toMatchObject({
       kind: "motion_jog",
-      role: "shoulder_actuator_a",
+      role: "right_arm.shoulder_roll",
       vel_rad_s: 0.25,
       session_id: expect.any(String),
     });
@@ -83,14 +83,14 @@ describe("openClientStream", () => {
   it("emits a MotionStop frame when close is called with a role", async () => {
     const { transport, writes, isClosed } = fakeTransport();
     const handle = await openClientStream(transport);
-    await handle.close("shoulder_actuator_a");
+    await handle.close("right_arm.shoulder_roll");
 
     // First (and only) frame must be the stop frame.
     expect(writes.length).toBe(1);
     const decoded = decodeFrame(writes[0].bytes);
     expect(decoded).toMatchObject({
       kind: "motion_stop",
-      role: "shoulder_actuator_a",
+      role: "right_arm.shoulder_roll",
       session_id: expect.any(String),
     });
     // Stream is closed end-to-end, mirroring the daemon's

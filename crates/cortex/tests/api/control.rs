@@ -41,7 +41,7 @@ async fn control_endpoints_return_ok_envelope_for_verified_motor() {
     ] {
         let mut builder = Request::builder()
             .method(verb)
-            .uri(format!("/api/motors/shoulder_actuator_a/{suffix}"));
+            .uri(format!("/api/motors/right_arm.shoulder_roll/{suffix}"));
         let req = if let Some(s) = body_json_str {
             builder = builder.header("content-type", "application/json");
             builder.body(Body::from(s)).unwrap()
@@ -52,7 +52,7 @@ async fn control_endpoints_return_ok_envelope_for_verified_motor() {
         assert_eq!(
             resp.status(),
             StatusCode::OK,
-            "{verb} /api/motors/shoulder_actuator_a/{suffix} should succeed for a verified motor"
+            "{verb} /api/motors/right_arm.shoulder_roll/{suffix} should succeed for a verified motor"
         );
         let v: serde_json::Value = body_json(resp).await;
         assert_eq!(
@@ -75,7 +75,7 @@ async fn enable_unverified_motor_is_forbidden() {
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri("/api/motors/shoulder_actuator_b/enable")
+                .uri("/api/motors/right_arm.shoulder_pitch/enable")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -97,14 +97,14 @@ async fn enable_unverified_motor_is_forbidden() {
 async fn enable_not_homed_is_forbidden() {
     let (state, _dir) = common::make_state();
     common::seed_feedback(&state);
-    common::set_boot_state(&state, "shoulder_actuator_a", BootState::InBand);
+    common::set_boot_state(&state, "right_arm.shoulder_roll", BootState::InBand);
     let app = cortex::build_app(state);
 
     let resp = app
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri("/api/motors/shoulder_actuator_a/enable")
+                .uri("/api/motors/right_arm.shoulder_roll/enable")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -126,7 +126,7 @@ async fn enable_unknown_state_is_forbidden() {
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri("/api/motors/shoulder_actuator_a/enable")
+                .uri("/api/motors/right_arm.shoulder_roll/enable")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -145,7 +145,7 @@ async fn enable_out_of_band_is_forbidden() {
     common::seed_feedback(&state);
     common::set_boot_state(
         &state,
-        "shoulder_actuator_a",
+        "right_arm.shoulder_roll",
         BootState::OutOfBand {
             mech_pos_rad: 1.5,
             min_rad: -1.0,
@@ -158,7 +158,7 @@ async fn enable_out_of_band_is_forbidden() {
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri("/api/motors/shoulder_actuator_a/enable")
+                .uri("/api/motors/right_arm.shoulder_roll/enable")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -178,7 +178,7 @@ async fn enable_homed_but_drifted_outside_band_is_forbidden() {
     // Configure a band on the motor.
     {
         let mut inv = state.inventory.write().expect("inventory");
-        let a = common::actuator_mut(&mut inv, "shoulder_actuator_a").unwrap();
+        let a = common::actuator_mut(&mut inv, "right_arm.shoulder_roll").unwrap();
         a.common.travel_limits = Some(cortex::inventory::TravelLimits {
             min_rad: -1.0,
             max_rad: 1.0,
@@ -190,10 +190,10 @@ async fn enable_homed_but_drifted_outside_band_is_forbidden() {
     {
         let mut latest = state.latest.write().expect("latest");
         latest.insert(
-            "shoulder_actuator_a".into(),
+            "right_arm.shoulder_roll".into(),
             MotorFeedback {
                 t_ms: chrono::Utc::now().timestamp_millis(),
-                role: "shoulder_actuator_a".into(),
+                role: "right_arm.shoulder_roll".into(),
                 can_id: 0x08,
                 mech_pos_rad: 1.5,
                 mech_vel_rad_s: 0.0,
@@ -206,14 +206,14 @@ async fn enable_homed_but_drifted_outside_band_is_forbidden() {
             },
         );
     }
-    common::set_boot_state(&state, "shoulder_actuator_a", BootState::Homed);
+    common::set_boot_state(&state, "right_arm.shoulder_roll", BootState::Homed);
     let app = cortex::build_app(state);
 
     let resp = app
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri("/api/motors/shoulder_actuator_a/enable")
+                .uri("/api/motors/right_arm.shoulder_roll/enable")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -228,10 +228,10 @@ async fn enable_homed_but_drifted_outside_band_is_forbidden() {
 async fn enable_homed_but_stale_feedback_is_forbidden() {
     let (state, _dir) = common::make_state();
     common::seed_feedback(&state);
-    common::set_boot_state(&state, "shoulder_actuator_a", BootState::Homed);
+    common::set_boot_state(&state, "right_arm.shoulder_roll", BootState::Homed);
     {
         let mut latest = state.latest.write().expect("latest");
-        let fb = latest.get_mut("shoulder_actuator_a").expect("seeded");
+        let fb = latest.get_mut("right_arm.shoulder_roll").expect("seeded");
         fb.t_ms = chrono::Utc::now().timestamp_millis() - 10_000;
     }
     let app = cortex::build_app(state);
@@ -240,7 +240,7 @@ async fn enable_homed_but_stale_feedback_is_forbidden() {
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri("/api/motors/shoulder_actuator_a/enable")
+                .uri("/api/motors/right_arm.shoulder_roll/enable")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -254,19 +254,19 @@ async fn enable_homed_but_stale_feedback_is_forbidden() {
 #[tokio::test]
 async fn enable_homed_but_missing_feedback_is_forbidden() {
     let (state, _dir) = common::make_state();
-    common::set_boot_state(&state, "shoulder_actuator_a", BootState::Homed);
+    common::set_boot_state(&state, "right_arm.shoulder_roll", BootState::Homed);
     state
         .latest
         .write()
         .expect("latest")
-        .remove("shoulder_actuator_a");
+        .remove("right_arm.shoulder_roll");
     let app = cortex::build_app(state);
 
     let resp = app
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri("/api/motors/shoulder_actuator_a/enable")
+                .uri("/api/motors/right_arm.shoulder_roll/enable")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -284,14 +284,14 @@ async fn enable_homed_but_missing_feedback_is_forbidden() {
 #[tokio::test]
 async fn set_zero_resets_boot_state_to_unknown() {
     let (state, _dir) = common::make_state();
-    common::set_boot_state(&state, "shoulder_actuator_a", BootState::Homed);
+    common::set_boot_state(&state, "right_arm.shoulder_roll", BootState::Homed);
     let app = cortex::build_app(state.clone());
 
     let resp = app
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri("/api/motors/shoulder_actuator_a/set_zero")
+                .uri("/api/motors/right_arm.shoulder_roll/set_zero")
                 .header("content-type", "application/json")
                 .body(Body::from(r#"{"confirm_advanced": true}"#))
                 .unwrap(),
@@ -300,7 +300,7 @@ async fn set_zero_resets_boot_state_to_unknown() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 
-    let bs = cortex::boot_state::current(&state, "shoulder_actuator_a");
+    let bs = cortex::boot_state::current(&state, "right_arm.shoulder_roll");
     assert!(matches!(bs, BootState::Unknown));
 }
 
@@ -318,14 +318,14 @@ async fn set_zero_resets_boot_state_to_unknown() {
 #[tokio::test]
 async fn set_zero_audit_records_not_persisted() {
     let (state, dir) = common::make_state();
-    common::set_boot_state(&state, "shoulder_actuator_a", BootState::Homed);
+    common::set_boot_state(&state, "right_arm.shoulder_roll", BootState::Homed);
     let app = cortex::build_app(state.clone());
 
     let resp = app
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri("/api/motors/shoulder_actuator_a/set_zero")
+                .uri("/api/motors/right_arm.shoulder_roll/set_zero")
                 .header("content-type", "application/json")
                 .body(Body::from(r#"{"confirm_advanced": true}"#))
                 .unwrap(),
@@ -372,7 +372,7 @@ async fn set_zero_audit_records_not_persisted() {
     );
     assert_eq!(
         last_set_zero.get("target").and_then(|v| v.as_str()),
-        Some("shoulder_actuator_a"),
+        Some("right_arm.shoulder_roll"),
     );
 }
 
@@ -400,11 +400,11 @@ async fn set_zero_without_confirm_advanced_returns_400() {
         ("empty object", Some(r#"{}"#)),
         ("explicit false", Some(r#"{"confirm_advanced": false}"#)),
     ] {
-        common::set_boot_state(&state, "shoulder_actuator_a", BootState::Homed);
+        common::set_boot_state(&state, "right_arm.shoulder_roll", BootState::Homed);
 
         let mut builder = Request::builder()
             .method(Method::POST)
-            .uri("/api/motors/shoulder_actuator_a/set_zero");
+            .uri("/api/motors/right_arm.shoulder_roll/set_zero");
         let req = if let Some(b) = body {
             builder = builder.header("content-type", "application/json");
             builder.body(Body::from(b)).unwrap()
@@ -433,7 +433,7 @@ async fn set_zero_without_confirm_advanced_returns_400() {
 
         // Side-effect check: the boot state must be untouched. An accepted
         // set_zero would have reset it to Unknown.
-        let bs = cortex::boot_state::current(&state, "shoulder_actuator_a");
+        let bs = cortex::boot_state::current(&state, "right_arm.shoulder_roll");
         assert!(
             matches!(bs, BootState::Homed),
             "{label}: rejected set_zero must not mutate boot state; got {bs:?}"
@@ -468,7 +468,7 @@ async fn commission_endpoint_writes_inventory() {
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri("/api/motors/shoulder_actuator_a/commission")
+                .uri("/api/motors/right_arm.shoulder_roll/commission")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -480,7 +480,7 @@ async fn commission_endpoint_writes_inventory() {
     assert_eq!(body["ok"], serde_json::Value::Bool(true));
     assert_eq!(
         body["role"],
-        serde_json::Value::String("shoulder_actuator_a".into())
+        serde_json::Value::String("right_arm.shoulder_roll".into())
     );
     // Mock-CAN readback is 0.0 by stub contract.
     assert_eq!(body["offset_rad"].as_f64(), Some(0.0));
@@ -494,7 +494,7 @@ async fn commission_endpoint_writes_inventory() {
     let inv_on_disk = cortex::inventory::Inventory::load(dir.path().join("inventory.yaml"))
         .expect("re-load inventory");
     let m = inv_on_disk
-        .actuator_by_role("shoulder_actuator_a")
+        .actuator_by_role("right_arm.shoulder_roll")
         .expect("motor present in re-loaded inventory");
     assert_eq!(m.common.commissioned_zero_offset, Some(0.0_f32));
     assert_eq!(m.common.commissioned_at.as_deref(), Some(commissioned_at));
@@ -504,7 +504,7 @@ async fn commission_endpoint_writes_inventory() {
         .inventory
         .read()
         .expect("inventory poisoned")
-        .actuator_by_role("shoulder_actuator_a")
+        .actuator_by_role("right_arm.shoulder_roll")
         .cloned()
         .unwrap();
     assert_eq!(in_memory.common.commissioned_zero_offset, Some(0.0_f32));
@@ -522,7 +522,7 @@ async fn commission_endpoint_writes_inventory() {
         cortex::types::SafetyEvent::Commissioned {
             role, offset_rad, ..
         } => {
-            assert_eq!(role, "shoulder_actuator_a");
+            assert_eq!(role, "right_arm.shoulder_roll");
             assert_eq!(offset_rad, 0.0);
         }
         other => panic!("expected SafetyEvent::Commissioned, got {other:?}"),
@@ -545,7 +545,7 @@ async fn commission_endpoint_can_failure_leaves_inventory_clean() {
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri("/api/motors/shoulder_actuator_a/commission")
+                .uri("/api/motors/right_arm.shoulder_roll/commission")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -575,7 +575,7 @@ async fn commission_endpoint_can_failure_leaves_inventory_clean() {
         .inventory
         .read()
         .expect("inventory poisoned")
-        .actuator_by_role("shoulder_actuator_a")
+        .actuator_by_role("right_arm.shoulder_roll")
         .cloned()
         .unwrap();
     assert_eq!(m.common.commissioned_zero_offset, None);
@@ -641,10 +641,10 @@ async fn commission_endpoint_unknown_role_leaves_inventory_clean() {
 #[tokio::test]
 async fn commission_endpoint_motor_absent_rejected_cleanly() {
     let (state, dir) = common::make_state();
-    // Mark shoulder_actuator_a as absent.
+    // Mark right_arm.shoulder_roll as absent.
     {
         let mut inv = state.inventory.write().expect("inventory");
-        let a = common::actuator_mut(&mut inv, "shoulder_actuator_a").unwrap();
+        let a = common::actuator_mut(&mut inv, "right_arm.shoulder_roll").unwrap();
         a.common.present = false;
     }
     let app = cortex::build_app(state.clone());
@@ -656,7 +656,7 @@ async fn commission_endpoint_motor_absent_rejected_cleanly() {
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri("/api/motors/shoulder_actuator_a/commission")
+                .uri("/api/motors/right_arm.shoulder_roll/commission")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -698,7 +698,7 @@ async fn commission_endpoint_audit_logs_readback() {
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri("/api/motors/shoulder_actuator_a/commission")
+                .uri("/api/motors/right_arm.shoulder_roll/commission")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -714,7 +714,7 @@ async fn commission_endpoint_audit_logs_readback() {
         .rfind(|e| e.get("action").and_then(|v| v.as_str()) == Some("commission"))
         .expect("audit log must contain a commission entry");
     assert_eq!(last["result"].as_str(), Some("ok"));
-    assert_eq!(last["target"].as_str(), Some("shoulder_actuator_a"));
+    assert_eq!(last["target"].as_str(), Some("right_arm.shoulder_roll"));
     assert_eq!(last["details"]["step"].as_str(), Some("ok"));
     assert_eq!(last["details"]["readback_rad"].as_f64(), Some(0.0));
 }
@@ -728,13 +728,13 @@ async fn restore_offset_mock_clears_offset_changed() {
 
     {
         let mut inv = state.inventory.write().expect("inventory poisoned");
-        let a = common::actuator_mut(&mut inv, "shoulder_actuator_a").expect("fixture motor");
+        let a = common::actuator_mut(&mut inv, "right_arm.shoulder_roll").expect("fixture motor");
         a.common.commissioned_zero_offset = Some(0.05);
     }
 
     common::set_boot_state(
         &state,
-        "shoulder_actuator_a",
+        "right_arm.shoulder_roll",
         BootState::OffsetChanged {
             stored_rad: 0.05,
             current_rad: 0.12,
@@ -745,7 +745,7 @@ async fn restore_offset_mock_clears_offset_changed() {
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri("/api/motors/shoulder_actuator_a/restore_offset")
+                .uri("/api/motors/right_arm.shoulder_roll/restore_offset")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -758,7 +758,7 @@ async fn restore_offset_mock_clears_offset_changed() {
     assert_eq!(body["restored_rad"], json!(0.05));
     assert_eq!(body["readback_rad"], json!(0.05));
 
-    let bs = cortex::boot_state::current(&state, "shoulder_actuator_a");
+    let bs = cortex::boot_state::current(&state, "right_arm.shoulder_roll");
     assert!(matches!(bs, BootState::Unknown));
 }
 
@@ -770,16 +770,16 @@ async fn restore_offset_rejects_when_not_offset_changed() {
     let app = cortex::build_app(state.clone());
     {
         let mut inv = state.inventory.write().expect("inventory poisoned");
-        let a = common::actuator_mut(&mut inv, "shoulder_actuator_a").expect("fixture motor");
+        let a = common::actuator_mut(&mut inv, "right_arm.shoulder_roll").expect("fixture motor");
         a.common.commissioned_zero_offset = Some(0.05);
     }
-    common::set_boot_state(&state, "shoulder_actuator_a", BootState::InBand);
+    common::set_boot_state(&state, "right_arm.shoulder_roll", BootState::InBand);
 
     let resp = app
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri("/api/motors/shoulder_actuator_a/restore_offset")
+                .uri("/api/motors/right_arm.shoulder_roll/restore_offset")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -805,7 +805,7 @@ async fn commission_leaves_sibling_motor_uncommissioned() {
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri("/api/motors/shoulder_actuator_a/commission")
+                .uri("/api/motors/right_arm.shoulder_roll/commission")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -817,7 +817,7 @@ async fn commission_leaves_sibling_motor_uncommissioned() {
         .inventory
         .read()
         .expect("inventory poisoned")
-        .actuator_by_role("shoulder_actuator_b")
+        .actuator_by_role("right_arm.shoulder_pitch")
         .cloned()
         .expect("fixture motor b");
     assert_eq!(b.common.commissioned_zero_offset, None);
@@ -834,13 +834,13 @@ async fn restore_offset_audit_logs_success() {
 
     {
         let mut inv = state.inventory.write().expect("inventory poisoned");
-        let a = common::actuator_mut(&mut inv, "shoulder_actuator_a").expect("fixture motor");
+        let a = common::actuator_mut(&mut inv, "right_arm.shoulder_roll").expect("fixture motor");
         a.common.commissioned_zero_offset = Some(0.05);
     }
 
     common::set_boot_state(
         &state,
-        "shoulder_actuator_a",
+        "right_arm.shoulder_roll",
         BootState::OffsetChanged {
             stored_rad: 0.05,
             current_rad: 0.12,
@@ -851,7 +851,7 @@ async fn restore_offset_audit_logs_success() {
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri("/api/motors/shoulder_actuator_a/restore_offset")
+                .uri("/api/motors/right_arm.shoulder_roll/restore_offset")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -866,7 +866,7 @@ async fn restore_offset_audit_logs_success() {
         .rfind(|e| e.get("action").and_then(|v| v.as_str()) == Some("restore_offset"))
         .expect("audit log must contain restore_offset");
     assert_eq!(last["result"].as_str(), Some("ok"));
-    assert_eq!(last["target"].as_str(), Some("shoulder_actuator_a"));
+    assert_eq!(last["target"].as_str(), Some("right_arm.shoulder_roll"));
     assert_eq!(last["details"]["step"].as_str(), Some("ok"));
     let restored = last["details"]["restored_rad"]
         .as_f64()
@@ -887,13 +887,13 @@ async fn restore_offset_clears_boot_orchestrator_attempted() {
 
     {
         let mut inv = state.inventory.write().expect("inventory poisoned");
-        let a = common::actuator_mut(&mut inv, "shoulder_actuator_a").expect("fixture motor");
+        let a = common::actuator_mut(&mut inv, "right_arm.shoulder_roll").expect("fixture motor");
         a.common.commissioned_zero_offset = Some(0.05);
     }
 
     common::set_boot_state(
         &state,
-        "shoulder_actuator_a",
+        "right_arm.shoulder_roll",
         BootState::OffsetChanged {
             stored_rad: 0.05,
             current_rad: 0.12,
@@ -904,13 +904,13 @@ async fn restore_offset_clears_boot_orchestrator_attempted() {
         .boot_orchestrator_attempted
         .lock()
         .expect("poisoned")
-        .insert("shoulder_actuator_a".into());
+        .insert("right_arm.shoulder_roll".into());
 
     let resp = app
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri("/api/motors/shoulder_actuator_a/restore_offset")
+                .uri("/api/motors/right_arm.shoulder_roll/restore_offset")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -922,7 +922,7 @@ async fn restore_offset_clears_boot_orchestrator_attempted() {
         .boot_orchestrator_attempted
         .lock()
         .expect("poisoned")
-        .contains("shoulder_actuator_a"));
+        .contains("right_arm.shoulder_roll"));
 }
 
 /// Rename of an enabled motor used to refuse with 409 `motor_active` and
@@ -934,8 +934,19 @@ async fn restore_offset_clears_boot_orchestrator_attempted() {
 #[tokio::test]
 async fn rename_active_motor_auto_stops_and_reenables() {
     let (state, _dir) = common::make_state();
-    common::set_boot_state(&state, "shoulder_actuator_a", BootState::Homed);
-    state.mark_enabled("shoulder_actuator_a");
+    common::set_boot_state(&state, "right_arm.shoulder_roll", BootState::Homed);
+    {
+        let inv_path = state.cfg.paths.inventory.clone();
+        let mut inv = state.inventory.read().expect("inventory").clone();
+        let a = common::actuator_mut(&mut inv, "right_arm.shoulder_roll").unwrap();
+        // Role-only rename: clear assignment so validate() does not require
+        // role == limb.joint_kind after the new_role is written.
+        a.common.limb = None;
+        a.common.joint_kind = None;
+        cortex::inventory::write_replace(&inv_path, &inv).expect("persist cleared assign");
+        *state.inventory.write().expect("inventory") = inv;
+    }
+    state.mark_enabled("right_arm.shoulder_roll");
     let app = cortex::build_app(state.clone());
 
     let body = serde_json::to_vec(&json!({"new_role": "left_arm.shoulder_pitch"})).unwrap();
@@ -943,7 +954,7 @@ async fn rename_active_motor_auto_stops_and_reenables() {
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri("/api/motors/shoulder_actuator_a/rename")
+                .uri("/api/motors/right_arm.shoulder_roll/rename")
                 .header("content-type", "application/json")
                 .body(Body::from(body))
                 .unwrap(),
@@ -960,7 +971,7 @@ async fn rename_active_motor_auto_stops_and_reenables() {
     // immediately issue further mutating calls against the new role and
     // see a consistent gate.
     assert!(state.is_enabled("left_arm.shoulder_pitch"));
-    assert!(!state.is_enabled("shoulder_actuator_a"));
+    assert!(!state.is_enabled("right_arm.shoulder_roll"));
 }
 
 /// Renaming a stopped motor goes through the no-side-effect path: the
@@ -971,14 +982,23 @@ async fn rename_active_motor_auto_stops_and_reenables() {
 #[tokio::test]
 async fn rename_stopped_motor_skips_auto_stop_cycle() {
     let (state, _dir) = common::make_state();
-    common::set_boot_state(&state, "shoulder_actuator_a", BootState::Homed);
-    state.mark_enabled("shoulder_actuator_a");
-    state.mark_stopped("shoulder_actuator_a");
+    common::set_boot_state(&state, "right_arm.shoulder_roll", BootState::Homed);
+    {
+        let inv_path = state.cfg.paths.inventory.clone();
+        let mut inv = state.inventory.read().expect("inventory").clone();
+        let a = common::actuator_mut(&mut inv, "right_arm.shoulder_roll").unwrap();
+        a.common.limb = None;
+        a.common.joint_kind = None;
+        cortex::inventory::write_replace(&inv_path, &inv).expect("persist cleared assign");
+        *state.inventory.write().expect("inventory") = inv;
+    }
+    state.mark_enabled("right_arm.shoulder_roll");
+    state.mark_stopped("right_arm.shoulder_roll");
     assert!(matches!(
-        cortex::boot_state::current(&state, "shoulder_actuator_a"),
+        cortex::boot_state::current(&state, "right_arm.shoulder_roll"),
         BootState::Homed
     ));
-    assert!(!state.is_enabled("shoulder_actuator_a"));
+    assert!(!state.is_enabled("right_arm.shoulder_roll"));
 
     let app = cortex::build_app(state.clone());
     let body = serde_json::to_vec(&json!({"new_role": "left_arm.shoulder_pitch"})).unwrap();
@@ -986,7 +1006,7 @@ async fn rename_stopped_motor_skips_auto_stop_cycle() {
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri("/api/motors/shoulder_actuator_a/rename")
+                .uri("/api/motors/right_arm.shoulder_roll/rename")
                 .header("content-type", "application/json")
                 .body(Body::from(body))
                 .unwrap(),
@@ -1024,7 +1044,7 @@ async fn assign_first_time_bypasses_motor_active_gate() {
     // Worst case: motor is currently enabled. First-time assign should
     // STILL go through, because changing a role string doesn't move the
     // motor and the in-memory state migrates atomically below.
-    state.mark_enabled("shoulder_actuator_a");
+    state.mark_enabled("right_arm.shoulder_roll");
 
     let app = cortex::build_app(state.clone());
     let body =
@@ -1033,7 +1053,7 @@ async fn assign_first_time_bypasses_motor_active_gate() {
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri("/api/motors/shoulder_actuator_a/assign")
+                .uri("/api/motors/right_arm.shoulder_roll/assign")
                 .header("content-type", "application/json")
                 .body(Body::from(body))
                 .unwrap(),
@@ -1044,7 +1064,7 @@ async fn assign_first_time_bypasses_motor_active_gate() {
     // The enabled bit must follow the role across the rename so the next
     // operator action (e.g. another rename) sees a consistent gate.
     assert!(state.is_enabled("left_arm.shoulder_pitch"));
-    assert!(!state.is_enabled("shoulder_actuator_a"));
+    assert!(!state.is_enabled("right_arm.shoulder_roll"));
 }
 
 /// Re-assigning an already-assigned, currently-enabled motor goes through
@@ -1054,7 +1074,7 @@ async fn assign_first_time_bypasses_motor_active_gate() {
 #[tokio::test]
 async fn assign_already_assigned_motor_auto_stops_and_reenables() {
     let (state, _dir) = common::make_state();
-    common::set_boot_state(&state, "shoulder_actuator_b", BootState::Homed);
+    common::set_boot_state(&state, "right_arm.shoulder_pitch", BootState::Homed);
     let app = cortex::build_app(state.clone());
     let body =
         serde_json::to_vec(&json!({"limb": "left_arm", "joint_kind": "shoulder_roll"})).unwrap();
@@ -1063,7 +1083,7 @@ async fn assign_already_assigned_motor_auto_stops_and_reenables() {
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri("/api/motors/shoulder_actuator_b/assign")
+                .uri("/api/motors/right_arm.shoulder_pitch/assign")
                 .header("content-type", "application/json")
                 .body(Body::from(body))
                 .unwrap(),
@@ -1102,20 +1122,20 @@ async fn assign_already_assigned_motor_auto_stops_and_reenables() {
 #[tokio::test]
 async fn stop_endpoint_clears_enabled_bit() {
     let (state, _dir) = common::make_state();
-    state.mark_enabled("shoulder_actuator_a");
+    state.mark_enabled("right_arm.shoulder_roll");
     let app = cortex::build_app(state.clone());
     let resp = app
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri("/api/motors/shoulder_actuator_a/stop")
+                .uri("/api/motors/right_arm.shoulder_roll/stop")
                 .body(Body::empty())
                 .unwrap(),
         )
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
-    assert!(!state.is_enabled("shoulder_actuator_a"));
+    assert!(!state.is_enabled("right_arm.shoulder_roll"));
 }
 
 /// Rename rejects malformed (non-canonical) target roles.
@@ -1129,7 +1149,7 @@ async fn rename_invalid_role_format_is_rejected() {
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri("/api/motors/shoulder_actuator_a/rename")
+                .uri("/api/motors/right_arm.shoulder_roll/rename")
                 .header("content-type", "application/json")
                 .body(Body::from(body))
                 .unwrap(),

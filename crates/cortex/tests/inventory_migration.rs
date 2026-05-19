@@ -3,6 +3,8 @@
 use std::path::PathBuf;
 
 use cortex::inventory::{migrate_v1_yaml_to_v2_inventory, Inventory};
+use cortex::limb::JointKind;
+use cortex::motion::StopBehavior;
 
 const FIXTURE_V1: &str = include_str!("../../../config/actuators/inventory.yaml.v1.bak");
 
@@ -49,4 +51,17 @@ fn v2_inventory_round_trips_through_value() {
 fn repo_inventory_file_loads() {
     let p = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../config/actuators/inventory.yaml");
     Inventory::load(&p).expect("Inventory::load on config/actuators/inventory.yaml");
+}
+
+/// Repo seed inventory must carry planner-facing metadata for the live shoulder roll.
+#[test]
+fn repo_inventory_seed_has_canonical_shoulder_roll() {
+    let p = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../config/actuators/inventory.yaml");
+    let inv = Inventory::load(&p).expect("load repo inventory");
+    let motor = inv
+        .actuator_by_role("right_arm.shoulder_roll")
+        .expect("right_arm.shoulder_roll in repo seed");
+    assert_eq!(motor.common.limb.as_deref(), Some("right_arm"));
+    assert_eq!(motor.common.joint_kind, Some(JointKind::ShoulderRoll));
+    assert_eq!(motor.common.stop_behavior, StopBehavior::Hold);
 }

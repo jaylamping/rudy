@@ -27,7 +27,7 @@ async fn get_params_returns_param_snapshot_shape() {
     let resp = app
         .oneshot(
             Request::builder()
-                .uri("/api/motors/shoulder_actuator_a/params")
+                .uri("/api/motors/right_arm.shoulder_roll/params")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -36,7 +36,7 @@ async fn get_params_returns_param_snapshot_shape() {
     assert_eq!(resp.status(), StatusCode::OK);
 
     let snap: ParamSnapshot = body_json(resp).await;
-    assert_eq!(snap.role, "shoulder_actuator_a");
+    assert_eq!(snap.role, "right_arm.shoulder_roll");
 
     let lt = snap
         .values
@@ -59,7 +59,7 @@ async fn put_param_in_range_returns_write_envelope() {
         .oneshot(
             Request::builder()
                 .method(Method::PUT)
-                .uri("/api/motors/shoulder_actuator_a/params/limit_torque")
+                .uri("/api/motors/right_arm.shoulder_roll/params/limit_torque")
                 .header("content-type", "application/json")
                 .body(Body::from(body))
                 .unwrap(),
@@ -80,7 +80,7 @@ async fn put_param_in_range_returns_write_envelope() {
     let r: WriteResp = body_json(resp).await;
     assert!(r.ok);
     assert!(r.saved);
-    assert_eq!(r.role, "shoulder_actuator_a");
+    assert_eq!(r.role, "right_arm.shoulder_roll");
     assert_eq!(r.name, "limit_torque");
     assert_eq!(r.value, json!(12.5));
 }
@@ -97,7 +97,7 @@ async fn put_param_out_of_range_returns_api_error() {
         .oneshot(
             Request::builder()
                 .method(Method::PUT)
-                .uri("/api/motors/shoulder_actuator_a/params/limit_torque")
+                .uri("/api/motors/right_arm.shoulder_roll/params/limit_torque")
                 .header("content-type", "application/json")
                 .body(Body::from(body))
                 .unwrap(),
@@ -121,7 +121,7 @@ async fn put_param_unknown_param_404s() {
         .oneshot(
             Request::builder()
                 .method(Method::PUT)
-                .uri("/api/motors/shoulder_actuator_a/params/no_such_param")
+                .uri("/api/motors/right_arm.shoulder_roll/params/no_such_param")
                 .header("content-type", "application/json")
                 .body(Body::from(body))
                 .unwrap(),
@@ -144,7 +144,7 @@ async fn get_travel_limits_404s_when_unset() {
     let resp = app
         .oneshot(
             Request::builder()
-                .uri("/api/motors/shoulder_actuator_a/travel_limits")
+                .uri("/api/motors/right_arm.shoulder_roll/travel_limits")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -170,7 +170,7 @@ async fn put_travel_limits_roundtrips_through_get() {
         .oneshot(
             Request::builder()
                 .method(Method::PUT)
-                .uri("/api/motors/shoulder_actuator_a/travel_limits")
+                .uri("/api/motors/right_arm.shoulder_roll/travel_limits")
                 .header("content-type", "application/json")
                 .body(Body::from(body))
                 .unwrap(),
@@ -186,7 +186,7 @@ async fn put_travel_limits_roundtrips_through_get() {
     let resp = app
         .oneshot(
             Request::builder()
-                .uri("/api/motors/shoulder_actuator_a/travel_limits")
+                .uri("/api/motors/right_arm.shoulder_roll/travel_limits")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -208,7 +208,7 @@ async fn put_travel_limits_rejects_out_of_range() {
         .oneshot(
             Request::builder()
                 .method(Method::PUT)
-                .uri("/api/motors/shoulder_actuator_a/travel_limits")
+                .uri("/api/motors/right_arm.shoulder_roll/travel_limits")
                 .header("content-type", "application/json")
                 .body(Body::from(body))
                 .unwrap(),
@@ -231,7 +231,7 @@ async fn put_travel_limits_rejects_inverted_band() {
         .oneshot(
             Request::builder()
                 .method(Method::PUT)
-                .uri("/api/motors/shoulder_actuator_a/travel_limits")
+                .uri("/api/motors/right_arm.shoulder_roll/travel_limits")
                 .header("content-type", "application/json")
                 .body(Body::from(body))
                 .unwrap(),
@@ -254,7 +254,7 @@ async fn put_predefined_home_requires_travel_limits() {
         .oneshot(
             Request::builder()
                 .method(Method::PUT)
-                .uri("/api/motors/shoulder_actuator_a/predefined_home")
+                .uri("/api/motors/right_arm.shoulder_roll/predefined_home")
                 .header("content-type", "application/json")
                 .body(Body::from(body))
                 .unwrap(),
@@ -278,7 +278,7 @@ async fn put_predefined_home_persists_when_within_band() {
         .oneshot(
             Request::builder()
                 .method(Method::PUT)
-                .uri("/api/motors/shoulder_actuator_a/travel_limits")
+                .uri("/api/motors/right_arm.shoulder_roll/travel_limits")
                 .header("content-type", "application/json")
                 .body(Body::from(tlim))
                 .unwrap(),
@@ -292,7 +292,7 @@ async fn put_predefined_home_persists_when_within_band() {
         .oneshot(
             Request::builder()
                 .method(Method::PUT)
-                .uri("/api/motors/shoulder_actuator_a/predefined_home")
+                .uri("/api/motors/right_arm.shoulder_roll/predefined_home")
                 .header("content-type", "application/json")
                 .body(Body::from(body))
                 .unwrap(),
@@ -305,14 +305,14 @@ async fn put_predefined_home_persists_when_within_band() {
     assert_eq!(j["predefined_home_rad"], json!(0.25));
 
     let inv = cortex::inventory::Inventory::load(dir.path().join("inventory.yaml")).unwrap();
-    let m = inv.actuator_by_role("shoulder_actuator_a").unwrap();
+    let m = inv.actuator_by_role("right_arm.shoulder_roll").unwrap();
     assert_eq!(m.common.predefined_home_rad, Some(0.25_f32));
 
     let in_mem = state
         .inventory
         .read()
         .expect("inventory poisoned")
-        .actuator_by_role("shoulder_actuator_a")
+        .actuator_by_role("right_arm.shoulder_roll")
         .cloned()
         .unwrap();
     assert_eq!(in_mem.common.predefined_home_rad, Some(0.25_f32));
@@ -330,7 +330,7 @@ async fn put_predefined_home_rejects_outside_band() {
         .oneshot(
             Request::builder()
                 .method(Method::PUT)
-                .uri("/api/motors/shoulder_actuator_a/travel_limits")
+                .uri("/api/motors/right_arm.shoulder_roll/travel_limits")
                 .header("content-type", "application/json")
                 .body(Body::from(tlim))
                 .unwrap(),
@@ -344,7 +344,7 @@ async fn put_predefined_home_rejects_outside_band() {
         .oneshot(
             Request::builder()
                 .method(Method::PUT)
-                .uri("/api/motors/shoulder_actuator_a/predefined_home")
+                .uri("/api/motors/right_arm.shoulder_roll/predefined_home")
                 .header("content-type", "application/json")
                 .body(Body::from(body))
                 .unwrap(),
@@ -368,7 +368,7 @@ async fn put_homing_speed_persists() {
         .oneshot(
             Request::builder()
                 .method(Method::PUT)
-                .uri("/api/motors/shoulder_actuator_a/homing_speed")
+                .uri("/api/motors/right_arm.shoulder_roll/homing_speed")
                 .header("content-type", "application/json")
                 .body(Body::from(body))
                 .unwrap(),
@@ -381,14 +381,14 @@ async fn put_homing_speed_persists() {
     assert!((j["homing_speed_rad_s"].as_f64().unwrap() - f64::from(v)).abs() < 1e-5);
 
     let inv = cortex::inventory::Inventory::load(dir.path().join("inventory.yaml")).unwrap();
-    let m = inv.actuator_by_role("shoulder_actuator_a").unwrap();
+    let m = inv.actuator_by_role("right_arm.shoulder_roll").unwrap();
     assert_eq!(m.common.homing_speed_rad_s, Some(v));
 
     let in_mem = state
         .inventory
         .read()
         .expect("inventory poisoned")
-        .actuator_by_role("shoulder_actuator_a")
+        .actuator_by_role("right_arm.shoulder_roll")
         .cloned()
         .unwrap();
     assert_eq!(in_mem.common.homing_speed_rad_s, Some(v));
@@ -406,7 +406,7 @@ async fn put_homing_speed_rejects_out_of_range() {
         .oneshot(
             Request::builder()
                 .method(Method::PUT)
-                .uri("/api/motors/shoulder_actuator_a/homing_speed")
+                .uri("/api/motors/right_arm.shoulder_roll/homing_speed")
                 .header("content-type", "application/json")
                 .body(Body::from(too_low))
                 .unwrap(),
@@ -422,7 +422,7 @@ async fn put_homing_speed_rejects_out_of_range() {
         .oneshot(
             Request::builder()
                 .method(Method::PUT)
-                .uri("/api/motors/shoulder_actuator_a/homing_speed")
+                .uri("/api/motors/right_arm.shoulder_roll/homing_speed")
                 .header("content-type", "application/json")
                 .body(Body::from(too_high))
                 .unwrap(),
@@ -446,7 +446,7 @@ async fn put_homing_speed_null_clears_override() {
         .oneshot(
             Request::builder()
                 .method(Method::PUT)
-                .uri("/api/motors/shoulder_actuator_a/homing_speed")
+                .uri("/api/motors/right_arm.shoulder_roll/homing_speed")
                 .header("content-type", "application/json")
                 .body(Body::from(body))
                 .unwrap(),
@@ -460,7 +460,7 @@ async fn put_homing_speed_null_clears_override() {
         .oneshot(
             Request::builder()
                 .method(Method::PUT)
-                .uri("/api/motors/shoulder_actuator_a/homing_speed")
+                .uri("/api/motors/right_arm.shoulder_roll/homing_speed")
                 .header("content-type", "application/json")
                 .body(Body::from(clear))
                 .unwrap(),
@@ -470,6 +470,6 @@ async fn put_homing_speed_null_clears_override() {
     assert_eq!(resp.status(), StatusCode::OK);
 
     let inv = cortex::inventory::Inventory::load(dir.path().join("inventory.yaml")).unwrap();
-    let m = inv.actuator_by_role("shoulder_actuator_a").unwrap();
+    let m = inv.actuator_by_role("right_arm.shoulder_roll").unwrap();
     assert!(m.common.homing_speed_rad_s.is_none());
 }

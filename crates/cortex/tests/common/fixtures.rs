@@ -33,22 +33,27 @@ pub const INVENTORY_YAML: &str = r#"
 schema_version: 2
 devices:
   - kind: actuator
-    role: shoulder_actuator_a
+    role: right_arm.shoulder_roll
     can_bus: can1
-    can_id: 0x08
+    can_id: 0x09
     firmware_version: "1.2.3"
     verified: true
     present: true
+    limb: right_arm
+    joint_kind: shoulder_roll
+    stop_behavior: hold
     family:
       kind: robstride
       model: rs03
   - kind: actuator
-    role: shoulder_actuator_b
+    role: right_arm.shoulder_pitch
     can_bus: can1
-    can_id: 0x09
+    can_id: 0x08
     firmware_version: "1.2.3"
     verified: false
     present: true
+    limb: right_arm
+    joint_kind: shoulder_pitch
     family:
       kind: robstride
       model: rs03

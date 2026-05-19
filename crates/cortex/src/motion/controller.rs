@@ -30,10 +30,11 @@ use std::time::Duration;
 use chrono::Utc;
 use tokio::sync::{watch, Notify};
 use tokio::time::interval;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 use crate::audit::{AuditEntry, AuditResult};
 use crate::boot_state;
+use crate::can::angle::PrincipalAngle;
 use crate::config::MotionBackend;
 use crate::inventory::Actuator;
 use crate::motion::intent::MotionIntent;
@@ -347,12 +348,28 @@ pub async fn run(mut task: ControllerTask) {
         .expect("boot_state poisoned")
         .get(&role)
         .cloned();
-    let stop_action =
-        stop_policy::resolve(task.motor.common.stop_behavior, &stop_reason, boot.as_ref());
+    let configured_stop_behavior = task.motor.common.stop_behavior;
+    let effective_stop_behavior = stop_policy::effective_behavior(&task.motor);
+    let stop_action = stop_policy::resolve(effective_stop_behavior, &stop_reason, boot.as_ref());
 
+    info!(
+        role = %role,
+        kind = kind_str,
+        reason = stop_reason.label(),
+        configured_stop_behavior = ?configured_stop_behavior,
+        effective_stop_behavior = ?effective_stop_behavior,
+        limb = ?task.motor.common.limb,
+        joint_kind = ?task.motor.common.joint_kind,
+        boot_state = ?boot,
+        resolved_stop_action = ?stop_action,
+        "motion stop policy resolved"
+    );
+
+    let mut hold_active = false;
     match stop_action {
         StopAction::HoldPosition => {
-            // Read current position and hold gains, then issue MIT hold.
+            // Read current position and hold gains, then hand off to
+            // the same persistent MIT hold path used after homing.
             let hold_pos = task
                 .state
                 .latest
@@ -369,18 +386,44 @@ pub async fn run(mut task: ControllerTask) {
                     eff.safety.hold_kd_nm_s_per_rad,
                 )
             };
-            if let Err(e) =
-                drive_mit_stream(&task.state, &task.motor, hold_pos, 0.0, 0.0, kp, kd).await
-            {
-                warn!(role = %role, err = %e, "hold-on-stop MIT command failed; falling back to hard stop");
+            let target = PrincipalAngle::from_wrapped_rad(hold_pos);
+            info!(
+                role = %role,
+                hold_pos_rad = hold_pos,
+                target_principal_rad = target.raw(),
+                kp_nm_per_rad = kp,
+                kd_nm_s_per_rad = kd,
+                "motion stop issuing MIT hold"
+            );
+            if let Err(e) = drive_mit_hold(&task.state, &task.motor, target, kp, kd).await {
+                warn!(
+                    role = %role,
+                    err = %e,
+                    "hold-on-stop MIT hold command failed; falling back to hard stop"
+                );
                 let _ = drive_stop(&task.state, &task.motor).await;
+            } else {
+                hold_active = true;
+                info!(
+                    role = %role,
+                    hold_pos_rad = hold_pos,
+                    "motion stop MIT hold accepted"
+                );
             }
         }
         StopAction::HardStop => {
+            info!(
+                role = %role,
+                reason = stop_reason.label(),
+                "motion stop issuing hard stop"
+            );
             let _ = drive_stop(&task.state, &task.motor).await;
         }
     }
     task.state.mark_stopped(&role);
+    if hold_active {
+        task.state.mark_position_hold(&role);
+    }
 
     if let Some(trip) = current_trip.as_ref() {
         if matches!(trip.behavior, CurrentBehavior::LimbStopQuarantine) {
@@ -487,6 +530,27 @@ async fn drive_mit_stream(
             kp_nm_per_rad,
             kd_nm_s_per_rad,
         )
+    })
+    .await
+    .map_err(|e| MotionBusError::Spawn {
+        detail: format!("spawn_blocking: {e}"),
+    })?
+    .map_err(|e| classify_motion_bus_string(format!("{e:#}")))
+}
+
+async fn drive_mit_hold(
+    state: &SharedState,
+    motor: &Actuator,
+    target: PrincipalAngle,
+    kp_nm_per_rad: f32,
+    kd_nm_s_per_rad: f32,
+) -> Result<(), MotionBusError> {
+    let Some(core) = state.real_can.clone() else {
+        return Ok(());
+    };
+    let motor_for_blocking = motor.clone();
+    tokio::task::spawn_blocking(move || {
+        core.set_mit_hold(&motor_for_blocking, target, kp_nm_per_rad, kd_nm_s_per_rad)
     })
     .await
     .map_err(|e| MotionBusError::Spawn {

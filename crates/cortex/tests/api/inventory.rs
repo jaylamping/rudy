@@ -65,15 +65,15 @@ async fn delete_device_removes_actuator_and_clears_runtime_state() {
     common::seed_params(&state);
     common::set_boot_state(
         &state,
-        "shoulder_actuator_b",
+        "right_arm.shoulder_pitch",
         cortex::boot_state::BootState::Homed,
     );
-    state.record_passive_seen("can1", 0x09);
+    state.record_passive_seen("can1", 0x08);
     state
         .boot_orchestrator_attempted
         .lock()
         .expect("boot_orchestrator_attempted poisoned")
-        .insert("shoulder_actuator_b".into());
+        .insert("right_arm.shoulder_pitch".into());
 
     let mut safety_rx = state.safety_event_tx.subscribe();
     let app = cortex::build_app(state.clone());
@@ -81,7 +81,7 @@ async fn delete_device_removes_actuator_and_clears_runtime_state() {
         .oneshot(
             Request::builder()
                 .method(Method::DELETE)
-                .uri("/api/devices/shoulder_actuator_b")
+                .uri("/api/devices/right_arm.shoulder_pitch")
                 .header("x-rudy-session", "session-A")
                 .body(Body::empty())
                 .unwrap(),
@@ -91,43 +91,47 @@ async fn delete_device_removes_actuator_and_clears_runtime_state() {
     assert_eq!(resp.status(), StatusCode::OK);
     let v: serde_json::Value = body_json(resp).await;
     assert_eq!(v["ok"], json!(true));
-    assert_eq!(v["role"], json!("shoulder_actuator_b"));
+    assert_eq!(v["role"], json!("right_arm.shoulder_pitch"));
 
     // Scoped block: std locks must not be held across `await` (clippy::await_holding_lock).
     {
         let inv = state.inventory.read().expect("inventory poisoned");
-        assert!(inv.actuator_by_role("shoulder_actuator_b").is_none());
+        assert!(inv.actuator_by_role("right_arm.shoulder_pitch").is_none());
 
         assert!(!state
             .latest
             .read()
             .expect("latest poisoned")
-            .contains_key("shoulder_actuator_b"));
+            .contains_key("right_arm.shoulder_pitch"));
         assert!(!state
             .params
             .read()
             .expect("params poisoned")
-            .contains_key("shoulder_actuator_b"));
+            .contains_key("right_arm.shoulder_pitch"));
         assert!(!state
             .boot_state
             .read()
             .expect("boot_state poisoned")
-            .contains_key("shoulder_actuator_b"));
+            .contains_key("right_arm.shoulder_pitch"));
         assert!(!state
             .seen_can_ids
             .read()
             .expect("seen_can_ids poisoned")
-            .contains_key(&(String::from("can1"), 0x09)));
+            .contains_key(&(String::from("can1"), 0x08)));
         assert!(!state
             .boot_orchestrator_attempted
             .lock()
             .expect("boot_orchestrator_attempted poisoned")
-            .contains("shoulder_actuator_b"));
+            .contains("right_arm.shoulder_pitch"));
     }
 
     let disk_inv = Inventory::load(&state.cfg.paths.inventory).expect("inventory from disk");
-    assert!(disk_inv.actuator_by_role("shoulder_actuator_b").is_none());
-    assert!(disk_inv.actuator_by_role("shoulder_actuator_a").is_some());
+    assert!(disk_inv
+        .actuator_by_role("right_arm.shoulder_pitch")
+        .is_none());
+    assert!(disk_inv
+        .actuator_by_role("right_arm.shoulder_roll")
+        .is_some());
 
     let mut got_removed = false;
     for _ in 0..4 {
@@ -136,7 +140,7 @@ async fn delete_device_removes_actuator_and_clears_runtime_state() {
             .expect("safety_event timeout")
             .expect("safety_event receive");
         if let SafetyEvent::MotorRemoved { role, .. } = ev {
-            assert_eq!(role, "shoulder_actuator_b");
+            assert_eq!(role, "right_arm.shoulder_pitch");
             got_removed = true;
             break;
         }
@@ -147,14 +151,14 @@ async fn delete_device_removes_actuator_and_clears_runtime_state() {
 #[tokio::test]
 async fn delete_device_refuses_enabled_motor() {
     let (state, _dir) = common::make_state();
-    state.mark_enabled("shoulder_actuator_b");
+    state.mark_enabled("right_arm.shoulder_pitch");
     let app = cortex::build_app(state.clone());
 
     let resp = app
         .oneshot(
             Request::builder()
                 .method(Method::DELETE)
-                .uri("/api/devices/shoulder_actuator_b")
+                .uri("/api/devices/right_arm.shoulder_pitch")
                 .header("x-rudy-session", "session-A")
                 .body(Body::empty())
                 .unwrap(),
@@ -166,7 +170,7 @@ async fn delete_device_refuses_enabled_motor() {
     assert_eq!(err.error, "motor_active");
 
     let inv = state.inventory.read().expect("inventory poisoned");
-    assert!(inv.actuator_by_role("shoulder_actuator_b").is_some());
+    assert!(inv.actuator_by_role("right_arm.shoulder_pitch").is_some());
 }
 
 #[tokio::test]
@@ -382,17 +386,17 @@ async fn list_motors_matches_motor_summary() {
     let by_role: std::collections::BTreeMap<&str, &MotorSummary> =
         motors.iter().map(|m| (m.role.as_str(), m)).collect();
     let a = by_role
-        .get("shoulder_actuator_a")
-        .expect("shoulder_actuator_a present");
-    assert_eq!(a.can_id, 0x08);
+        .get("right_arm.shoulder_roll")
+        .expect("right_arm.shoulder_roll present");
+    assert_eq!(a.can_id, 0x09);
     assert_eq!(a.can_bus, "can1");
     assert!(a.verified);
     assert!(a.predefined_home_rad.is_none());
     assert!(a.latest.is_some(), "we just seeded feedback");
 
     let b = by_role
-        .get("shoulder_actuator_b")
-        .expect("shoulder_actuator_b present");
+        .get("right_arm.shoulder_pitch")
+        .expect("right_arm.shoulder_pitch present");
     assert!(!b.verified);
 }
 
@@ -426,7 +430,7 @@ async fn get_feedback_returns_motor_feedback_shape() {
     let resp = app
         .oneshot(
             Request::builder()
-                .uri("/api/motors/shoulder_actuator_a/feedback")
+                .uri("/api/motors/right_arm.shoulder_roll/feedback")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -435,8 +439,8 @@ async fn get_feedback_returns_motor_feedback_shape() {
     assert_eq!(resp.status(), StatusCode::OK);
 
     let fb: MotorFeedback = body_json(resp).await;
-    assert_eq!(fb.role, "shoulder_actuator_a");
-    assert_eq!(fb.can_id, 0x08);
+    assert_eq!(fb.role, "right_arm.shoulder_roll");
+    assert_eq!(fb.can_id, 0x09);
     // i64 millisecond timestamp ΓÇö TS sees it as bigint per ts-rs, so changes
     // here ripple into useWebTransport / TelemetryGrid.
     assert!(fb.t_ms > 0);
@@ -451,7 +455,7 @@ async fn get_feedback_404_when_no_telemetry_yet() {
     let resp = app
         .oneshot(
             Request::builder()
-                .uri("/api/motors/shoulder_actuator_a/feedback")
+                .uri("/api/motors/right_arm.shoulder_roll/feedback")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -471,7 +475,7 @@ async fn get_inventory_returns_motor_record() {
     let resp = app
         .oneshot(
             Request::builder()
-                .uri("/api/motors/shoulder_actuator_a/inventory")
+                .uri("/api/motors/right_arm.shoulder_roll/inventory")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -481,9 +485,9 @@ async fn get_inventory_returns_motor_record() {
     let v: serde_json::Value = body_json(resp).await;
     assert_eq!(
         v.get("role").and_then(|v| v.as_str()),
-        Some("shoulder_actuator_a")
+        Some("right_arm.shoulder_roll")
     );
-    assert_eq!(v.get("can_id").and_then(|v| v.as_u64()), Some(0x08));
+    assert_eq!(v.get("can_id").and_then(|v| v.as_u64()), Some(0x09));
 }
 
 /// `PUT /api/motors/:role/verified` flips the flag and the next GET
@@ -499,7 +503,7 @@ async fn put_verified_flips_flag() {
         .oneshot(
             Request::builder()
                 .method(Method::PUT)
-                .uri("/api/motors/shoulder_actuator_a/verified")
+                .uri("/api/motors/right_arm.shoulder_roll/verified")
                 .header("content-type", "application/json")
                 .body(Body::from(body))
                 .unwrap(),
@@ -511,7 +515,7 @@ async fn put_verified_flips_flag() {
     let resp = app
         .oneshot(
             Request::builder()
-                .uri("/api/motors/shoulder_actuator_a")
+                .uri("/api/motors/right_arm.shoulder_roll")
                 .body(Body::empty())
                 .unwrap(),
         )

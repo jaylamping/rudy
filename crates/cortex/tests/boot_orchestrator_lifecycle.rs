@@ -12,7 +12,7 @@ use cortex::boot_orchestrator;
 use cortex::boot_state::{BootState, ClassifyOutcome};
 use cortex::types::MotorFeedback;
 
-const ROLE: &str = "shoulder_actuator_a";
+const ROLE: &str = "right_arm.shoulder_roll";
 
 fn set_commissioned_zero(state: &cortex::state::SharedState, role: &str, rad: f32) {
     let mut inv = state.inventory.write().expect("inventory poisoned");

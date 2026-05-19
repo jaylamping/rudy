@@ -8,7 +8,7 @@ use cortex::types::SafetyEvent;
 #[path = "common/mod.rs"]
 mod common;
 
-const ROLE: &str = "shoulder_actuator_a";
+const ROLE: &str = "right_arm.shoulder_roll";
 
 #[test]
 fn classify_out_of_band_to_in_band_broadcasts_boot_state_changed() {

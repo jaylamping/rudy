@@ -17,6 +17,8 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::boot_state::BootState;
+use crate::inventory::Actuator;
+use crate::limb::JointKind;
 use crate::motion::status::MotionStopReason;
 
 /// Per-actuator stop behavior selection. Stored in inventory YAML.
@@ -68,6 +70,38 @@ pub fn resolve(
     }
 }
 
+/// Resolve the behavior callers should use for an actuator record.
+///
+/// Internal operator patterns and future planner/model trajectories share the
+/// same canonical actuator rows (`limb` + `joint_kind`). Until every live
+/// runtime inventory row has explicit dynamics/stop policy populated, treat
+/// gravity-loaded arm joints as hold-on-graceful-stop even when older runtime
+/// rows only carry the default `hard_stop` value.
+#[must_use]
+pub fn effective_behavior(motor: &Actuator) -> StopBehavior {
+    if motor.common.stop_behavior == StopBehavior::Hold {
+        return StopBehavior::Hold;
+    }
+
+    if motor
+        .common
+        .dynamics
+        .as_ref()
+        .is_some_and(|dynamics| dynamics.loaded)
+    {
+        return StopBehavior::Hold;
+    }
+
+    if matches!(
+        motor.common.joint_kind,
+        Some(JointKind::ShoulderPitch | JointKind::ShoulderRoll | JointKind::ElbowPitch)
+    ) {
+        return StopBehavior::Hold;
+    }
+
+    StopBehavior::HardStop
+}
+
 /// Graceful reasons where holding position is safe and desirable.
 fn is_graceful_reason(reason: &MotionStopReason) -> bool {
     matches!(
@@ -101,6 +135,45 @@ mod tests {
             Some(&BootState::Homed),
         );
         assert_eq!(action, StopAction::HoldPosition);
+    }
+
+    #[test]
+    fn canonical_shoulder_roll_defaults_to_hold_behavior() {
+        use crate::inventory::{Actuator, ActuatorCommon, ActuatorFamily, RobstrideModel};
+
+        let motor = Actuator {
+            common: ActuatorCommon {
+                role: "right_arm.shoulder_roll".to_string(),
+                can_bus: "can1".to_string(),
+                can_id: 9,
+                present: true,
+                verified: true,
+                commissioned_at: None,
+                firmware_version: None,
+                travel_limits: None,
+                commissioned_zero_offset: None,
+                active_report_persisted: false,
+                predefined_home_rad: None,
+                homing_speed_rad_s: None,
+                hold_kp_nm_per_rad: None,
+                hold_kd_nm_s_per_rad: None,
+                mit_command_kp_nm_per_rad: None,
+                mit_command_kd_nm_s_per_rad: None,
+                mit_max_angle_step_rad: None,
+                limb: Some("right_arm".to_string()),
+                joint_kind: Some(JointKind::ShoulderRoll),
+                notes_yaml: None,
+                desired_params: std::collections::BTreeMap::new(),
+                current_safety: None,
+                dynamics: None,
+                stop_behavior: StopBehavior::HardStop,
+            },
+            family: ActuatorFamily::Robstride {
+                model: RobstrideModel::Rs03,
+            },
+        };
+
+        assert_eq!(effective_behavior(&motor), StopBehavior::Hold);
     }
 
     #[test]

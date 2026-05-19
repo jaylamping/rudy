@@ -193,7 +193,7 @@ async fn estop_clears_motion_registry() {
     let (state, _dir) = common::make_state();
     common::force_homed(&state);
     common::seed_feedback(&state);
-    let role = "shoulder_actuator_a";
+    let role = "right_arm.shoulder_roll";
     {
         let mut inv = state.inventory.write().expect("inventory");
         let a = common::actuator_mut(&mut inv, role).expect("role in inventory");
@@ -305,7 +305,7 @@ async fn second_session_rejected_after_first_implicitly_claims_lock() {
         .oneshot(
             Request::builder()
                 .method(Method::PUT)
-                .uri("/api/motors/shoulder_actuator_a/travel_limits")
+                .uri("/api/motors/right_arm.shoulder_roll/travel_limits")
                 .header("content-type", "application/json")
                 .header("x-rudy-session", "session-A")
                 .body(Body::from(body))
@@ -322,7 +322,7 @@ async fn second_session_rejected_after_first_implicitly_claims_lock() {
         .oneshot(
             Request::builder()
                 .method(Method::PUT)
-                .uri("/api/motors/shoulder_actuator_a/travel_limits")
+                .uri("/api/motors/right_arm.shoulder_roll/travel_limits")
                 .header("content-type", "application/json")
                 .header("x-rudy-session", "session-B")
                 .body(Body::from(body))

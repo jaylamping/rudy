@@ -121,8 +121,8 @@ describe("REST contract — URL + method per call", () => {
     ["GET /api/devices", () => api.listDevices(), "/api/devices", "GET"],
     [
       "DELETE /api/devices/:role",
-      () => api.removeDevice("shoulder_actuator_b"),
-      "/api/devices/shoulder_actuator_b",
+      () => api.removeDevice("right_arm.shoulder_pitch"),
+      "/api/devices/right_arm.shoulder_pitch",
       "DELETE",
     ],
     [
@@ -155,112 +155,112 @@ describe("REST contract — URL + method per call", () => {
     ["GET /api/motors", () => api.listMotors(), "/api/motors", "GET"],
     [
       "GET /api/motors/:role",
-      () => api.getMotor("shoulder_actuator_a"),
-      "/api/motors/shoulder_actuator_a",
+      () => api.getMotor("right_arm.shoulder_roll"),
+      "/api/motors/right_arm.shoulder_roll",
       "GET",
     ],
     [
       "GET /api/motors/:role/params",
-      () => api.getParams("shoulder_actuator_a"),
-      "/api/motors/shoulder_actuator_a/params",
+      () => api.getParams("right_arm.shoulder_roll"),
+      "/api/motors/right_arm.shoulder_roll/params",
       "GET",
     ],
     [
       "POST /api/motors/:role/enable",
-      () => api.enable("shoulder_actuator_a"),
-      "/api/motors/shoulder_actuator_a/enable",
+      () => api.enable("right_arm.shoulder_roll"),
+      "/api/motors/right_arm.shoulder_roll/enable",
       "POST",
     ],
     [
       "POST /api/motors/:role/stop",
-      () => api.stop("shoulder_actuator_a"),
-      "/api/motors/shoulder_actuator_a/stop",
+      () => api.stop("right_arm.shoulder_roll"),
+      "/api/motors/right_arm.shoulder_roll/stop",
       "POST",
     ],
     [
       "POST /api/motors/:role/save",
-      () => api.saveToFlash("shoulder_actuator_a"),
-      "/api/motors/shoulder_actuator_a/save",
+      () => api.saveToFlash("right_arm.shoulder_roll"),
+      "/api/motors/right_arm.shoulder_roll/save",
       "POST",
     ],
     [
       "POST /api/motors/:role/calibrate_encoder",
-      () => api.calibrateEncoder("shoulder_actuator_a"),
-      "/api/motors/shoulder_actuator_a/calibrate_encoder",
+      () => api.calibrateEncoder("right_arm.shoulder_roll"),
+      "/api/motors/right_arm.shoulder_roll/calibrate_encoder",
       "POST",
     ],
     [
       "POST /api/motors/:role/set_zero",
-      () => api.setZero("shoulder_actuator_a"),
-      "/api/motors/shoulder_actuator_a/set_zero",
+      () => api.setZero("right_arm.shoulder_roll"),
+      "/api/motors/right_arm.shoulder_roll/set_zero",
       "POST",
     ],
     [
       "POST /api/motors/:role/commission",
-      () => api.commissionMotor("shoulder_actuator_a"),
-      "/api/motors/shoulder_actuator_a/commission",
+      () => api.commissionMotor("right_arm.shoulder_roll"),
+      "/api/motors/right_arm.shoulder_roll/commission",
       "POST",
     ],
     [
       "POST /api/motors/:role/restore_offset",
-      () => api.restoreOffset("shoulder_actuator_a"),
-      "/api/motors/shoulder_actuator_a/restore_offset",
+      () => api.restoreOffset("right_arm.shoulder_roll"),
+      "/api/motors/right_arm.shoulder_roll/restore_offset",
       "POST",
     ],
     [
       "POST /api/motors/:role/ping",
-      () => api.pingMotor("shoulder_actuator_a"),
-      "/api/motors/shoulder_actuator_a/ping",
+      () => api.pingMotor("right_arm.shoulder_roll"),
+      "/api/motors/right_arm.shoulder_roll/ping",
       "POST",
     ],
     [
       "PUT /api/motors/:role/predefined_home",
       () =>
-        api.setPredefinedHome("shoulder_actuator_a", {
+        api.setPredefinedHome("right_arm.shoulder_roll", {
           predefined_home_rad: 0,
         }),
-      "/api/motors/shoulder_actuator_a/predefined_home",
+      "/api/motors/right_arm.shoulder_roll/predefined_home",
       "PUT",
     ],
     [
       "PUT /api/motors/:role/homing_speed",
       () =>
-        api.setHomingSpeed("shoulder_actuator_a", {
+        api.setHomingSpeed("right_arm.shoulder_roll", {
           homing_speed_rad_s: 0.25,
         }),
-      "/api/motors/shoulder_actuator_a/homing_speed",
+      "/api/motors/right_arm.shoulder_roll/homing_speed",
       "PUT",
     ],
     [
       "POST /api/motors/:role/motion/sweep",
       () =>
-        api.motion.sweep("shoulder_actuator_a", {
+        api.motion.sweep("right_arm.shoulder_roll", {
           speed_rad_s: 0.1,
         }),
-      "/api/motors/shoulder_actuator_a/motion/sweep",
+      "/api/motors/right_arm.shoulder_roll/motion/sweep",
       "POST",
     ],
     [
       "POST /api/motors/:role/motion/wave",
       () =>
-        api.motion.wave("shoulder_actuator_a", {
+        api.motion.wave("right_arm.shoulder_roll", {
           center_rad: 0,
           amplitude_rad: 0.2,
           speed_rad_s: 0.1,
         }),
-      "/api/motors/shoulder_actuator_a/motion/wave",
+      "/api/motors/right_arm.shoulder_roll/motion/wave",
       "POST",
     ],
     [
       "POST /api/motors/:role/motion/jog",
-      () => api.motion.jog("shoulder_actuator_a", { vel_rad_s: 0.25 }),
-      "/api/motors/shoulder_actuator_a/motion/jog",
+      () => api.motion.jog("right_arm.shoulder_roll", { vel_rad_s: 0.25 }),
+      "/api/motors/right_arm.shoulder_roll/motion/jog",
       "POST",
     ],
     [
       "POST /api/motors/:role/motion/stop",
-      () => api.motion.stop("shoulder_actuator_a"),
-      "/api/motors/shoulder_actuator_a/motion/stop",
+      () => api.motion.stop("right_arm.shoulder_roll"),
+      "/api/motors/right_arm.shoulder_roll/motion/stop",
       "POST",
     ],
   ];
@@ -285,8 +285,8 @@ describe("POST /api/motors/:role/set_zero", () => {
   // would (correctly) start refusing the request with 400
   // `requires_confirmation`.
   it("always sends confirm_advanced:true in a JSON body", async () => {
-    await api.setZero("shoulder_actuator_a");
-    expect(captured?.url).toBe("/api/motors/shoulder_actuator_a/set_zero");
+    await api.setZero("right_arm.shoulder_roll");
+    expect(captured?.url).toBe("/api/motors/right_arm.shoulder_roll/set_zero");
     expect(captured?.method).toBe("POST");
     expect(captured?.headers["content-type"]).toBe("application/json");
     expect(captured?.body).toEqual({ confirm_advanced: true });
@@ -295,9 +295,9 @@ describe("POST /api/motors/:role/set_zero", () => {
 
 describe("POST /api/motors/:role/calibrate_encoder", () => {
   it("always sends confirm_advanced:true in a JSON body", async () => {
-    await api.calibrateEncoder("shoulder_actuator_a");
+    await api.calibrateEncoder("right_arm.shoulder_roll");
     expect(captured?.url).toBe(
-      "/api/motors/shoulder_actuator_a/calibrate_encoder",
+      "/api/motors/right_arm.shoulder_roll/calibrate_encoder",
     );
     expect(captured?.method).toBe("POST");
     expect(captured?.headers["content-type"]).toBe("application/json");
@@ -310,8 +310,8 @@ describe("GET /api/motors/:role/motion", () => {
     nextResponse = { status: 204, body: "" };
     // The fetch spy returns "" as the body; the api.motion.current path
     // checks status === 204 first and returns null.
-    const result = await api.motion.current("shoulder_actuator_a");
-    expect(captured?.url).toBe("/api/motors/shoulder_actuator_a/motion");
+    const result = await api.motion.current("right_arm.shoulder_roll");
+    expect(captured?.url).toBe("/api/motors/right_arm.shoulder_roll/motion");
     expect(captured?.method).toBe("GET");
     expect(result).toBeNull();
   });
@@ -321,13 +321,13 @@ describe("GET /api/motors/:role/motion", () => {
       status: 200,
       body: {
         run_id: "abc",
-        role: "shoulder_actuator_a",
+        role: "right_arm.shoulder_roll",
         kind: "sweep",
         started_at_ms: 1000,
         intent: { kind: "sweep", speed_rad_s: 0.1, turnaround_rad: 0.05 },
       },
     };
-    const result = await api.motion.current("shoulder_actuator_a");
+    const result = await api.motion.current("right_arm.shoulder_roll");
     expect(result?.run_id).toBe("abc");
     expect(result?.kind).toBe("sweep");
   });
@@ -342,12 +342,12 @@ describe("POST /api/settings/reseed", () => {
 
 describe("PUT /api/motors/:role/params/:name", () => {
   it("uses PUT, JSON content-type, and serialises the ParamWrite body", async () => {
-    await api.writeParam("shoulder_actuator_a", "limit_torque", {
+    await api.writeParam("right_arm.shoulder_roll", "limit_torque", {
       value: 12.5,
       save_after: false,
     });
     expect(captured?.url).toBe(
-      "/api/motors/shoulder_actuator_a/params/limit_torque",
+      "/api/motors/right_arm.shoulder_roll/params/limit_torque",
     );
     expect(captured?.method).toBe("PUT");
     expect(captured?.headers["content-type"]).toBe("application/json");

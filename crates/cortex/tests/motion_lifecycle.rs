@@ -67,7 +67,7 @@ async fn sweep_lifecycle_running_then_operator_stop() {
     common::force_homed(&state);
     common::seed_feedback(&state);
 
-    let role = "shoulder_actuator_a";
+    let role = "right_arm.shoulder_roll";
 
     // The sweep pattern requires travel limits; mutate the in-memory
     // inventory directly (write_atomic round-trips to disk and isn't
@@ -150,8 +150,8 @@ async fn sweep_lifecycle_running_then_operator_stop() {
     assert!(saw_stopped, "no Stopped frame observed");
     assert_eq!(
         last_reason.as_deref(),
-        Some("operator"),
-        "stop reason should be operator-initiated"
+        Some("operator_hold"),
+        "canonical shoulder_roll should hold on graceful operator stop"
     );
 
     // Registry slot is cleared.
@@ -180,7 +180,7 @@ async fn second_start_supersedes_the_first() {
     common::force_homed(&state);
     common::seed_feedback(&state);
 
-    let role = "shoulder_actuator_a";
+    let role = "right_arm.shoulder_roll";
     set_travel_limits(&state, role, -0.5, 0.5);
 
     let mut status_rx = state.motion_status_tx.subscribe();
@@ -241,7 +241,7 @@ async fn second_start_supersedes_the_first() {
         }
         match tokio::time::timeout(remaining, status_rx.recv()).await {
             Ok(Ok(f)) if f.run_id == first && f.state == MotionState::Stopped => {
-                assert_eq!(f.reason.as_deref(), Some("superseded"));
+                assert_eq!(f.reason.as_deref(), Some("superseded_hold"));
                 superseded = true;
             }
             Ok(Ok(_)) => continue,
@@ -260,7 +260,7 @@ async fn running_sweep_stops_on_stale_telemetry() {
     common::force_homed(&state);
     common::seed_feedback(&state);
 
-    let role = "shoulder_actuator_a";
+    let role = "right_arm.shoulder_roll";
     set_travel_limits(&state, role, -0.5, 0.5);
     let mut status_rx = state.motion_status_tx.subscribe();
 
@@ -307,7 +307,7 @@ async fn jog_stops_when_heartbeat_lapses() {
     common::force_homed(&state);
     common::seed_feedback(&state);
 
-    let role = "shoulder_actuator_a";
+    let role = "right_arm.shoulder_roll";
     set_travel_limits(&state, role, -0.5, 0.5);
     let clock = common::spawn_latest_timestamp_refresh(state.clone(), role, 0.0);
     let mut status_rx = state.motion_status_tx.subscribe();
@@ -340,7 +340,7 @@ async fn mit_backend_sweep_lifecycle_runs_and_stops() {
     common::force_homed(&state);
     common::seed_feedback(&state);
 
-    let role = "shoulder_actuator_a";
+    let role = "right_arm.shoulder_roll";
     set_travel_limits(&state, role, -0.5, 0.5);
     let mut status_rx = state.motion_status_tx.subscribe();
 
@@ -380,7 +380,7 @@ async fn mit_backend_sweep_lifecycle_runs_and_stops() {
         Duration::from_secs(2),
     )
     .await;
-    assert_eq!(stopped.reason.as_deref(), Some("operator"));
+    assert_eq!(stopped.reason.as_deref(), Some("operator_hold"));
 }
 
 // ---------------------------------------------------------------------------
@@ -401,7 +401,7 @@ async fn operator_stop_with_hold_behavior_emits_hold_reason() {
     common::force_homed(&state);
     common::seed_feedback(&state);
 
-    let role = "shoulder_actuator_a";
+    let role = "right_arm.shoulder_roll";
     set_travel_limits(&state, role, -0.5, 0.5);
     set_stop_behavior(&state, role, cortex::motion::StopBehavior::Hold);
 
@@ -461,7 +461,7 @@ async fn fault_stop_with_hold_behavior_still_hard_stops() {
     common::force_homed(&state);
     common::seed_feedback(&state);
 
-    let role = "shoulder_actuator_a";
+    let role = "right_arm.shoulder_roll";
     set_travel_limits(&state, role, -0.5, 0.5);
     set_stop_behavior(&state, role, cortex::motion::StopBehavior::Hold);
 
@@ -525,7 +525,7 @@ async fn hold_behavior_not_homed_falls_back_to_hard_stop() {
     }
     common::seed_feedback(&state);
 
-    let role = "shoulder_actuator_a";
+    let role = "right_arm.shoulder_roll";
     set_travel_limits(&state, role, -0.5, 0.5);
     set_stop_behavior(&state, role, cortex::motion::StopBehavior::Hold);
 
@@ -597,7 +597,7 @@ async fn mit_backend_hold_on_stop_emits_hold_reason() {
     common::force_homed(&state);
     common::seed_feedback(&state);
 
-    let role = "shoulder_actuator_a";
+    let role = "right_arm.shoulder_roll";
     set_travel_limits(&state, role, -0.5, 0.5);
     set_stop_behavior(&state, role, cortex::motion::StopBehavior::Hold);
 
@@ -638,5 +638,56 @@ async fn mit_backend_hold_on_stop_emits_hold_reason() {
         stopped.reason.as_deref(),
         Some("operator_hold"),
         "MIT backend should also respect stop_behavior=hold"
+    );
+}
+
+#[tokio::test]
+async fn canonical_shoulder_roll_hold_without_explicit_stop_behavior() {
+    let (state, _dir) = common::make_state();
+    common::force_homed(&state);
+    common::seed_feedback(&state);
+
+    let role = common::RIGHT_ARM_SHOULDER_ROLL;
+    set_travel_limits(&state, role, -0.5, 0.5);
+    set_stop_behavior(&state, role, cortex::motion::StopBehavior::HardStop);
+    // joint_kind=shoulder_roll still makes effective_behavior() return Hold.
+
+    let mut status_rx = state.motion_status_tx.subscribe();
+
+    let run_id = state
+        .motion
+        .start(
+            &state,
+            role,
+            MotionIntent::Sweep {
+                speed_rad_s: 0.1,
+                turnaround_rad: 0.05,
+            },
+        )
+        .await
+        .expect("start");
+
+    let _ = wait_for_state(
+        &mut status_rx,
+        &run_id,
+        MotionState::Running,
+        Duration::from_secs(1),
+    )
+    .await;
+
+    assert!(state.motion.stop(role).await);
+
+    let stopped = wait_for_state(
+        &mut status_rx,
+        &run_id,
+        MotionState::Stopped,
+        Duration::from_secs(2),
+    )
+    .await;
+
+    assert_eq!(
+        stopped.reason.as_deref(),
+        Some("operator_hold"),
+        "canonical shoulder_roll should hold on graceful stop via joint_kind default"
     );
 }

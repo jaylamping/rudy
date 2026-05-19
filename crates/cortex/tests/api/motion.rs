@@ -25,12 +25,13 @@ use cortex::boot_state::BootState;
 async fn home_succeeds_then_enable_succeeds() {
     let (state, _dir) = common::make_state();
     common::seed_feedback(&state);
-    common::set_boot_state(&state, "shoulder_actuator_a", BootState::InBand);
+    common::set_boot_state(&state, "right_arm.shoulder_roll", BootState::InBand);
     let app = cortex::build_app(state.clone());
 
     // Mock CAN does not clock `state.latest` during `finish_home_success`'s settle;
     // mirror type-2 freshness + mech_pos at home so hold verification passes.
-    let clock = common::spawn_latest_timestamp_refresh(state.clone(), "shoulder_actuator_a", 0.0);
+    let clock =
+        common::spawn_latest_timestamp_refresh(state.clone(), "right_arm.shoulder_roll", 0.0);
 
     // POST /home with an empty body (defaults to target=0).
     let resp = app
@@ -38,7 +39,7 @@ async fn home_succeeds_then_enable_succeeds() {
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri("/api/motors/shoulder_actuator_a/home")
+                .uri("/api/motors/right_arm.shoulder_roll/home")
                 .header("content-type", "application/json")
                 .body(Body::from(b"{}".to_vec()))
                 .unwrap(),
@@ -52,14 +53,14 @@ async fn home_succeeds_then_enable_succeeds() {
         "home should succeed in mock mode when motor is InBand"
     );
 
-    let bs = cortex::boot_state::current(&state, "shoulder_actuator_a");
+    let bs = cortex::boot_state::current(&state, "right_arm.shoulder_roll");
     assert!(matches!(bs, BootState::Homed));
 
     let resp = app
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri("/api/motors/shoulder_actuator_a/enable")
+                .uri("/api/motors/right_arm.shoulder_roll/enable")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -75,7 +76,7 @@ async fn home_when_out_of_band_is_forbidden() {
     common::seed_feedback(&state);
     common::set_boot_state(
         &state,
-        "shoulder_actuator_a",
+        "right_arm.shoulder_roll",
         BootState::OutOfBand {
             mech_pos_rad: 1.5,
             min_rad: -1.0,
@@ -88,7 +89,7 @@ async fn home_when_out_of_band_is_forbidden() {
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri("/api/motors/shoulder_actuator_a/home")
+                .uri("/api/motors/right_arm.shoulder_roll/home")
                 .header("content-type", "application/json")
                 .body(Body::from(b"{}".to_vec()))
                 .unwrap(),
@@ -106,7 +107,7 @@ async fn home_target_outside_band_is_forbidden() {
     let (state, _dir) = common::make_state();
     {
         let mut inv = state.inventory.write().expect("inventory");
-        let a = common::actuator_mut(&mut inv, "shoulder_actuator_a").unwrap();
+        let a = common::actuator_mut(&mut inv, "right_arm.shoulder_roll").unwrap();
         a.common.travel_limits = Some(cortex::inventory::TravelLimits {
             min_rad: -1.0,
             max_rad: 1.0,
@@ -114,14 +115,14 @@ async fn home_target_outside_band_is_forbidden() {
         });
     }
     common::seed_feedback(&state);
-    common::set_boot_state(&state, "shoulder_actuator_a", BootState::InBand);
+    common::set_boot_state(&state, "right_arm.shoulder_roll", BootState::InBand);
     let app = cortex::build_app(state);
 
     let resp = app
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri("/api/motors/shoulder_actuator_a/home")
+                .uri("/api/motors/right_arm.shoulder_roll/home")
                 .header("content-type", "application/json")
                 .body(Body::from(
                     serde_json::to_vec(&json!({"target_rad": 5.0})).unwrap(),
@@ -142,7 +143,7 @@ async fn jog_step_too_large_when_not_homed_is_forbidden() {
     let (state, _dir) = common::make_state();
     {
         let mut inv = state.inventory.write().expect("inventory");
-        let a = common::actuator_mut(&mut inv, "shoulder_actuator_a").unwrap();
+        let a = common::actuator_mut(&mut inv, "right_arm.shoulder_roll").unwrap();
         a.common.travel_limits = Some(cortex::inventory::TravelLimits {
             min_rad: -1.0,
             max_rad: 1.0,
@@ -150,7 +151,7 @@ async fn jog_step_too_large_when_not_homed_is_forbidden() {
         });
     }
     common::seed_feedback(&state);
-    common::set_boot_state(&state, "shoulder_actuator_a", BootState::InBand);
+    common::set_boot_state(&state, "right_arm.shoulder_roll", BootState::InBand);
     let app = cortex::build_app(state);
 
     // Velocity 0.5 rad/s ├ù 1 s = 0.5 rad delta ΓÇö well above the 0.087 rad ceiling.
@@ -159,7 +160,7 @@ async fn jog_step_too_large_when_not_homed_is_forbidden() {
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri("/api/motors/shoulder_actuator_a/jog")
+                .uri("/api/motors/right_arm.shoulder_roll/jog")
                 .header("content-type", "application/json")
                 .body(Body::from(body))
                 .unwrap(),
@@ -177,7 +178,7 @@ async fn jog_refuses_home_failed_state() {
     common::seed_feedback(&state);
     common::set_boot_state(
         &state,
-        "shoulder_actuator_a",
+        "right_arm.shoulder_roll",
         BootState::HomeFailed {
             reason: "tracking_error".into(),
             last_pos_rad: 0.1,
@@ -190,7 +191,7 @@ async fn jog_refuses_home_failed_state() {
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri("/api/motors/shoulder_actuator_a/jog")
+                .uri("/api/motors/right_arm.shoulder_roll/jog")
                 .header("content-type", "application/json")
                 .body(Body::from(body))
                 .unwrap(),
@@ -214,24 +215,24 @@ async fn jog_refuses_on_stale_feedback() {
     let (state, _dir) = common::make_state();
     {
         let mut inv = state.inventory.write().expect("inventory");
-        let a = common::actuator_mut(&mut inv, "shoulder_actuator_a").unwrap();
+        let a = common::actuator_mut(&mut inv, "right_arm.shoulder_roll").unwrap();
         a.common.travel_limits = Some(TravelLimits {
             min_rad: -1.0,
             max_rad: 1.0,
             updated_at: None,
         });
     }
-    common::set_boot_state(&state, "shoulder_actuator_a", BootState::Homed);
+    common::set_boot_state(&state, "right_arm.shoulder_roll", BootState::Homed);
 
     // Seed a deliberately stale row: 500 ms old > the 100 ms default.
     {
         let mut latest = state.latest.write().expect("latest");
         let now_ms = chrono::Utc::now().timestamp_millis();
         latest.insert(
-            "shoulder_actuator_a".into(),
+            "right_arm.shoulder_roll".into(),
             MotorFeedback {
                 t_ms: now_ms - 500,
-                role: "shoulder_actuator_a".into(),
+                role: "right_arm.shoulder_roll".into(),
                 can_id: 0x08,
                 mech_pos_rad: 0.0,
                 mech_vel_rad_s: 0.0,
@@ -251,7 +252,7 @@ async fn jog_refuses_on_stale_feedback() {
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri("/api/motors/shoulder_actuator_a/jog")
+                .uri("/api/motors/right_arm.shoulder_roll/jog")
                 .header("content-type", "application/json")
                 .body(Body::from(body))
                 .unwrap(),
@@ -278,14 +279,14 @@ async fn jog_refuses_with_no_feedback() {
     let (state, _dir) = common::make_state();
     {
         let mut inv = state.inventory.write().expect("inventory");
-        let a = common::actuator_mut(&mut inv, "shoulder_actuator_a").unwrap();
+        let a = common::actuator_mut(&mut inv, "right_arm.shoulder_roll").unwrap();
         a.common.travel_limits = Some(TravelLimits {
             min_rad: -1.0,
             max_rad: 1.0,
             updated_at: None,
         });
     }
-    common::set_boot_state(&state, "shoulder_actuator_a", BootState::Homed);
+    common::set_boot_state(&state, "right_arm.shoulder_roll", BootState::Homed);
     // Note: deliberately do NOT call seed_feedback.
     let app = cortex::build_app(state);
 
@@ -294,7 +295,7 @@ async fn jog_refuses_with_no_feedback() {
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri("/api/motors/shoulder_actuator_a/jog")
+                .uri("/api/motors/right_arm.shoulder_roll/jog")
                 .header("content-type", "application/json")
                 .body(Body::from(body))
                 .unwrap(),
@@ -315,7 +316,7 @@ async fn get_motion_returns_204_when_idle() {
     let resp = app
         .oneshot(
             Request::builder()
-                .uri("/api/motors/shoulder_actuator_a/motion")
+                .uri("/api/motors/right_arm.shoulder_roll/motion")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -343,7 +344,7 @@ async fn motion_sweep_without_travel_limits_self_terminates() {
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri("/api/motors/shoulder_actuator_a/motion/sweep")
+                .uri("/api/motors/right_arm.shoulder_roll/motion/sweep")
                 .header("content-type", "application/json")
                 .body(Body::from(body))
                 .unwrap(),
@@ -387,7 +388,7 @@ async fn motion_sweep_starts_and_returns_run_id() {
     common::seed_feedback(&state);
     {
         let mut inv = state.inventory.write().expect("inventory");
-        let a = common::actuator_mut(&mut inv, "shoulder_actuator_a").unwrap();
+        let a = common::actuator_mut(&mut inv, "right_arm.shoulder_roll").unwrap();
         a.common.travel_limits = Some(TravelLimits {
             min_rad: -0.5,
             max_rad: 0.5,
@@ -402,7 +403,7 @@ async fn motion_sweep_starts_and_returns_run_id() {
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri("/api/motors/shoulder_actuator_a/motion/sweep")
+                .uri("/api/motors/right_arm.shoulder_roll/motion/sweep")
                 .header("content-type", "application/json")
                 .body(Body::from(body))
                 .unwrap(),
@@ -423,7 +424,7 @@ async fn motion_sweep_starts_and_returns_run_id() {
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri("/api/motors/shoulder_actuator_a/motion/stop")
+                .uri("/api/motors/right_arm.shoulder_roll/motion/stop")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -444,7 +445,7 @@ async fn motion_stop_when_idle_returns_false() {
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri("/api/motors/shoulder_actuator_a/motion/stop")
+                .uri("/api/motors/right_arm.shoulder_roll/motion/stop")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -453,6 +454,98 @@ async fn motion_stop_when_idle_returns_false() {
     assert_eq!(resp.status(), StatusCode::OK);
     let payload: serde_json::Value = body_json(resp).await;
     assert_eq!(payload["stopped"], json!(false));
+}
+
+/// REST sweep → stop on canonical `right_arm.shoulder_roll` must emit
+/// `operator_hold` when homed, even if runtime inventory still has the
+/// default `stop_behavior: hard_stop` (joint_kind effective hold).
+#[tokio::test]
+async fn motion_sweep_stop_on_canonical_shoulder_roll_emits_operator_hold() {
+    use cortex::motion::{MotionState, MotionStatus};
+
+    let (state, _dir) = common::make_state();
+    common::force_homed(&state);
+    common::seed_feedback(&state);
+    {
+        let mut inv = state.inventory.write().expect("inventory");
+        let a = common::actuator_mut(&mut inv, common::RIGHT_ARM_SHOULDER_ROLL).unwrap();
+        a.common.travel_limits = Some(TravelLimits {
+            min_rad: -0.5,
+            max_rad: 0.5,
+            updated_at: None,
+        });
+        a.common.stop_behavior = cortex::motion::StopBehavior::HardStop;
+    }
+
+    let mut status_rx = state.motion_status_tx.subscribe();
+    let app = cortex::build_app(state);
+
+    let body = serde_json::to_vec(&json!({"speed_rad_s": 0.1})).unwrap();
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/motors/right_arm.shoulder_roll/motion/sweep")
+                .header("content-type", "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let payload: serde_json::Value = body_json(resp).await;
+    let run_id = payload["run_id"].as_str().expect("run_id").to_string();
+
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(2);
+    let mut saw_running = false;
+    while !saw_running {
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        if remaining.is_zero() {
+            panic!("sweep never reached Running");
+        }
+        let frame: MotionStatus = match tokio::time::timeout(remaining, status_rx.recv()).await {
+            Ok(Ok(f)) => f,
+            Ok(Err(e)) => panic!("status channel closed: {e}"),
+            Err(_) => panic!("timed out waiting for Running frame"),
+        };
+        if frame.run_id == run_id && matches!(frame.state, MotionState::Running) {
+            saw_running = true;
+        }
+    }
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/motors/right_arm.shoulder_roll/motion/stop")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let stopped = loop {
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        if remaining.is_zero() {
+            panic!("timed out waiting for Stopped after REST stop");
+        }
+        let frame: MotionStatus = match tokio::time::timeout(remaining, status_rx.recv()).await {
+            Ok(Ok(f)) => f,
+            Ok(Err(e)) => panic!("status channel closed: {e}"),
+            Err(_) => panic!("timed out waiting for Stopped frame"),
+        };
+        if frame.run_id == run_id && matches!(frame.state, MotionState::Stopped) {
+            break frame;
+        }
+    };
+
+    assert_eq!(
+        stopped.reason.as_deref(),
+        Some("operator_hold"),
+        "canonical shoulder_roll REST stop should hold under gravity"
+    );
 }
 
 /// `POST /api/motors/:role/motion/sweep` clamps a speed beyond
@@ -468,7 +561,7 @@ async fn motion_sweep_clamps_excessive_speed() {
     common::seed_feedback(&state);
     {
         let mut inv = state.inventory.write().expect("inventory");
-        let a = common::actuator_mut(&mut inv, "shoulder_actuator_a").unwrap();
+        let a = common::actuator_mut(&mut inv, "right_arm.shoulder_roll").unwrap();
         a.common.travel_limits = Some(TravelLimits {
             min_rad: -0.5,
             max_rad: 0.5,
@@ -485,7 +578,7 @@ async fn motion_sweep_clamps_excessive_speed() {
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri("/api/motors/shoulder_actuator_a/motion/sweep")
+                .uri("/api/motors/right_arm.shoulder_roll/motion/sweep")
                 .header("content-type", "application/json")
                 .body(Body::from(body))
                 .unwrap(),
@@ -510,7 +603,7 @@ async fn motion_sweep_clamps_excessive_speed() {
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri("/api/motors/shoulder_actuator_a/motion/stop")
+                .uri("/api/motors/right_arm.shoulder_roll/motion/stop")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -528,17 +621,17 @@ async fn limb_quarantine_blocks_sibling_jog() {
         for d in &mut inv.devices {
             if let Device::Actuator(a) = d {
                 a.common.limb = Some("test_limb".into());
-                if a.common.role == "shoulder_actuator_b" {
+                if a.common.role == "right_arm.shoulder_pitch" {
                     a.common.verified = true;
                 }
             }
         }
     }
     common::seed_feedback(&state);
-    common::set_boot_state(&state, "shoulder_actuator_a", BootState::Homed);
+    common::set_boot_state(&state, "right_arm.shoulder_roll", BootState::Homed);
     common::set_boot_state(
         &state,
-        "shoulder_actuator_b",
+        "right_arm.shoulder_pitch",
         BootState::HomeFailed {
             reason: "fixture".into(),
             last_pos_rad: 0.0,
@@ -550,7 +643,7 @@ async fn limb_quarantine_blocks_sibling_jog() {
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri("/api/motors/shoulder_actuator_a/jog")
+                .uri("/api/motors/right_arm.shoulder_roll/jog")
                 .header("content-type", "application/json")
                 .body(Body::from(body))
                 .unwrap(),
@@ -562,7 +655,7 @@ async fn limb_quarantine_blocks_sibling_jog() {
     assert_eq!(err.error, "limb_quarantined");
     assert_eq!(err.limb.as_deref(), Some("test_limb"));
     let failed = err.failed_motors.expect("failed_motors");
-    assert!(failed.iter().any(|m| m.role == "shoulder_actuator_b"));
+    assert!(failed.iter().any(|m| m.role == "right_arm.shoulder_pitch"));
 }
 
 /// Limb quarantine must not block intentional recovery paths that skip the
@@ -575,17 +668,17 @@ async fn limb_quarantine_allows_recovery_set_zero() {
         for d in &mut inv.devices {
             if let Device::Actuator(a) = d {
                 a.common.limb = Some("test_limb".into());
-                if a.common.role == "shoulder_actuator_b" {
+                if a.common.role == "right_arm.shoulder_pitch" {
                     a.common.verified = true;
                 }
             }
         }
     }
     common::seed_feedback(&state);
-    common::set_boot_state(&state, "shoulder_actuator_a", BootState::Homed);
+    common::set_boot_state(&state, "right_arm.shoulder_roll", BootState::Homed);
     common::set_boot_state(
         &state,
-        "shoulder_actuator_b",
+        "right_arm.shoulder_pitch",
         BootState::HomeFailed {
             reason: "fixture".into(),
             last_pos_rad: 0.0,
@@ -597,7 +690,7 @@ async fn limb_quarantine_allows_recovery_set_zero() {
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri("/api/motors/shoulder_actuator_b/set_zero")
+                .uri("/api/motors/right_arm.shoulder_pitch/set_zero")
                 .header("content-type", "application/json")
                 .body(Body::from(body))
                 .unwrap(),

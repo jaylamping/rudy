@@ -3,7 +3,7 @@
 schema_version: 2
 devices:
 - kind: actuator
-  role: shoulder_actuator_a
+  role: right_arm.shoulder_roll
   can_bus: can1
   can_id: 8
   present: true
@@ -28,8 +28,8 @@ devices:
   # 2026-04-23.
   hold_kp_nm_per_rad: 250.0
   hold_kd_nm_s_per_rad: 2.5
-  limb: null
-  joint_kind: null
+  limb: right_arm
+  joint_kind: shoulder_roll
   notes_yaml: |
     baseline:
       app_build_date: Oct 22 2025

@@ -28,7 +28,7 @@ use cortex::types::{
 fn sample_motor() -> MotorFeedback {
     MotorFeedback {
         t_ms: 1_700_000_123_456,
-        role: "shoulder_actuator_a".into(),
+        role: "right_arm.shoulder_roll".into(),
         can_id: 0x08,
         mech_pos_rad: 0.5,
         mech_vel_rad_s: -0.25,
@@ -244,7 +244,7 @@ fn transport_assignments_match_macro() {
 fn envelope_roundtrips_test_progress() {
     let payload = TestProgress {
         run_id: "abc-123".into(),
-        role: "shoulder_actuator_a".into(),
+        role: "right_arm.shoulder_roll".into(),
         seq: 42,
         t_ms: 1_700_000_123_456,
         step: "ramp".into(),

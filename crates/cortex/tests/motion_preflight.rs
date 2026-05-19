@@ -10,11 +10,11 @@ use cortex::motion::preflight::{PreflightChecks, PreflightFailure};
 fn target_position_trips_boot_max_step_when_not_homed() {
     let (state, _dir) = common::make_state();
     common::seed_feedback(&state);
-    common::set_boot_state(&state, "shoulder_actuator_a", BootState::InBand);
+    common::set_boot_state(&state, "right_arm.shoulder_roll", BootState::InBand);
 
     let pf = PreflightChecks {
         state: &state,
-        role: "shoulder_actuator_a",
+        role: "right_arm.shoulder_roll",
         vel_rad_s: 0.0,
         horizon_ms: 50,
         target_position_rad: Some(1.0),
@@ -32,12 +32,12 @@ fn target_position_trips_boot_max_step_when_not_homed() {
 fn target_position_ignores_velocity_for_geometric_step_cap() {
     let (state, _dir) = common::make_state();
     common::seed_feedback(&state);
-    common::set_boot_state(&state, "shoulder_actuator_a", BootState::InBand);
+    common::set_boot_state(&state, "right_arm.shoulder_roll", BootState::InBand);
 
     // Without target: absurd velocity × horizon would blow boot_max_step.
     let huge_vel = PreflightChecks {
         state: &state,
-        role: "shoulder_actuator_a",
+        role: "right_arm.shoulder_roll",
         vel_rad_s: 50.0,
         horizon_ms: 100,
         target_position_rad: None,
@@ -50,7 +50,7 @@ fn target_position_ignores_velocity_for_geometric_step_cap() {
     // With target near feedback: step small; velocity ignored for projection.
     let mit_like = PreflightChecks {
         state: &state,
-        role: "shoulder_actuator_a",
+        role: "right_arm.shoulder_roll",
         vel_rad_s: 50.0,
         horizon_ms: 100,
         target_position_rad: Some(0.12),
@@ -64,19 +64,22 @@ fn target_position_ignores_velocity_for_geometric_step_cap() {
 fn active_fault_blocks_preflight() {
     let (state, _dir) = common::make_state();
     common::seed_feedback(&state);
-    common::set_boot_state(&state, "shoulder_actuator_a", BootState::Homed);
+    common::set_boot_state(&state, "right_arm.shoulder_roll", BootState::Homed);
 
     {
         let mut latest = state.latest.write().expect("latest");
-        let mut row = latest.get("shoulder_actuator_a").expect("seeded").clone();
+        let mut row = latest
+            .get("right_arm.shoulder_roll")
+            .expect("seeded")
+            .clone();
         row.fault_sta = 1;
         row.warn_sta = 0;
-        latest.insert("shoulder_actuator_a".into(), row);
+        latest.insert("right_arm.shoulder_roll".into(), row);
     }
 
     let pf = PreflightChecks {
         state: &state,
-        role: "shoulder_actuator_a",
+        role: "right_arm.shoulder_roll",
         vel_rad_s: 0.0,
         horizon_ms: 10,
         target_position_rad: None,
@@ -109,11 +112,11 @@ fn boot_failure_states_block_motion_preflight() {
     for bs in blocked {
         let (state, _dir) = common::make_state();
         common::seed_feedback(&state);
-        common::set_boot_state(&state, "shoulder_actuator_a", bs);
+        common::set_boot_state(&state, "right_arm.shoulder_roll", bs);
 
         let pf = PreflightChecks {
             state: &state,
-            role: "shoulder_actuator_a",
+            role: "right_arm.shoulder_roll",
             vel_rad_s: 0.0,
             horizon_ms: 10,
             target_position_rad: None,
