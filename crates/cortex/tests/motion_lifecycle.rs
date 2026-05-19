@@ -382,3 +382,261 @@ async fn mit_backend_sweep_lifecycle_runs_and_stops() {
     .await;
     assert_eq!(stopped.reason.as_deref(), Some("operator"));
 }
+
+// ---------------------------------------------------------------------------
+// Stop-policy integration: hold-on-stop for gravity-loaded joints
+// ---------------------------------------------------------------------------
+
+/// Set `stop_behavior` on an in-memory inventory actuator.
+fn set_stop_behavior(state: &SharedState, role: &str, behavior: cortex::motion::StopBehavior) {
+    let mut inv = state.inventory.write().expect("inventory poisoned");
+    let a = common::actuator_mut(&mut inv, role)
+        .unwrap_or_else(|| panic!("inventory missing role {role}"));
+    a.common.stop_behavior = behavior;
+}
+
+#[tokio::test]
+async fn operator_stop_with_hold_behavior_emits_hold_reason() {
+    let (state, _dir) = common::make_state();
+    common::force_homed(&state);
+    common::seed_feedback(&state);
+
+    let role = "shoulder_actuator_a";
+    set_travel_limits(&state, role, -0.5, 0.5);
+    set_stop_behavior(&state, role, cortex::motion::StopBehavior::Hold);
+
+    let mut status_rx = state.motion_status_tx.subscribe();
+
+    let run_id = state
+        .motion
+        .start(
+            &state,
+            role,
+            MotionIntent::Sweep {
+                speed_rad_s: 0.1,
+                turnaround_rad: 0.05,
+            },
+        )
+        .await
+        .expect("start");
+
+    let _ = wait_for_state(
+        &mut status_rx,
+        &run_id,
+        MotionState::Running,
+        Duration::from_secs(1),
+    )
+    .await;
+
+    assert!(state.motion.stop(role).await);
+
+    let stopped = wait_for_state(
+        &mut status_rx,
+        &run_id,
+        MotionState::Stopped,
+        Duration::from_secs(2),
+    )
+    .await;
+
+    // With stop_behavior=hold and homed state, reason is "operator_hold"
+    assert_eq!(
+        stopped.reason.as_deref(),
+        Some("operator_hold"),
+        "hold-configured joint should report operator_hold on graceful stop"
+    );
+
+    // Registry and enabled state still cleared
+    assert!(state.motion.current(role).is_none());
+    let enabled = state
+        .enabled
+        .read()
+        .expect("enabled poisoned")
+        .contains(role);
+    assert!(!enabled);
+}
+
+#[tokio::test]
+async fn fault_stop_with_hold_behavior_still_hard_stops() {
+    let (state, _dir) = common::make_state();
+    common::force_homed(&state);
+    common::seed_feedback(&state);
+
+    let role = "shoulder_actuator_a";
+    set_travel_limits(&state, role, -0.5, 0.5);
+    set_stop_behavior(&state, role, cortex::motion::StopBehavior::Hold);
+
+    let mut status_rx = state.motion_status_tx.subscribe();
+
+    let run_id = state
+        .motion
+        .start(
+            &state,
+            role,
+            MotionIntent::Sweep {
+                speed_rad_s: 0.1,
+                turnaround_rad: 0.05,
+            },
+        )
+        .await
+        .expect("start");
+
+    let _ = wait_for_state(
+        &mut status_rx,
+        &run_id,
+        MotionState::Running,
+        Duration::from_secs(1),
+    )
+    .await;
+
+    // Simulate stale telemetry (fault condition)
+    {
+        let mut latest = state.latest.write().expect("latest poisoned");
+        let fb = latest.get_mut(role).expect("seeded feedback");
+        fb.t_ms = chrono::Utc::now().timestamp_millis() - 10_000;
+    }
+
+    let stopped = wait_for_state(
+        &mut status_rx,
+        &run_id,
+        MotionState::Stopped,
+        Duration::from_secs(2),
+    )
+    .await;
+
+    // Fault stop reasons are NOT eligible for hold — plain label emitted
+    assert_eq!(
+        stopped.reason.as_deref(),
+        Some("stale_telemetry"),
+        "fault stop must hard-stop even when stop_behavior=hold"
+    );
+}
+
+#[tokio::test]
+async fn hold_behavior_not_homed_falls_back_to_hard_stop() {
+    let (state, _dir) = common::make_state();
+    // Force InBand instead of Homed
+    {
+        use cortex::boot_state::BootState;
+        let mut bs = state.boot_state.write().expect("boot_state");
+        let inv = state.inventory.read().expect("inv");
+        for m in inv.actuators() {
+            bs.insert(m.common.role.clone(), BootState::InBand);
+        }
+    }
+    common::seed_feedback(&state);
+
+    let role = "shoulder_actuator_a";
+    set_travel_limits(&state, role, -0.5, 0.5);
+    set_stop_behavior(&state, role, cortex::motion::StopBehavior::Hold);
+
+    // InBand doesn't permit enable, so start won't pass preflight with
+    // require_verified. Override to allow motion start for the test.
+    {
+        use cortex::boot_state::BootState;
+        let mut bs = state.boot_state.write().expect("boot_state");
+        bs.insert(role.into(), BootState::Homed);
+    }
+
+    let mut status_rx = state.motion_status_tx.subscribe();
+
+    let run_id = state
+        .motion
+        .start(
+            &state,
+            role,
+            MotionIntent::Sweep {
+                speed_rad_s: 0.1,
+                turnaround_rad: 0.05,
+            },
+        )
+        .await
+        .expect("start");
+
+    let _ = wait_for_state(
+        &mut status_rx,
+        &run_id,
+        MotionState::Running,
+        Duration::from_secs(1),
+    )
+    .await;
+
+    // Now downgrade boot state to InBand mid-run — won't trip preflight
+    // (preflight checks BootNotReady which is different), but stop policy
+    // will see non-Homed and fall back to hard stop.
+    {
+        use cortex::boot_state::BootState;
+        let mut bs = state.boot_state.write().expect("boot_state");
+        bs.insert(role.into(), BootState::InBand);
+    }
+
+    assert!(state.motion.stop(role).await);
+
+    let stopped = wait_for_state(
+        &mut status_rx,
+        &run_id,
+        MotionState::Stopped,
+        Duration::from_secs(2),
+    )
+    .await;
+
+    // Not homed → hard stop, so plain "operator" label
+    assert_eq!(
+        stopped.reason.as_deref(),
+        Some("operator"),
+        "non-homed actuator should hard-stop even with stop_behavior=hold"
+    );
+}
+
+#[tokio::test]
+async fn mit_backend_hold_on_stop_emits_hold_reason() {
+    let (state, _dir) = common::make_state();
+    {
+        let mut effective = state.effective.write().expect("effective poisoned");
+        effective.safety.motion_backend = MotionBackend::Mit;
+    }
+    common::force_homed(&state);
+    common::seed_feedback(&state);
+
+    let role = "shoulder_actuator_a";
+    set_travel_limits(&state, role, -0.5, 0.5);
+    set_stop_behavior(&state, role, cortex::motion::StopBehavior::Hold);
+
+    let mut status_rx = state.motion_status_tx.subscribe();
+
+    let run_id = state
+        .motion
+        .start(
+            &state,
+            role,
+            MotionIntent::Sweep {
+                speed_rad_s: 0.1,
+                turnaround_rad: 0.05,
+            },
+        )
+        .await
+        .expect("start");
+
+    let _ = wait_for_state(
+        &mut status_rx,
+        &run_id,
+        MotionState::Running,
+        Duration::from_secs(1),
+    )
+    .await;
+
+    assert!(state.motion.stop(role).await);
+
+    let stopped = wait_for_state(
+        &mut status_rx,
+        &run_id,
+        MotionState::Stopped,
+        Duration::from_secs(2),
+    )
+    .await;
+
+    assert_eq!(
+        stopped.reason.as_deref(),
+        Some("operator_hold"),
+        "MIT backend should also respect stop_behavior=hold"
+    );
+}

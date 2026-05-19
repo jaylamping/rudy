@@ -90,6 +90,7 @@ mod tests {
             desired_params: std::collections::BTreeMap::new(),
             current_safety: None,
             dynamics: None,
+            stop_behavior: Default::default(),
         };
         let motor = Actuator {
             common,

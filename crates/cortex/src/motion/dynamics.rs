@@ -305,6 +305,7 @@ mod tests {
                 desired_params,
                 current_safety: None,
                 dynamics,
+                stop_behavior: Default::default(),
             },
             family: ActuatorFamily::Robstride {
                 model: RobstrideModel::Rs03,

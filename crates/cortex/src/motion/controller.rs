@@ -43,6 +43,7 @@ use crate::motion::smoothing::MitTargetSmoothing;
 use crate::motion::status::{
     classify_motion_bus_string, MotionBusError, MotionState, MotionStatus, MotionStopReason,
 };
+use crate::motion::stop_policy::{self, StopAction};
 use crate::motion::sweep::{self, SweepState};
 use crate::motion::tick::motion_tick_interval_ms;
 use crate::motion::wave::{self, WaveState};
@@ -338,9 +339,47 @@ pub async fn run(mut task: ControllerTask) {
         }
     };
 
-    // Always stop the motor before returning. Mirrors the exit
-    // discipline in api::home::run_homer.
-    let _ = drive_stop(&task.state, &task.motor).await;
+    // Resolve stop action: hold-at-position vs hard torque-off.
+    let boot = task
+        .state
+        .boot_state
+        .read()
+        .expect("boot_state poisoned")
+        .get(&role)
+        .cloned();
+    let stop_action =
+        stop_policy::resolve(task.motor.common.stop_behavior, &stop_reason, boot.as_ref());
+
+    match stop_action {
+        StopAction::HoldPosition => {
+            // Read current position and hold gains, then issue MIT hold.
+            let hold_pos = task
+                .state
+                .latest
+                .read()
+                .expect("latest poisoned")
+                .get(&role)
+                .map(|f| f.mech_pos_rad)
+                .unwrap_or(0.0);
+            let (kp, kd) = {
+                let eff = task.state.read_effective();
+                mit::mit_command_kp_kd_or(
+                    &task.motor,
+                    eff.safety.hold_kp_nm_per_rad,
+                    eff.safety.hold_kd_nm_s_per_rad,
+                )
+            };
+            if let Err(e) =
+                drive_mit_stream(&task.state, &task.motor, hold_pos, 0.0, 0.0, kp, kd).await
+            {
+                warn!(role = %role, err = %e, "hold-on-stop MIT command failed; falling back to hard stop");
+                let _ = drive_stop(&task.state, &task.motor).await;
+            }
+        }
+        StopAction::HardStop => {
+            let _ = drive_stop(&task.state, &task.motor).await;
+        }
+    }
     task.state.mark_stopped(&role);
 
     if let Some(trip) = current_trip.as_ref() {
@@ -365,8 +404,8 @@ pub async fn run(mut task: ControllerTask) {
         .map(|f| f.mech_pos_rad)
         .unwrap_or(0.0);
 
-    broadcast_stopped(&task, final_pos, &stop_reason);
-    audit_stop(&task, &stop_reason);
+    broadcast_stopped(&task, final_pos, &stop_reason, stop_action);
+    audit_stop(&task, &stop_reason, stop_action);
 
     if !matches!(stop_reason, MotionStopReason::Operator) {
         debug!(role = %role, kind = kind_str, reason = stop_reason.label(), "motion exited");
@@ -500,8 +539,17 @@ fn broadcast_running(task: &ControllerTask, mech_pos_rad: f32, intent: MotionInt
     let _ = task.state.motion_status_tx.send(snap);
 }
 
-fn broadcast_stopped(task: &ControllerTask, mech_pos_rad: f32, reason: &MotionStopReason) {
+fn broadcast_stopped(
+    task: &ControllerTask,
+    mech_pos_rad: f32,
+    reason: &MotionStopReason,
+    action: StopAction,
+) {
     let intent = task.intent_rx.borrow().clone();
+    let reason_label = match action {
+        StopAction::HoldPosition => format!("{}_hold", reason.label()),
+        StopAction::HardStop => reason.label().to_string(),
+    };
     let snap = MotionStatus {
         run_id: task.run_id.clone(),
         role: task.motor.common.role.clone(),
@@ -510,7 +558,7 @@ fn broadcast_stopped(task: &ControllerTask, mech_pos_rad: f32, reason: &MotionSt
         state: MotionState::Stopped,
         vel_rad_s: 0.0,
         mech_pos_rad,
-        reason: Some(reason.label().to_string()),
+        reason: Some(reason_label),
     };
     if task.state.motion_status_tx.send(snap).is_err() {
         // No subscribers; harmless. The audit log carries the same
@@ -568,7 +616,7 @@ fn audit_start(task: &ControllerTask) {
     });
 }
 
-fn audit_stop(task: &ControllerTask, reason: &MotionStopReason) {
+fn audit_stop(task: &ControllerTask, reason: &MotionStopReason, action: StopAction) {
     let result = match reason {
         MotionStopReason::Operator
         | MotionStopReason::ClientGone
@@ -594,6 +642,10 @@ fn audit_stop(task: &ControllerTask, reason: &MotionStopReason) {
             "run_id": task.run_id,
             "reason": reason.label(),
             "detail": reason.detail(),
+            "stop_action": match action {
+                StopAction::HoldPosition => "hold_position",
+                StopAction::HardStop => "hard_stop",
+            },
         }),
         result,
     });

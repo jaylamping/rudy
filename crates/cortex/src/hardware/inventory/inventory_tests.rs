@@ -34,6 +34,7 @@ fn minimal_actuator(
             desired_params: std::collections::BTreeMap::new(),
             current_safety: None,
             dynamics: None,
+            stop_behavior: Default::default(),
         },
         family: ActuatorFamily::Robstride {
             model: RobstrideModel::Rs03,
@@ -127,6 +128,7 @@ fn validate_rejects_duplicate_can_id_same_bus() {
                     desired_params: std::collections::BTreeMap::new(),
                     current_safety: None,
                     dynamics: None,
+                    stop_behavior: Default::default(),
                 },
                 family: ActuatorFamily::Robstride {
                     model: RobstrideModel::Rs03,
@@ -157,6 +159,7 @@ fn validate_rejects_duplicate_can_id_same_bus() {
                     desired_params: std::collections::BTreeMap::new(),
                     current_safety: None,
                     dynamics: None,
+                    stop_behavior: Default::default(),
                 },
                 family: ActuatorFamily::Robstride {
                     model: RobstrideModel::Rs03,
@@ -246,6 +249,7 @@ fn desired_params_roundtrips_in_yaml() {
                 desired_params: desired,
                 current_safety: None,
                 dynamics: None,
+                stop_behavior: Default::default(),
             },
             family: ActuatorFamily::Robstride {
                 model: RobstrideModel::Rs03,

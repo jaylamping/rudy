@@ -287,6 +287,7 @@ mod dynamics_tests {
                 desired_params: BTreeMap::new(),
                 current_safety: None,
                 dynamics,
+                stop_behavior: Default::default(),
             },
             family: ActuatorFamily::Robstride {
                 model: RobstrideModel::Rs03,

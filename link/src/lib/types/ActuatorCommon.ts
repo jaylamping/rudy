@@ -2,6 +2,7 @@
 import type { CurrentSafetyTiers } from "./CurrentSafetyTiers";
 import type { JointDynamics } from "./JointDynamics";
 import type { JointKind } from "./JointKind";
+import type { StopBehavior } from "./StopBehavior";
 import type { TravelLimits } from "./TravelLimits";
 
 /**
@@ -69,4 +70,11 @@ current_safety: CurrentSafetyTiers | null,
  * velocity/acceleration limits, and whether this joint is considered "loaded".
  * `None` means no dynamics constraints (lightweight/unloaded joint).
  */
-dynamics: JointDynamics | null, };
+dynamics: JointDynamics | null, 
+/**
+ * Per-actuator stop behavior when a motion controller exits gracefully.
+ * `hold` keeps the joint at its current position via MIT gains (prevents
+ * gravity backdrive on loaded joints); `hard_stop` (default) issues
+ * `cmd_stop` (torque-off).
+ */
+stop_behavior: StopBehavior, };

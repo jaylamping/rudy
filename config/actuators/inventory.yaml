@@ -14,6 +14,7 @@ devices:
   commissioned_zero_offset: null
   active_report_persisted: false
   predefined_home_rad: null
+  stop_behavior: hold
   # Override the global post-home MIT spring-damper gains for this
   # joint specifically. `shoulder_actuator_a` carries the full arm
   # payload through gravity at most homed poses, and the global

@@ -134,6 +134,12 @@ pub struct ActuatorCommon {
     /// `None` means no dynamics constraints (lightweight/unloaded joint).
     #[serde(default)]
     pub dynamics: Option<crate::motion::dynamics::JointDynamics>,
+    /// Per-actuator stop behavior when a motion controller exits gracefully.
+    /// `hold` keeps the joint at its current position via MIT gains (prevents
+    /// gravity backdrive on loaded joints); `hard_stop` (default) issues
+    /// `cmd_stop` (torque-off).
+    #[serde(default)]
+    pub stop_behavior: crate::motion::stop_policy::StopBehavior,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

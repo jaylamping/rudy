@@ -39,6 +39,7 @@ pub mod preflight;
 pub mod registry;
 pub mod smoothing;
 pub mod status;
+pub mod stop_policy;
 pub mod tick;
 
 pub use current_safety::{
@@ -55,6 +56,7 @@ pub use registry::{MotionRegistry, MotionSnapshot};
 pub use status::{
     classify_motion_bus_string, MotionBusError, MotionState, MotionStatus, MotionStopReason,
 };
+pub use stop_policy::{StopAction, StopBehavior};
 pub use tick::motion_tick_interval_ms;
 
 #[cfg(test)]

@@ -87,6 +87,7 @@ pub fn migrate_v1_yaml_to_v2_inventory(yaml: &str) -> Result<Inventory> {
             desired_params: BTreeMap::new(),
             current_safety: None,
             dynamics: None,
+            stop_behavior: Default::default(),
         };
         devices.push(Device::Actuator(Box::new(Actuator {
             common,
